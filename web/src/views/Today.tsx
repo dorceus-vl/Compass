@@ -4,6 +4,7 @@ import { TaskRow } from '../ui/TaskRow.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { today, startOfWeek, fmtDue } from '../dates.ts';
 import { Link } from '../router.ts';
+import { AddedStrip } from '../ui/AddedStrip.tsx';
 
 export function Today() {
   const { tasks, milestones, projects, ready } = useStore();
@@ -37,6 +38,7 @@ export function Today() {
         </div>
         <div className="seg">{(['all', 'personal', 'work'] as const).map((k) => <button type="button" key={k} className={kind === k ? 'on' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
       </div>
+      <AddedStrip onOpen={setOpen} />
       {overdue.length > 0 && <div className="inbox" style={{ borderColor: 'rgba(255,77,94,.35)' }}><div className="top"><h2>Overdue <small>{overdue.length}</small></h2></div>{overdue.map((x) => <TaskRow key={x.id} task={x} onOpen={setOpen} />)}</div>}
       <div className="horizons">{col('short', 'Short · this week')}{col('medium', 'Medium · this quarter')}{col('long', 'Long · this year and beyond')}</div>
       {next.length > 0 && <div className="inbox"><div className="top"><h2>Next milestones</h2></div>

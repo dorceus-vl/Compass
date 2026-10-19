@@ -107,3 +107,16 @@ button.cb{cursor:pointer;background:transparent}
 .two{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;align-items:start}
 @media (max-width:1000px){.grid3{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}}
 @media (max-width:640px){.grid3{grid-template-columns:1fr}}
+
+.auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.ai{background:var(--field);border:1px solid var(--field-border);border-left:3px solid var(--src);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.ai .src{font-family:var(--mono);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--src)}
+.ai .t{font-weight:600;font-size:14px;line-height:1.3;overflow-wrap:anywhere}
+.ai .m{font-size:12.5px;color:var(--text-dim);overflow-wrap:anywhere}
+.ai .act{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center}
+.ai .act button,.ai .act a{font:inherit;font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--field-border);background:none;color:var(--text-dim);cursor:pointer}
+.ai .act button.p{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
+.ai .act button:disabled{opacity:.5;cursor:not-allowed}
+.ai.active{outline:2px solid var(--accent);outline-offset:1px}
+.inbox-list:focus-visible{outline:none}
+.rail .badge,.ptab .badge{margin-left:4px;min-width:16px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;line-height:16px;text-align:center}

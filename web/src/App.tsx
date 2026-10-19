@@ -13,6 +13,7 @@ import { Projects } from './views/Projects.tsx';
 import { ProjectPage } from './views/Project.tsx';
 import { SettingsView } from './views/Settings.tsx';
 import { TrashView } from './views/Trash.tsx';
+import { InboxView } from './views/Inbox.tsx';
 import { Palette } from './ui/Palette.tsx';
 import { startSync } from './store/sync.ts';
 
@@ -32,7 +33,7 @@ export function App() {
   if (auth === 'checking') return null;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
   const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, timeline: <Timeline />, projects: <Projects />,
-    project: <ProjectPage id={params.id} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView /> }[path] ?? <Today />;
+    project: <ProjectPage id={params.id} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, inbox: <InboxView /> }[path] ?? <Today />;
   return (
     <>
       <Shell onPalette={() => setPalette(true)}>{view}</Shell>
