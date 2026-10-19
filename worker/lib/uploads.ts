@@ -13,12 +13,14 @@ export const DOC_TYPES: Record<DocKind, string> = {
   txt: 'text/plain',
 };
 export const MAX_DOC_BYTES = 20 * 1024 * 1024;
+/** A work-project file is sealed in memory (several copies at once), so it is held to a lower cap. */
+export const MAX_SEALED_BYTES = 10 * 1024 * 1024;
 
 const baseType = (t: string) => t.split(';')[0].trim().toLowerCase();
 const starts = (head: Uint8Array, s: string) => [...s].every((ch, i) => head[i] === ch.charCodeAt(0));
 
 /** The file's kind and normalised type, or the message to show the user. `head` is the file's first bytes. */
-export function checkDoc(file: { name: string; type: string; size: number }, head: Uint8Array): { kind: DocKind; type: string } | { error: string } {
+export function checkDoc(file: { name: string; type: string; size: number }, head: Uint8Array, sealed = false): { kind: DocKind; type: string } | { error: string } {
   const kind = file.name.toLowerCase().match(/\.(pdf|docx|xlsx|md|txt)$/)?.[1] as DocKind | undefined;
   if (!kind) return { error: 'Upload a PDF, Word, Excel, Markdown or text file.' };
   const declared = baseType(file.type);
@@ -26,7 +28,8 @@ export function checkDoc(file: { name: string; type: string; size: number }, hea
   const ok = declared === DOC_TYPES[kind] || (kind === 'md' && (declared === 'text/plain' || declared === '')) || ((kind === 'docx' || kind === 'xlsx') && declared === '');
   if (!ok) return { error: `That file does not look like a .${kind} file.` };
   if (file.size === 0) return { error: 'That file is empty.' };
-  if (file.size > MAX_DOC_BYTES) return { error: `Files must be ${MAX_DOC_BYTES / 1024 / 1024} MB or smaller.` };
+  const max = sealed ? MAX_SEALED_BYTES : MAX_DOC_BYTES;
+  if (file.size > max) return { error: `${sealed ? 'Work files' : 'Files'} must be ${max / 1024 / 1024} MB or smaller.` };
   if (kind === 'pdf' && !starts(head, '%PDF')) return { error: 'That file does not look like a PDF.' };
   if ((kind === 'docx' || kind === 'xlsx') && !starts(head, 'PK')) return { error: `That file does not look like a .${kind} file.` };
   return { kind, type: DOC_TYPES[kind] };

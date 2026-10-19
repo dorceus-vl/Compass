@@ -166,6 +166,25 @@ for x in $D1 $D2 $D3; do curl "${H[@]}" -X DELETE $B/api/documents/$x | grep -q 
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/documents/$D1/file)" = 404 ] || fail "trashed document still served"
 curl "${H[@]}" -X DELETE $B/api/projects/$DP >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$DW >/dev/null; rm -rf $SCR
 echo "smoke: (q) pdf upload -> import -> searchable -> removed; work pdf sealed in R2 and opens, import 403; template placeholders; .exe 400"
+# Fix round: chunked upload refused (411); sealed work files capped at 10 MB (9.5 MB in, 10.5 MB out, round trip intact); an offline project's document stays out of the library and the model-facing query.
+CK=$(curl -s -o /dev/null -w '%{http_code}' -b $J -H "Origin: $B" -H 'Transfer-Encoding: chunked' -H 'Content-Type: multipart/form-data; boundary=x' --data-binary @- $B/api/documents <<<'--x--'); [ "$CK" = 411 ] || fail "chunked upload not refused ($CK)"
+BIG=$(mktemp -d); head -c 9961472 /dev/zero | tr '\0' 'a' > $BIG/ok.txt; head -c 11010048 /dev/zero | tr '\0' 'a' > $BIG/big.txt
+SW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke sealed big","kind":"work"}' | js d.project.id)
+UB=$(up "@$BIG/ok.txt;type=text/plain" -F "project_id=$SW"); [ "$(printf '%s' "$UB" | tail -1)" = 201 ] || fail "9.5 MB sealed upload: $UB"
+DB1=$(printf '%s' "$UB" | head -1 | js d.document.id); curl "${HF[@]}" $B/api/documents/$DB1/file -o $BIG/back.txt; cmp -s $BIG/ok.txt $BIG/back.txt || fail "9.5 MB sealed file did not round-trip"
+UC=$(up "@$BIG/big.txt;type=text/plain" -F "project_id=$SW"); [ "$(printf '%s' "$UC" | tail -1)" = 400 ] && printf '%s' "$UC" | grep -q 'Work files must be 10 MB or smaller.' || fail "10.5 MB sealed upload not refused: $UC"
+curl "${H[@]}" -X DELETE $B/api/documents/$DB1 >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$SW >/dev/null; rm -rf $BIG
+PF=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke offline docs","kind":"personal"}' | js d.project.id)
+UF=$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "project_id=$PF"); DF=$(printf '%s' "$UF" | head -1 | js d.document.id)
+IF=$(curl "${H[@]}" -X POST $B/api/library/import -d "{\"document_id\":\"$DF\"}"); SF=$(printf '%s' "$IF" | js d.page.slug)
+MODELQ() { D1X "SELECT count(*) AS n FROM library_pages lp LEFT JOIN documents d ON d.id = lp.import_doc_id LEFT JOIN projects dp ON dp.id = d.project_id WHERE lp.deleted_at IS NULL AND (dp.id IS NULL OR dp.data_boundary = 'cloud') AND lp.slug = '$SF'" | js 'd[0].results[0].n'; }
+[ "$(MODELQ)" = 1 ] || fail "cloud-project import missing from the model-facing set"
+curl "${H[@]}" -X PATCH $B/api/projects/$PF -d '{"data_boundary":"offline"}' >/dev/null
+[ "$(MODELQ)" = 0 ] || fail "offline-project import still in the model-facing set"
+curl "${H[@]}" $B/api/library/imports | grep -q "\"slug\":\"$SF\"" || fail "offline-project import missing from the device list"
+OI=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/library/import -d "{\"document_id\":\"$DF\"}"); [ "$(printf '%s' "$OI" | tail -1)" = 409 ] && printf '%s' "$OI" | grep -q '"error":"offline_boundary"' || fail "offline import not refused: $OI"
+curl "${H[@]}" -X DELETE $B/api/library/$SF >/dev/null; curl "${H[@]}" -X DELETE $B/api/documents/$DF >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PF >/dev/null
+echo "smoke: (q2) chunked upload 411; sealed 9.5 MB round trip, 10.5 MB refused; offline-project import 409 and out of the model-facing set"
 # Copilot (Phase 3 Task 7), on the local stub (AI_STUB=1 with DEV_LOGIN=1 in .dev.vars; no key, no provider call).
 AT0=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 P1=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke copilot personal","kind":"personal"}' | js d.project.id)

@@ -35,39 +35,47 @@ documents.get('/', async (c) => {
 });
 
 documents.post('/', async (c) => {
-  if (Number(c.req.header('content-length') ?? 0) > MAX_DOC_BYTES + 1024 * 1024) return c.json({ error: `Files must be ${MAX_DOC_BYTES / 1024 / 1024} MB or smaller.` }, 413);
-  const form = await c.req.formData().catch(() => null);
+  // The size is checked before the body is buffered; a request that does not say how long it is (chunked) is refused.
+  const len = c.req.header('content-length');
+  if (!len || !/^\d+$/.test(len)) return c.json({ error: 'Length Required' }, 411);
+  if (Number(len) > MAX_DOC_BYTES + 1024 * 1024) return c.json({ error: `Files must be ${MAX_DOC_BYTES / 1024 / 1024} MB or smaller.` }, 413);
+  let form: FormData | null = await c.req.formData().catch(() => null);
   const file = form?.get('file');
   if (!form || !(file instanceof File)) return c.json({ error: 'Choose a file to upload.' }, 400);
-  const name = cleanName(file.name);
-  if (!name) return c.json({ error: 'The file needs a name.' }, 400);
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const checked = checkDoc({ name, type: file.type, size: bytes.length }, bytes.subarray(0, 8));
-  if ('error' in checked) return c.json({ error: checked.error }, 400);
   const pid = form.get('project_id') || null;
+  const template = form.get('is_template') === '1';
   let pkind: 'personal' | 'work' | null = null;
   if (pid !== null) {
     pkind = typeof pid === 'string' ? await projectKind(c.env, pid) : null;
     if (!pkind) return c.json({ error: 'project_id is not a project' }, 400);
   }
-  const template = form.get('is_template') === '1';
+  const name = cleanName(file.name);
+  if (!name) return c.json({ error: 'The file needs a name.' }, 400);
+  const sealed = pkind === 'work';
+  // Size and type are judged on the File before its bytes are copied out, so an oversize work file is refused without a second copy.
+  const early = checkDoc({ name, type: file.type, size: file.size }, new Uint8Array(await file.slice(0, 8).arrayBuffer()), sealed);
+  if ('error' in early) return c.json({ error: early.error }, 400);
+  const checked = early, size = file.size;
+  let bytes: Uint8Array | null = new Uint8Array(await file.arrayBuffer());
+  form = null; // the multipart body is no longer needed; let it go before the sealing copies are made
   let placeholders: string[] = [];
   if (template) {
     if (checked.kind !== 'docx') return c.json({ error: NOT_TEMPLATE }, 400);
     try { placeholders = docxPlaceholders(bytes); } catch { return c.json({ error: BAD_WORD }, 400); }
   }
   const id = crypto.randomUUID(), t = now(), r2_key = `docs/${id}`;
-  const sealed = pkind === 'work';
-  await c.env.FILES.put(r2_key, sealed ? await sealBytes(c.env, bytes, `documents.file:${id}`) : bytes,
+  const body: string | Uint8Array = sealed ? await sealBytes(c.env, bytes, `documents.file:${id}`) : bytes;
+  bytes = null; // a sealed upload keeps only the ciphertext from here on
+  await c.env.FILES.put(r2_key, body,
     sealed ? { customMetadata: { sealed: '1' } } : { httpMetadata: { contentType: checked.type } });
-  const row: Row = { id, name, kind: checked.kind, size: bytes.length, content_type: checked.type, r2_key, project_id: pid as string | null, is_template: template ? 1 : 0,
+  const row: Row = { id, name, kind: checked.kind, size, content_type: checked.type, r2_key, project_id: pid as string | null, is_template: template ? 1 : 0,
     placeholders: JSON.stringify(placeholders), text_indexed: 0, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
   const s = await seal(c.env, 'documents', { ...row }, pkind ?? 'personal'); // the row's own `kind` is the file kind, so the project's is passed
   try {
     await c.env.DB.prepare('INSERT INTO documents (id, name, kind, size, content_type, r2_key, project_id, is_template, placeholders, text_indexed, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0,?10,?10,?11)')
       .bind(id, s.name, s.kind, s.size, s.content_type, r2_key, s.project_id, s.is_template, s.placeholders, t, s.enc_v).run();
   } catch (e) { await c.env.FILES.delete(r2_key).catch(() => {}); throw e; }
-  await audit(c.env, 'you', 'document.upload', id, { kind: checked.kind, size: bytes.length });
+  await audit(c.env, 'you', 'document.upload', id, { kind: checked.kind, size });
   return c.json({ document: asDoc(row) }, 201);
 });
 

@@ -11,11 +11,12 @@ const toDoc = (p: LibraryPage): Doc => ({ ...p, id: p.slug });
 /**
  * Imports (live rows) and lessons of personal projects, full text. Work lessons are sealed and never listed here.
  * Two audiences: the device (forModel false) sees every personal lesson; text that may reach a model (forModel true, ruling P3-6)
- * leaves out lessons of projects whose data_boundary is 'offline'.
+ * leaves out lessons, and imports of documents, of projects whose data_boundary is 'offline'.
  */
 export async function extraPages(env: Env, forModel = false): Promise<LibraryPage[]> {
   const [imp, les] = await env.DB.batch([
-    env.DB.prepare('SELECT slug, section, title, body FROM library_pages WHERE deleted_at IS NULL ORDER BY section, title'),
+    // The model-facing set leaves out imports whose source document sits in a project that is (now) offline; unfiled documents stay in.
+    env.DB.prepare(`SELECT lp.slug, lp.section, lp.title, lp.body FROM library_pages lp LEFT JOIN documents d ON d.id = lp.import_doc_id LEFT JOIN projects dp ON dp.id = d.project_id WHERE lp.deleted_at IS NULL${forModel ? ` AND (dp.id IS NULL OR dp.data_boundary = 'cloud')` : ''} ORDER BY lp.section, lp.title`),
     env.DB.prepare(`SELECT l.id, l.text FROM lessons l JOIN projects p ON p.id = l.project_id WHERE p.kind = 'personal' AND l.deleted_at IS NULL AND l.enc_v = 0 AND p.deleted_at IS NULL${forModel ? ` AND p.data_boundary = 'cloud'` : ''} ORDER BY l.created_at DESC`),
   ]);
   return [

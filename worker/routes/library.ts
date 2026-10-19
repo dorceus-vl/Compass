@@ -6,7 +6,7 @@ import { allPages, extraPages, searchPages } from '../lib/library.ts';
 import { now, audit } from '../lib/db.ts';
 import { docText } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
-import { projectKind } from './projects.ts';
+import { projectAccess } from '../lib/project-context.ts';
 
 const library = new Hono<{ Bindings: Env; Variables: Variables }>();
 const head = ({ slug, section, title, source }: LibraryPage) => ({ slug, section, title, source });
@@ -25,7 +25,10 @@ library.post('/import', async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
   const doc = typeof body.document_id === 'string' ? await loadDoc(c.env, body.document_id) : null;
   if (!doc) return c.json({ error: 'Not found' }, 404);
-  if (doc.enc_v === 2 || (await projectKind(c.env, doc.project_id)) === 'work') return c.json({ error: 'Work documents stay out of the library.' }, 403);
+  const access = await projectAccess(c.env, doc.project_id);
+  if (doc.enc_v === 2 || access?.kind === 'work') return c.json({ error: 'Work documents stay out of the library.' }, 403);
+  if (!access) return c.json({ error: 'Not found' }, 404); // its project is in Trash
+  if (access.boundary === 'offline') return c.json({ error: 'offline_boundary' }, 409); // an import is model-readable, so an offline project's document never becomes one
   if (doc.kind === 'xlsx') return c.json({ error: 'Excel files have no text to import.' }, 400);
   if (body.title !== undefined && (typeof body.title !== 'string' || !body.title.trim() || body.title.trim().length > 120)) return c.json({ error: 'title must be 1-120 characters' }, 400);
   const title = (typeof body.title === 'string' ? body.title : doc.name.replace(/\.[^.]+$/, '')).trim().slice(0, 120) || 'Document';
