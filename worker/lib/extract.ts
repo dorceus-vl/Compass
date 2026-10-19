@@ -11,16 +11,17 @@ const decode = (s: string) => s.replace(/&(?:lt|gt|quot|apos|amp);/g, (m) => ENT
 const MAX_PART = 10 * 1024 * 1024, MAX_TOTAL = 20 * 1024 * 1024, MAX_HEADERS = 20;
 /**
  * The Word parts we read, decompressed. Zip bombs: a part over 10 MB, parts over 20 MB in all, or more than 20 header/footer parts
- * make extraction fail (the callers answer 400). The sizes are the zip's declared ones, and fflate inflates into a buffer of exactly that
- * size, so a part that lies about its size is cut off, not grown. Throws on a file that is not a zip.
+ * make extraction fail (the callers answer 400). The sizes are the zip's declared ones (the larger of compressed and uncompressed): fflate inflates a deflated part into a buffer of exactly the declared size, and copies a stored part by its compressed size. Throws on a file that is not a zip.
  */
 function parts(bytes: Uint8Array, names: RegExp): [string, string][] {
   let total = 0, extras = 0;
   const files = unzipSync(bytes, { filter: (f) => {
     if (!names.test(f.name)) return false;
     if (f.name !== 'word/document.xml' && ++extras > MAX_HEADERS) throw new Error('too many parts');
-    total += f.originalSize;
-    if (f.originalSize > MAX_PART || total > MAX_TOTAL) throw new Error('part too large');
+    // A stored (method 0) entry is copied by its compressed size and ignores the declared uncompressed one, so count the larger of the two, duplicates and overlapping entries included.
+    const sz = Math.max(f.originalSize, f.size);
+    total += sz;
+    if (sz > MAX_PART || total > MAX_TOTAL) throw new Error('part too large');
     return true;
   } });
   return Object.keys(files).sort().map((n) => [n, new TextDecoder().decode(files[n])]);

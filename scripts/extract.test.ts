@@ -30,6 +30,23 @@ for (let i = 1; i <= 21; i++) headers[`word/footer${i}.xml`] = strToU8('<w:ftr/>
 assert.throws(() => docxPlaceholders(zip(headers)), 'more than 20 header/footer parts');
 delete headers['word/footer21.xml'];
 assert.deepEqual(docxPlaceholders(zip(headers)).slice(0, 2), ['project.name', '#risks.rows'], '20 parts are fine');
+// Stored entries that overlap: 21 central-directory entries, all method 0, all at one local header, usize 0 and csize 9 MB; the file is 9 MB.
+function overlapping(names: string[], csize: number): Uint8Array {
+  const enc = new TextEncoder(), first = enc.encode(names[0]);
+  const local = new Uint8Array(30 + first.length + csize), lv = new DataView(local.buffer);
+  lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint32(18, csize, true); lv.setUint16(26, first.length, true); local.set(first, 30);
+  const cds = names.map((n) => { const b = enc.encode(n), c = new Uint8Array(46 + b.length), v = new DataView(c.buffer);
+    v.setUint32(0, 0x02014b50, true); v.setUint16(4, 20, true); v.setUint16(6, 20, true); v.setUint32(20, csize, true); v.setUint16(28, b.length, true); v.setUint32(42, 0, true); c.set(b, 46); return c; });
+  const cdLen = cds.reduce((n, c) => n + c.length, 0), end = new Uint8Array(22), ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, names.length, true); ev.setUint16(10, names.length, true); ev.setUint32(12, cdLen, true); ev.setUint32(16, local.length, true);
+  const out = new Uint8Array(local.length + cdLen + 22); out.set(local); let o = local.length; for (const c of cds) { out.set(c, o); o += c.length; } out.set(end, o);
+  return out;
+}
+const bomb = overlapping(['word/document.xml', ...Array.from({ length: 20 }, (_, i) => `word/header${i + 1}.xml`)], 9 * 1024 * 1024);
+assert.ok(bomb.length < 9.1 * 1024 * 1024);
+assert.throws(() => docxPlaceholders(bomb), 'overlapping stored entries declaring usize 0');
+assert.throws(() => docxText(overlapping(['word/document.xml', 'word/document.xml', 'word/document.xml'], 9 * 1024 * 1024)), 'duplicate document.xml entries are counted');
+assert.deepEqual(docxPlaceholders(overlapping(['word/document.xml'], 100)), [], 'one small stored entry still reads');
 const t0 = performance.now();
 const open1 = zip({ 'word/document.xml': strToU8('<w:p '.repeat(200_000)) });
 assert.equal(docxText(open1), '');
