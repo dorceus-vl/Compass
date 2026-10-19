@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en" data-accent="ivory">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compass previews</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#050507;--panel:#0B0B10;--field:#131319;--field-border:rgba(255,255,255,.09);--border-soft:rgba(255,255,255,.07);
+    --text:#F2F1F7;--text-dim:#A9A7B8;--text-faint:#8A8899;
+    --ok:#3DDC84;--warn:#FF7A45;--danger:#FF4D5E;
+    --finance:#4A9EFF;--health:#46B87C;--hollow:#F5A524;--aura:#B8F03E;--kelly:#D6336F;--nightowl:#8B5CF6;--sonar:#3FD8C9;
+    --font:'Inter',system-ui,sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  [data-accent="ivory"]{--accent:#EDE3C9;--accent-bright:#FFF7E3;--accent-dim:#C9BB9A;--accent-rgb:237,227,201;--on-accent:#1A1608}
+  [data-accent="needle"]{--accent:#FF4D6D;--accent-bright:#FF7F96;--accent-dim:#C92D4A;--accent-rgb:255,77,109;--on-accent:#2A0008}
+  [data-accent="gold"]{--accent:#E9C46A;--accent-bright:#FFDE8E;--accent-dim:#B8933B;--accent-rgb:233,196,106;--on-accent:#1F1700}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-bright);text-decoration:none}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint)}
+
+  /* top strip */
+  .strip{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 20px;background:rgba(5,5,7,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--border-soft);flex-wrap:wrap}
+  .strip .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.4px}
+  .tabs{display:flex;gap:4px;background:var(--field);border:1px solid var(--field-border);border-radius:999px;padding:4px}
+  .tabs button{border:0;background:transparent;color:var(--text-dim);font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer}
+  .tabs button.on{background:var(--accent);color:var(--on-accent)}
+  .swatches{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .swatches span{font-size:12px;color:var(--text-faint)}
+  .sw{width:26px;height:26px;border-radius:999px;border:2px solid transparent;cursor:pointer}
+  .sw.on{border-color:#fff}
+  .sw.ivory{background:#EDE3C9}.sw.needle{background:#FF4D6D}.sw.gold{background:#E9C46A}
+
+  .screen{display:none;padding:24px 20px 60px;max-width:1380px;margin:0 auto}
+  .screen.on{display:block}
+  .note{margin:0 0 18px;padding:12px 16px;border-radius:14px;background:rgba(var(--accent-rgb),.06);border:1px solid rgba(var(--accent-rgb),.18);color:var(--text-dim);font-size:13.5px;line-height:1.5}
+  .note b{color:var(--text)}
+
+  /* badge */
+  .badge{width:92px;height:92px;border-radius:999px;position:relative;background:#000;border:5px solid var(--accent);box-shadow:0 0 0 2px #000,0 0 0 3px var(--accent),0 0 30px -6px rgba(var(--accent-rgb),.7);display:grid;place-items:center;flex:none}
+  .badge .eyes{display:flex;gap:16px}
+  .badge .eyes i{width:14px;height:14px;border-radius:999px;background:var(--accent);box-shadow:0 0 12px rgba(var(--accent-rgb),.9)}
+  .badge .eyes i::after{content:"";position:absolute;width:5px;height:5px;background:#000;border-radius:999px;transform:translate(4.5px,4.5px)}
+  .badge small{position:absolute;bottom:6px;font-family:var(--mono);font-size:7px;letter-spacing:1px;color:var(--accent)}
+
+  /* name cards */
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:18px}
+  .card h3{margin:0 0 4px;font-size:22px;letter-spacing:-.6px;font-weight:800}
+  .card .dom{font-family:var(--mono);font-size:12px;color:var(--accent)}
+  .card p{color:var(--text-dim);font-size:13.5px;line-height:1.55;margin:10px 0 0}
+  .card.rec{border-color:rgba(var(--accent-rgb),.45);box-shadow:0 0 40px -14px rgba(var(--accent-rgb),.6)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;padding:4px 10px;border-radius:999px;background:rgba(var(--accent-rgb),.14);color:var(--accent);border:1px solid rgba(var(--accent-rgb),.3)}
+  .type-spec{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;margin-top:16px}
+  .type-spec h1{font-size:40px;font-weight:300;letter-spacing:-1px;margin:0;line-height:1.1}
+  .type-spec h1 b{font-weight:800}
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:12px;padding:12px 16px;font-weight:600;font-size:14px;border:1px solid var(--field-border);background:var(--field);color:var(--text);cursor:pointer}
+  .btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .tok{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .tok i{width:28px;height:28px;border-radius:8px;border:1px solid var(--field-border)}
+
+  /* app shell */
+  .shell{display:grid;grid-template-columns:84px 1fr;gap:16px;min-height:760px}
+  .rail{background:var(--panel);border:1px solid var(--border-soft);border-radius:26px;padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .rail .logo{width:42px;height:42px;border-radius:999px;border:3px solid var(--accent);background:#000;display:grid;place-items:center;margin-bottom:10px;position:relative}
+  .rail .logo i{width:6px;height:6px;border-radius:99px;background:var(--accent);box-shadow:10px 0 0 var(--accent)}
+  .rail .logo em{position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border-radius:99px;background:var(--ok);border:2px solid var(--panel)}
+  .rail a{width:56px;padding:9px 0;border-radius:14px;color:var(--text-faint);font-size:10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .rail a svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6}
+  .rail a.on{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
+  .rail .spacer{flex:1}
+  .main{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .head h1{margin:0;font-size:34px;font-weight:300;letter-spacing:-1px;line-height:1.05}
+  .head h1 b{font-weight:800}
+  .head .sub{color:var(--text-dim);font-size:13.5px;margin-top:6px}
+  .seg{display:inline-flex;background:var(--field);border:1px solid var(--field-border);border-radius:999px;padding:3px}
+  .seg span{padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:var(--text-dim)}
+  .seg span.on{background:var(--accent);color:var(--on-accent)}
+  .search{flex:1;min-width:220px;max-width:380px;background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:11px 14px;color:var(--text-faint);font-size:13.5px;display:flex;gap:8px;align-items:center}
+  .kbd{font-family:var(--mono);font-size:10.5px;border:1px solid var(--field-border);border-radius:6px;padding:1px 6px;margin-left:auto}
+
+  /* inbox strip */
+  .inbox{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:16px}
+  .inbox .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .inbox h2{margin:0;font-size:16px;font-weight:700}
+  .inbox h2 small{color:var(--text-faint);font-weight:500;margin-left:8px}
+  .auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+  .ai{background:var(--field);border:1px solid var(--field-border);border-left:3px solid var(--src);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+  .ai .src{font-family:var(--mono);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--src)}
+  .ai .t{font-weight:600;font-size:14px;line-height:1.3}
+  .ai .m{font-size:12.5px;color:var(--text-dim)}
+  .ai .act{display:flex;gap:6px;margin-top:4px}
+  .ai .act span{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-dim)}
+  .ai .act span.p{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
+
+  /* horizons */
+  .horizons{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .hz{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:8px}
+  .hz .hh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .hz .hh b{font-size:15px}
+  .hz .hh small{color:var(--text-faint);font-size:12px}
+  .task{background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:flex-start}
+  .task .cb{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--text-faint);flex:none;margin-top:1px}
+  .task .cb.done{background:var(--accent);border-color:var(--accent)}
+  .task .tt{font-size:13.5px;font-weight:500;line-height:1.3}
+  .task .tt.done{text-decoration:line-through;color:var(--text-faint)}
+  .task .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+  .chip{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-faint)}
+  .chip.src{color:var(--src);border-color:color-mix(in srgb,var(--src) 40%,transparent)}
+  .chip.work{color:var(--accent);border-color:rgba(var(--accent-rgb),.4)}
+  .chip.due{color:var(--warn);border-color:rgba(255,122,69,.4)}
+  .chip.over{color:var(--danger);border-color:rgba(255,77,94,.4)}
+  .two{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start}
+  .kelly{background:var(--panel);border:1px solid rgba(214,51,111,.35);border-radius:18px;padding:16px;display:flex;gap:14px}
+  .kelly .av{width:44px;height:44px;border-radius:999px;background:radial-gradient(circle at 40% 35%,#ff7fb0,#8c1e46);box-shadow:0 0 0 2px rgba(214,51,111,.5);flex:none}
+  .kelly p{margin:4px 0 0;font-size:13.5px;color:var(--text-dim);line-height:1.5}
+  .kelly b{color:var(--kelly)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat{background:var(--panel);border:1px solid var(--border-soft);border-radius:14px;padding:12px}
+  .stat .n{font-size:26px;font-weight:800;letter-spacing:-1px}
+  .stat .l{font-size:12px;color:var(--text-faint)}
+
+  /* phone */
+  .phone{width:300px;background:#000;border:10px solid #17171c;border-radius:44px;padding:14px 12px;box-shadow:0 30px 80px -30px rgba(0,0,0,.8);margin:0 auto}
+  .phone .notch{width:110px;height:26px;background:#17171c;border-radius:999px;margin:0 auto 10px}
+  .push{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:10px 12px;margin-bottom:8px;backdrop-filter:blur(10px)}
+  .push .ph{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-faint);margin-bottom:4px}
+  .push .ph i{width:16px;height:16px;border-radius:5px;background:var(--src)}
+  .push b{font-size:13px;display:block}
+  .push span{font-size:12px;color:var(--text-dim)}
+  .ptab{display:flex;justify-content:space-around;margin-top:12px;padding:10px 0 2px;border-top:1px solid var(--border-soft);color:var(--text-faint);font-size:10px}
+  .ptab span.on{color:var(--accent)}
+  .mtask{display:flex;gap:8px;align-items:center;padding:9px 10px;border-radius:12px;background:var(--field);margin-bottom:6px;font-size:12.5px}
+  .mtask i{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--text-faint);flex:none}
+
+  /* board */
+  .board{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
+  .col{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:560px}
+  .col .ch{display:flex;align-items:center;gap:8px;padding:2px 4px 8px}
+  .col .ch i{width:8px;height:8px;border-radius:99px;background:var(--c)}
+  .col .ch b{font-size:14px}
+  .col .ch small{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint)}
+  .kc{background:var(--field);border:1px solid var(--field-border);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:7px;cursor:grab;transition:transform .15s}
+  .kc:hover{transform:translateY(-2px);border-color:rgba(var(--accent-rgb),.45)}
+  .kc .tt{font-size:13.5px;font-weight:600;line-height:1.3}
+  .kc .pj{font-size:11.5px;color:var(--text-faint)}
+  .kc .ft{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .kc .prog{height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+  .kc .prog i{display:block;height:100%;background:var(--accent);width:var(--w)}
+  .kc.ghost{opacity:.5;border-style:dashed;transform:rotate(-2deg)}
+  .kc.block{border-left:3px solid var(--danger)}
+  .sub{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-faint)}
+  .sub i{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--text-faint)}
+  .sub i.d{background:var(--accent);border-color:var(--accent)}
+
+  /* copilot */
+  .cop{display:grid;grid-template-columns:260px 1fr 300px;gap:14px;min-height:700px}
+  .lib{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:4px}
+  .lib .g{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--text-faint);margin:10px 4px 4px}
+  .lib a{display:flex;justify-content:space-between;padding:7px 10px;border-radius:10px;color:var(--text-dim);font-size:13px}
+  .lib a.on{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
+  .lib a small{font-family:var(--mono);font-size:10px;color:var(--text-faint)}
+  .chat{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;display:flex;flex-direction:column;min-width:0}
+  .chat .ch{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border-soft)}
+  .chat .ch b{font-size:14px}
+  .models{margin-left:auto;display:inline-flex;background:var(--field);border:1px solid var(--field-border);border-radius:999px;padding:3px}
+  .models span{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;color:var(--text-dim);display:flex;gap:6px;align-items:center}
+  .models span.on{background:var(--accent);color:var(--on-accent)}
+  .models i{width:7px;height:7px;border-radius:99px;background:var(--ok)}
+  .msgs{padding:16px;display:flex;flex-direction:column;gap:14px;flex:1}
+  .me{align-self:flex-end;max-width:70%;background:rgba(var(--accent-rgb),.14);border:1px solid rgba(var(--accent-rgb),.3);border-radius:16px 16px 4px 16px;padding:10px 14px;font-size:13.5px}
+  .ai2{max-width:85%;background:var(--field);border:1px solid var(--field-border);border-radius:16px 16px 16px 4px;padding:12px 14px;font-size:13.5px;line-height:1.55;color:var(--text-dim)}
+  .ai2 b{color:var(--text)}
+  .ai2 table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.5px}
+  .ai2 td,.ai2 th{border:1px solid var(--field-border);padding:6px 8px;text-align:left}
+  .ai2 th{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--text-faint)}
+  .cite{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:999px;background:rgba(var(--accent-rgb),.12);color:var(--accent);margin:0 2px}
+  .acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .acts span{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--field-border);color:var(--text)}
+  .acts span.p{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
+  .composer{margin:0 16px 16px;background:var(--field);border:1px solid var(--field-border);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px;color:var(--text-faint);font-size:13.5px}
+  .composer .send{margin-left:auto;background:var(--accent);color:var(--on-accent);border-radius:9px;padding:6px 10px;font-size:12px;font-weight:700}
+  .side{display:flex;flex-direction:column;gap:12px}
+  .proj{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:14px}
+  .proj h4{margin:0 0 10px;font-size:14px}
+  .pr{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border-soft);font-size:13px}
+  .pr i{width:9px;height:9px;border-radius:99px;flex:none}
+  .pr small{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint)}
+  .rag{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+  .rag div{border-radius:10px;padding:8px;text-align:center;font-family:var(--mono);font-size:11px}
+  .off{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);padding:10px 12px;border-radius:12px;background:var(--field);border:1px solid var(--field-border)}
+  .off i{width:8px;height:8px;border-radius:99px;background:var(--ok)}
+
+  @media (max-width:1000px){.horizons,.board{grid-template-columns:1fr 1fr}.two,.cop,.type-spec{grid-template-columns:1fr}.shell{grid-template-columns:1fr}.rail{flex-direction:row;border-radius:18px;padding:8px}.rail .spacer{display:none}}
+  @media (max-width:640px){.horizons,.board{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="strip">
+  <div class="brand"><span style="width:22px;height:22px;border-radius:99px;border:3px solid var(--accent);display:inline-block"></span> Compass <span class="eyebrow" style="margin-left:4px">by Knocturn Labs</span></div>
+  <div class="tabs" id="tabs">
+    <button class="on" data-t="s1">1 · Name &amp; look</button>
+    <button data-t="s2">2 · Today</button>
+    <button data-t="s3">3 · Board</button>
+    <button data-t="s4">4 · PM Copilot</button>
+  </div>
+  <div class="swatches"><span>Accent:</span>
+    <div class="sw ivory on" data-a="ivory" title="Ivory (snowy owl)"></div>
+    <div class="sw needle" data-a="needle" title="Needle red (the compass needle)"></div>
+    <div class="sw gold" data-a="gold" title="Compass gold"></div>
+  </div>
+</div>
+
+<!-- ============ 1 NAME & LOOK ============ -->
+<section class="screen on" id="s1">
+  <p class="note"><b>How to read this page.</b> Four tabs, one per screen. The three dots top-right switch the accent live on every screen, so you can judge each colour where it would actually live. Everything else (black ground, Inter, IBM Plex Mono for numbers, the 84px rail, 18px cards) is the house look from Hollow and SonarFlow's DESIGN.md, so the new app sits next to its siblings.</p>
+
+  <div class="row" style="gap:22px;align-items:center;margin-bottom:24px">
+    <div class="badge"><div class="eyes"><i></i><i></i></div><small>KNOCTURNLABS.COM</small></div>
+    <div>
+      <div class="eyebrow">The badge</div>
+      <div style="font-size:15px;color:var(--text-dim);max-width:640px;line-height:1.55;margin-top:6px">Your owl badge, unchanged except for colour, exactly as Hollow and SonarFlow did it: the ring, the eyes and the compass take the accent, the blacks stay black. The placeholder on the left only shows the hue; the real badge is a filter pass on the finance PNG.</div>
+    </div>
+  </div>
+
+  <div class="eyebrow" style="margin-bottom:10px">Three names (click the swatches to see each with each accent)</div>
+  <div class="grid3">
+    <div class="card rec">
+      <span class="pill">Recommended</span>
+      <h3 style="margin-top:10px">Compass</h3>
+      <div class="dom">compass.knocturnlabs.com · app id <span class="mono">compass</span></div>
+      <p>The compass rose is already on the badge, under the owl. A project manager's whole job is heading, scope and course corrections, and the app's job is to tell you where to go next. Reads well in English and French, nothing else in the family is a "C".</p>
+    </div>
+    <div class="card">
+      <h3>Roost</h3>
+      <div class="dom">roost.knocturnlabs.com · app id <span class="mono">roost</span></div>
+      <p>Hollow is where the owl lives; the roost is where it sits and watches over everything. Fits "all my apps in one place" best. Softer, more personal than Compass, a little less "work".</p>
+    </div>
+    <div class="card">
+      <h3>Vigil</h3>
+      <div class="dom">vigil.knocturnlabs.com · app id <span class="mono">vigil</span></div>
+      <p>The owl's night watch. Tasks that keep an eye on Finance, Health and Hollow while you sleep and wake you when something needs you. Strongest for the automation story, coldest as a daily companion.</p>
+    </div>
+  </div>
+
+  <div class="type-spec">
+    <div class="card">
+      <div class="eyebrow">Type and buttons</div>
+      <h1 style="margin-top:10px">Where to <b>next</b></h1>
+      <p style="color:var(--text-dim);font-size:14px;line-height:1.6">Big titles are Inter 300 with the key word 800, like Hollow's "Recent <b>moments</b>". Numbers, dates and counts in IBM Plex Mono. Near-black text on the accent fill, never white.</p>
+      <div class="row" style="margin-top:14px"><span class="btn primary">New task</span><span class="btn">Ask Kelly</span><span class="btn"><span class="mono" style="font-size:12px">⌘K</span> Quick add</span></div>
+      <div class="eyebrow" style="margin-top:18px">Source colours stay as they are in each app</div>
+      <div class="tok">
+        <i style="background:var(--finance)" title="Finance"></i><i style="background:var(--health)" title="Health"></i><i style="background:var(--hollow)" title="Hollow"></i><i style="background:var(--aura)" title="Aura"></i><i style="background:var(--kelly)" title="Kelly"></i><i style="background:var(--nightowl)" title="NightOwl"></i><i style="background:var(--sonar)" title="SonarFlow"></i>
+      </div>
+      <div style="font-size:12.5px;color:var(--text-faint);margin-top:6px">Finance blue, Health green, Hollow amber, Aura lime, Kelly pink, NightOwl purple, SonarFlow teal. A task shows the colour of the app it came from, so the accent had to be a hue none of them use.</div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">The three accents</div>
+      <p style="color:var(--text-dim);font-size:13.5px;line-height:1.6">
+        <b style="color:var(--text)">Ivory</b> <span class="mono">#EDE3C9</span>, the snowy owl. Recommended: a task board is full of status colour (red blocked, amber due, green done, seven app colours), so a calm accent keeps the signals readable. 16:1 contrast on the ground.<br><br>
+        <b style="color:var(--text)">Needle red</b> <span class="mono">#FF4D6D</span>, the compass needle. Most energy, but it fights the "overdue / blocked" red on every card.<br><br>
+        <b style="color:var(--text)">Compass gold</b> <span class="mono">#E9C46A</span>, the brass of an old compass. Warm and handsome, but sits close to Hollow's amber in a tab bar of app icons.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2 TODAY ============ -->
+<section class="screen" id="s2">
+  <p class="note"><b>Today</b> is the home screen on every platform. Three horizons side by side (this week, this quarter, this year), an "Added by your apps" strip on top for everything Finance, Health, Hollow and Aura pushed in overnight, Kelly's brief, and the phone on the right shows the same screen plus the push notifications that created those tasks.</p>
+  <div class="shell">
+    <nav class="rail">
+      <div class="logo"><i></i><em></em></div>
+      <a class="on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Today</a>
+      <a><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>Board</a>
+      <a><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h12"/></svg>Projects</a>
+      <a><svg viewBox="0 0 24 24"><path d="M4 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H4zM20 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/></svg>Library</a>
+      <a><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Kelly</a>
+      <div class="spacer"></div>
+      <a><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Settings</a>
+    </nav>
+    <div class="main">
+      <div class="head">
+        <div>
+          <div class="eyebrow">Monday, 19 October · 07:42</div>
+          <h1 style="margin-top:6px">Good morning, <b>Vlad</b></h1>
+          <div class="sub">7 open today · 2 overdue · <b style="color:var(--accent)">4 added by your apps overnight</b></div>
+        </div>
+        <div class="row">
+          <div class="search">⌕ Search tasks, projects, the library <span class="kbd">⌘K</span></div>
+          <div class="seg"><span class="on">All</span><span>Personal</span><span>Work</span></div>
+          <span class="btn primary">+ New</span>
+        </div>
+      </div>
+
+      <div class="two">
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="inbox">
+            <div class="top"><h2>Added by your apps <small>4 new · tap to keep or dismiss</small></h2><span class="chip">rules: 6 active</span></div>
+            <div class="auto">
+              <div class="ai" style="--src:var(--finance)"><span class="src">Finance</span><div class="t">Review Netflix subscription</div><div class="m">Renews 24 Oct · $22.99/mo · unused 41 days</div><div class="act"><span class="p">Keep</span><span>Snooze</span><span>Cancel it</span></div></div>
+              <div class="ai" style="--src:var(--health)"><span class="src">Health</span><div class="t">Refill Concerta</div><div class="m">6 days left at current dose · pharmacy Jean Coutu</div><div class="act"><span class="p">Keep</span><span>Done</span></div></div>
+              <div class="ai" style="--src:var(--hollow)"><span class="src">Hollow</span><div class="t">Sort 12 new files in D:\Downloads</div><div class="m">3 PDF · 7 photos · 2 installers, since Friday</div><div class="act"><span class="p">Keep</span><span>Open Hollow</span></div></div>
+              <div class="ai" style="--src:var(--aura)"><span class="src">Aura</span><div class="t">Replace battery: hallway smoke sensor</div><div class="m">Reported 12% at 03:10</div><div class="act"><span class="p">Keep</span><span>Dismiss</span></div></div>
+            </div>
+          </div>
+
+          <div class="horizons">
+            <div class="hz">
+              <div class="hh"><b>Short · this week</b><small>5 of 9</small></div>
+              <div class="task"><i class="cb done"></i><div><div class="tt done">Send Q4 status report to steering</div></div></div>
+              <div class="task" style="--src:var(--finance)"><i class="cb"></i><div><div class="tt">Review Netflix subscription</div><div class="meta"><span class="chip src">Finance</span><span class="chip due">Fri</span></div></div></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">Prepare risk review for ERP migration</div><div class="meta"><span class="chip work">Work</span><span class="chip over">Yesterday</span></div></div></div>
+              <div class="task" style="--src:var(--health)"><i class="cb"></i><div><div class="tt">Refill Concerta</div><div class="meta"><span class="chip src">Health</span><span class="chip due">6 days</span></div></div></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">Book dentist</div><div class="meta"><span class="chip">Personal</span></div></div></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">1:1 with Marie, agenda</div><div class="meta"><span class="chip work">Work</span><span class="chip">Tue 14:00</span></div></div></div>
+            </div>
+            <div class="hz">
+              <div class="hh"><b>Medium · this quarter</b><small>3 of 6</small></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">ERP migration: cutover plan signed off</div><div class="meta"><span class="chip work">Work</span><span class="chip">Milestone · Nov 28</span></div></div></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">PMP renewal: 20 PDUs left</div><div class="meta"><span class="chip">Career</span><span class="chip">Dec 31</span></div></div></div>
+              <div class="task" style="--src:var(--hollow)"><i class="cb"></i><div><div class="tt">Move 2019–2021 photos to the G: drive</div><div class="meta"><span class="chip src">Hollow</span></div></div></div>
+              <div class="task" style="--src:var(--finance)"><i class="cb"></i><div><div class="tt">Rebuild emergency fund to 3 months</div><div class="meta"><span class="chip src">Finance</span><span class="chip">62%</span></div></div></div>
+            </div>
+            <div class="hz">
+              <div class="hh"><b>Long · this year and beyond</b><small>4</small></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">Ship all Knocturn apps on the App Store</div><div class="meta"><span class="chip">Knocturn Labs</span><span class="chip">5 of 8</span></div></div></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">PgMP certification</div><div class="meta"><span class="chip">Career</span><span class="chip">2027</span></div></div></div>
+              <div class="task" style="--src:var(--health)"><i class="cb"></i><div><div class="tt">Run a 10K under 55 min</div><div class="meta"><span class="chip src">Health</span></div></div></div>
+              <div class="task"><i class="cb"></i><div><div class="tt">Finish the basement office</div><div class="meta"><span class="chip">Home</span></div></div></div>
+            </div>
+          </div>
+
+          <div class="kelly"><div class="av"></div><div><b>Kelly's brief</b><p>Two things today: the ERP risk review slipped a day, so I moved your 14:00 block before Marie's 1:1. Finance says Netflix hasn't been opened in 41 days, want me to cancel it after you confirm? Health flagged Concerta at 6 days; the pharmacy closes at 21:00.</p></div></div>
+        </div>
+
+        <div class="side">
+          <div class="stats"><div class="stat"><div class="n mono">7</div><div class="l">open today</div></div><div class="stat"><div class="n mono" style="color:var(--danger)">2</div><div class="l">overdue</div></div><div class="stat"><div class="n mono" style="color:var(--ok)">12</div><div class="l">done this week</div></div></div>
+          <div class="phone">
+            <div class="notch"></div>
+            <div class="eyebrow" style="padding:0 4px 8px">Lock screen · pushes</div>
+            <div class="push" style="--src:var(--finance)"><div class="ph"><i></i>Compass · via Finance · 06:00</div><b>Review Netflix subscription</b><span>Renews Friday, $22.99. Unused 41 days.</span></div>
+            <div class="push" style="--src:var(--health)"><div class="ph"><i></i>Compass · via Health · 06:00</div><b>Refill Concerta, 6 days left</b><span>Added to this week.</span></div>
+            <div class="push" style="--src:var(--accent)"><div class="ph"><i></i>Compass · 08:30</div><b>Risk review is overdue</b><span>ERP migration · was due yesterday</span></div>
+            <div class="eyebrow" style="padding:14px 4px 8px">Today (phone)</div>
+            <div class="mtask"><i></i>Review Netflix subscription <span class="chip" style="margin-left:auto;color:var(--finance)">Fri</span></div>
+            <div class="mtask"><i></i>Prepare risk review <span class="chip over" style="margin-left:auto">late</span></div>
+            <div class="mtask"><i></i>Refill Concerta</div>
+            <div class="mtask"><i></i>Book dentist</div>
+            <div class="ptab"><span class="on">Today</span><span>Board</span><span>Projects</span><span>Kelly</span><span>More</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3 BOARD ============ -->
+<section class="screen" id="s3">
+  <p class="note"><b>The board.</b> Five columns: New, In progress, On hold, Waiting on (someone else has the ball), Done. Cards drag between columns, every card carries its horizon, its project and the app it came from. Filter Personal / Work, group by project as swimlanes, and the dashed card shows a drag in flight.</p>
+  <div class="shell">
+    <nav class="rail">
+      <div class="logo"><i></i><em></em></div>
+      <a><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Today</a>
+      <a class="on"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>Board</a>
+      <a><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h12"/></svg>Projects</a>
+      <a><svg viewBox="0 0 24 24"><path d="M4 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H4zM20 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/></svg>Library</a>
+      <a><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Kelly</a>
+      <div class="spacer"></div>
+      <a><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Settings</a>
+    </nav>
+    <div class="main">
+      <div class="head">
+        <div><div class="eyebrow">Board</div><h1 style="margin-top:6px">Work <b>in motion</b></h1><div class="sub">23 cards · 2 blocked · last moved 4 min ago</div></div>
+        <div class="row">
+          <div class="seg"><span>All</span><span>Personal</span><span class="on">Work</span></div>
+          <div class="seg"><span class="on">Columns</span><span>Swimlanes by project</span><span>Timeline</span></div>
+          <span class="btn">Project: ERP migration ▾</span>
+          <span class="btn primary">+ Card</span>
+        </div>
+      </div>
+      <div class="board">
+        <div class="col" style="--c:var(--text-faint)">
+          <div class="ch"><i></i><b>New</b><small>6</small></div>
+          <div class="kc" style="--src:var(--finance)"><div class="tt">Review Netflix subscription</div><div class="pj">Personal · Subscriptions</div><div class="ft"><span class="chip src">Finance</span><span class="chip due">Fri</span><span class="chip">Short</span></div></div>
+          <div class="kc"><div class="tt">Draft change request CR-014: extra UAT week</div><div class="pj">ERP migration</div><div class="ft"><span class="chip work">Work</span><span class="chip">Short</span></div></div>
+          <div class="kc" style="--src:var(--hollow)"><div class="tt">Sort 12 new files in Downloads</div><div class="pj">Personal · Files</div><div class="ft"><span class="chip src">Hollow</span><span class="chip">Short</span></div></div>
+          <div class="kc"><div class="tt">Vendor SOW v3 redlines</div><div class="pj">Data warehouse</div><div class="ft"><span class="chip work">Work</span><span class="chip">Medium</span></div></div>
+          <div class="kc"><div class="tt">Lessons-learned workshop, book room</div><div class="pj">CRM rollout</div><div class="ft"><span class="chip work">Work</span></div></div>
+        </div>
+        <div class="col" style="--c:var(--accent)">
+          <div class="ch"><i></i><b>In progress</b><small>5 · WIP 5</small></div>
+          <div class="kc"><div class="tt">Prepare risk review for ERP migration</div><div class="pj">ERP migration</div><div class="prog" style="--w:60%"><i></i></div><div class="sub"><i class="d"></i>Pull RAID log</div><div class="sub"><i class="d"></i>Score top 10 risks</div><div class="sub"><i></i>Write mitigation owners</div><div class="ft"><span class="chip work">Work</span><span class="chip over">Yesterday</span></div></div>
+          <div class="kc ghost"><div class="tt">Cutover plan v2</div><div class="pj">ERP migration · dragging…</div></div>
+          <div class="kc"><div class="tt">Q4 budget re-forecast</div><div class="pj">PMO</div><div class="prog" style="--w:25%"><i></i></div><div class="ft"><span class="chip work">Work</span><span class="chip">Oct 31</span></div></div>
+          <div class="kc"><div class="tt">PMP: 2 PDU courses this month</div><div class="pj">Career</div><div class="prog" style="--w:50%"><i></i></div><div class="ft"><span class="chip">Medium</span></div></div>
+        </div>
+        <div class="col" style="--c:var(--warn)">
+          <div class="ch"><i></i><b>On hold</b><small>3</small></div>
+          <div class="kc block"><div class="tt">Integration test env refresh</div><div class="pj">ERP migration · blocked by infra ticket #4821</div><div class="ft"><span class="chip work">Work</span><span class="chip over">Blocked 6d</span></div></div>
+          <div class="kc"><div class="tt">Basement office: electrician quote</div><div class="pj">Home</div><div class="ft"><span class="chip">Long</span><span class="chip">until Nov</span></div></div>
+          <div class="kc" style="--src:var(--finance)"><div class="tt">Switch internet provider</div><div class="pj">Personal · Subscriptions</div><div class="ft"><span class="chip src">Finance</span><span class="chip">contract ends Jan</span></div></div>
+        </div>
+        <div class="col" style="--c:var(--nightowl)">
+          <div class="ch"><i></i><b>Waiting on</b><small>4</small></div>
+          <div class="kc"><div class="tt">Steering: approve CR-013</div><div class="pj">ERP migration · waiting on J. Tremblay</div><div class="ft"><span class="chip work">Work</span><span class="chip">asked Oct 15</span></div></div>
+          <div class="kc"><div class="tt">Vendor: revised timeline</div><div class="pj">Data warehouse · waiting on Acme</div><div class="ft"><span class="chip work">Work</span><span class="chip due">nudge Wed</span></div></div>
+          <div class="kc" style="--src:var(--health)"><div class="tt">Lab results: ferritin</div><div class="pj">Personal · Health</div><div class="ft"><span class="chip src">Health</span></div></div>
+          <div class="kc"><div class="tt">Apple: Developer account review</div><div class="pj">Knocturn Labs</div><div class="ft"><span class="chip">Long</span></div></div>
+        </div>
+        <div class="col" style="--c:var(--ok)">
+          <div class="ch"><i></i><b>Done</b><small>this week · 12</small></div>
+          <div class="kc" style="opacity:.7"><div class="tt">Send Q4 status report to steering</div><div class="pj">ERP migration</div><div class="ft"><span class="chip work">Work</span><span class="chip" style="color:var(--ok)">Today</span></div></div>
+          <div class="kc" style="opacity:.7;--src:var(--health)"><div class="tt">Refill vitamin D</div><div class="pj">Personal · Health</div><div class="ft"><span class="chip src">Health</span><span class="chip" style="color:var(--ok)">Sun</span></div></div>
+          <div class="kc" style="opacity:.7"><div class="tt">RACI for data warehouse</div><div class="pj">Data warehouse</div><div class="ft"><span class="chip work">Work</span><span class="chip" style="color:var(--ok)">Fri</span></div></div>
+          <div class="kc" style="opacity:.7;--src:var(--hollow)"><div class="tt">Back up September photos</div><div class="pj">Personal · Files</div><div class="ft"><span class="chip src">Hollow</span><span class="chip" style="color:var(--ok)">Thu</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4 PM COPILOT ============ -->
+<section class="screen" id="s4">
+  <p class="note"><b>PM Copilot.</b> Left: the library, bundled with the app so it works on a plane (PMBOK 7 domains, Agile/Scrum/Kanban, PRINCE2, risk, stakeholders, templates, a FR/EN glossary, plus your own notes and past project post-mortems). Middle: a chat that can run on Claude, Gemini, or Offline (search and templates only, no model). Every answer cites library pages and can turn into tasks or a document in one tap. Right: your projects' health.</p>
+  <div class="cop">
+    <div class="lib">
+      <div class="search" style="max-width:none">⌕ Search the library</div>
+      <div class="g">Foundations</div>
+      <a class="on">PMBOK 7 · Performance domains <small>12</small></a>
+      <a>Process groups (PMBOK 6) <small>49</small></a>
+      <a>PRINCE2 principles <small>7</small></a>
+      <div class="g">Delivery</div>
+      <a>Agile · Scrum · Kanban <small>31</small></a>
+      <a>Hybrid and SAFe <small>14</small></a>
+      <a>Earned value · schedule <small>18</small></a>
+      <div class="g">Templates</div>
+      <a>Project charter</a><a>RAID log</a><a>RACI matrix</a><a>WBS</a><a>Status report</a><a>Change request</a><a>Lessons learned</a>
+      <div class="g">Yours</div>
+      <a>Post-mortems <small>6</small></a>
+      <a>Glossary FR ↔ EN <small>412</small></a>
+      <div style="flex:1"></div>
+      <div class="off"><i></i>1,240 pages cached · AI online</div>
+    </div>
+
+    <div class="chat">
+      <div class="ch"><b>Copilot</b><span class="chip">Project: ERP migration</span>
+        <div class="models"><span class="on"><i></i>Claude</span><span>Gemini</span><span>Offline</span></div>
+      </div>
+      <div class="msgs">
+        <div class="me">Start a RAID log for the ERP migration. We're 3 weeks from cutover, the test environment has been down 6 days and steering still hasn't approved CR-013.</div>
+        <div class="ai2">
+          <b>Here is a first RAID log, built from your board and the risk register template</b> <span class="cite">Templates › RAID log</span> <span class="cite">PMBOK 7 › Uncertainty</span>
+          <table>
+            <tr><th>Type</th><th>Item</th><th>Score</th><th>Owner</th></tr>
+            <tr><td>Risk</td><td>Cutover slips if the test env stays down past Oct 23 (needs 10 days of regression)</td><td style="color:var(--danger)">High · 4×4</td><td>Infra lead</td></tr>
+            <tr><td>Issue</td><td>Test env down 6 days, ticket #4821 unassigned</td><td style="color:var(--danger)">Open</td><td>You</td></tr>
+            <tr><td>Dependency</td><td>CR-013 approval gates the data-migration dry run</td><td style="color:var(--warn)">Due Oct 22</td><td>J. Tremblay</td></tr>
+            <tr><td>Assumption</td><td>Vendor keeps 2 engineers on site through cutover weekend</td><td>Unverified</td><td>Vendor PM</td></tr>
+          </table>
+          Suggested next steps: escalate #4821 today with the cutover date attached <span class="cite">Templates › Escalation note</span>, and ask steering for a decision on CR-013 by Wednesday, with the "no decision" consequence written out.
+          <div class="acts"><span class="p">Add 3 tasks to the board</span><span>Save as RAID log (.docx)</span><span>Draft the escalation email</span><span>Ask Gemini for a second read</span></div>
+        </div>
+        <div class="me">What does PRINCE2 say about tolerances here?</div>
+        <div class="ai2">PRINCE2 manages by exception: you set tolerances for time, cost, scope, quality, risk and benefits, and only escalate when a forecast breaches one <span class="cite">PRINCE2 › Principles › Manage by exception</span>. A 6-day outage three weeks from cutover almost certainly forecasts a time breach, so this goes to the project board as an <b>exception report</b>, not a status line. Want the exception-report template filled in from the RAID log above?</div>
+      </div>
+      <div class="composer">Ask about this project, a method, or a template… <span class="kbd">⏎</span><span class="send">Send</span></div>
+    </div>
+
+    <div class="side">
+      <div class="proj">
+        <h4>Project health</h4>
+        <div class="pr"><i style="background:var(--danger)"></i>ERP migration<small>cutover Nov 28</small></div>
+        <div class="pr"><i style="background:var(--warn)"></i>Data warehouse<small>SOW v3</small></div>
+        <div class="pr"><i style="background:var(--ok)"></i>CRM rollout<small>closing</small></div>
+        <div class="pr"><i style="background:var(--ok)"></i>Knocturn Labs apps<small>5 / 8 shipped</small></div>
+        <div class="rag"><div style="background:rgba(255,77,94,.15);color:var(--danger)">1 red</div><div style="background:rgba(255,122,69,.15);color:var(--warn)">1 amber</div><div style="background:rgba(61,220,132,.15);color:var(--ok)">2 green</div></div>
+      </div>
+      <div class="proj">
+        <h4>Next milestones</h4>
+        <div class="pr"><i style="background:var(--accent)"></i>CR-013 decision<small>Oct 22</small></div>
+        <div class="pr"><i style="background:var(--accent)"></i>Data migration dry run<small>Nov 4</small></div>
+        <div class="pr"><i style="background:var(--accent)"></i>Go / no-go<small>Nov 21</small></div>
+        <div class="pr"><i style="background:var(--accent)"></i>Cutover weekend<small>Nov 28</small></div>
+      </div>
+      <div class="proj">
+        <h4>Open risks by project</h4>
+        <div class="pr">ERP migration<small>7 · 2 high</small></div>
+        <div class="pr">Data warehouse<small>3</small></div>
+        <div class="pr">CRM rollout<small>1</small></div>
+      </div>
+      <div class="kelly" style="padding:12px"><div class="av" style="width:34px;height:34px"></div><div style="font-size:12.5px;color:var(--text-dim)"><b>Kelly</b> can read and write tasks here with the scopes you grant in Settings, so "Kelly, add a task to nudge Acme Wednesday" lands on the board.</div></div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const tabs=document.querySelectorAll('#tabs button'),screens=document.querySelectorAll('.screen');
+  tabs.forEach(b=>b.onclick=()=>{tabs.forEach(x=>x.classList.toggle('on',x===b));screens.forEach(s=>s.classList.toggle('on',s.id===b.dataset.t));window.scrollTo(0,0)});
+  document.querySelectorAll('.sw').forEach(s=>s.onclick=()=>{document.documentElement.dataset.accent=s.dataset.a;document.querySelectorAll('.sw').forEach(x=>x.classList.toggle('on',x===s))});
+</script>
+</body>
+</html>
