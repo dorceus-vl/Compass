@@ -8,6 +8,7 @@ import tasks from './routes/tasks.ts';
 import views from './routes/views.ts';
 import trash, { purgeTrash, purgeAudit, purgeSessions } from './routes/trash.ts';
 import inbox, { rules } from './routes/inbox.ts';
+import meetings from './routes/meetings.ts';
 import settings from './routes/settings.ts';
 import { stepUpChallenge } from './lib/step-up.ts';
 
@@ -30,6 +31,7 @@ app.route('/api/trash', trash);
 app.route('/api/settings', settings);
 app.route('/api/inbox', inbox);
 app.route('/api/rules', rules);
+app.route('/api/meetings', meetings);
 app.post('/api/step-up/challenge', stepUpChallenge);
 app.route('/api', views);
 app.notFound((c) => c.json({ error: 'Not found' }, 404));

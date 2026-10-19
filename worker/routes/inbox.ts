@@ -39,7 +39,7 @@ async function loadItem(env: Env, id: string): Promise<InboxItem | null> {
 
 const arrJson = (v: unknown): string => JSON.stringify(Array.isArray(v) ? v : []);
 const parseArr = (v: unknown): unknown[] => { try { const a = JSON.parse(String(v)); return Array.isArray(a) ? a : []; } catch { return []; } };
-const asReview = (r: Record<string, unknown>): MeetingReview => ({ ...(r as unknown as MeetingReview), decisions: parseArr(r.decisions) as MeetingReview['decisions'],
+export const asReview =(r: Record<string, unknown>): MeetingReview => ({ ...(r as unknown as MeetingReview), decisions: parseArr(r.decisions) as MeetingReview['decisions'],
   action_items: parseArr(r.action_items) as MeetingReview['action_items'], open_questions: parseArr(r.open_questions) as MeetingReview['open_questions'],
   important_notes: parseArr(r.important_notes) as MeetingReview['important_notes'] });
 
