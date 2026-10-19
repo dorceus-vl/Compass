@@ -4,12 +4,13 @@ const listeners = new Set<() => void>();
 export function navigate(path: string, replace = false) { history[replace ? 'replaceState' : 'pushState'](null, '', path); listeners.forEach((l) => l()); }
 window.addEventListener('popstate', () => listeners.forEach((l) => l()));
 
-/** Paths: / board list upcoming timeline projects projects/:id inbox settings trash. */
+/** Paths: / board list upcoming timeline projects projects/:id inbox meetings meetings/:id settings trash. */
 export function useRoute(): { path: string; params: Record<string, string> } {
   const [, tick] = useState(0);
   useEffect(() => { const l = () => tick((n) => n + 1); listeners.add(l); return () => { listeners.delete(l); }; }, []);
   const parts = location.pathname.split('/').filter(Boolean);
   if (parts[0] === 'projects' && parts[1]) return { path: 'project', params: { id: parts[1] } };
+  if (parts[0] === 'meetings' && parts[1]) return { path: 'meeting', params: { id: parts[1] } };
   return { path: parts[0] ?? 'today', params: {} };
 }
 

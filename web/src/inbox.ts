@@ -73,6 +73,19 @@ export async function reviewPath(item: InboxItem): Promise<string> {
   return m ? `/meetings/${m.id}` : '/meetings';
 }
 
+/** Every meeting review, newest first. Online it also refreshes the IndexedDB copy (`cache:meetings`); offline (or on a network error) the last copy is returned with `offline: true`. */
+export async function loadMeetings(): Promise<{ meetings: MeetingReview[]; offline: boolean; known: boolean }> {
+  try {
+    const { meetings } = await api<{ meetings: MeetingReview[] }>('/meetings?state=all');
+    await idb.put('meta', { id: 'cache:meetings', meetings, at: new Date().toISOString() }).catch(() => {});
+    return { meetings, offline: false, known: true };
+  } catch (e) {
+    if (e instanceof SignedOut) throw e;
+    const c = await idb.get<{ meetings: MeetingReview[] }>('meta', 'cache:meetings').catch(() => undefined);
+    return { meetings: c?.meetings ?? [], offline: true, known: !!c };
+  }
+}
+
 export function useInbox() {
   const s = useSyncExternalStore(subscribe, () => st);
   useEffect(() => { void refreshInbox(); }, []); // a view that mounts later still gets a fresh list
