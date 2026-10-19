@@ -116,7 +116,7 @@ function OfflinePanel({ text, reason }: { text: string; reason: string }) {
   const templates = BUILTIN_TEMPLATES.filter((n) => ws.some((w) => n.toLowerCase().includes(w)));
   const answers = saved.filter((s) => ws.some((w) => s.content.toLowerCase().includes(w))).slice(0, 5);
   return (
-    <div className="card cp-off" role="status">
+    <div className="card cp-off">
       <b>{reason}</b>
       <div className="eyebrow">Library</div>
       {hits.length ? <div className="lib-list">{hits.map(({ page, snippet }) => (
@@ -167,7 +167,9 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
   const [pending, setPending] = useState<string | null>(null);
   const [err, setErr] = useState<Err | null>(null);
   const [off, setOff] = useState<string | null>(null);
-  const cur = useRef<string | null>(null), picked = useRef(false), box = useRef<HTMLDivElement>(null), follow = useRef(false);
+  const cur = useRef<string | null>(null), picked = useRef(false), box = useRef<HTMLDivElement>(null), follow = useRef(false), ta = useRef<HTMLTextAreaElement>(null);
+  const [live, setLive] = useState(''); // the one polite live region: what is happening, announced to screen readers
+  const refocus = () => ta.current?.focus();
 
   // Load the thread when the route points at another one; the thread this component just created is already in state.
   useEffect(() => {
@@ -190,31 +192,32 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
   const lastAnswer = msgs.length - 1;
 
   const fail = (e: unknown, again: Err['again']) => {
-    if (e instanceof ApiError && e.code === 'offline_boundary') setOff('Offline only: nothing leaves Compass for this project.');
-    else setErr({ message: e instanceof ApiError ? e.message : "Couldn't reach Compass. Check your connection and try again.", again });
+    if (e instanceof ApiError && e.code === 'offline_boundary') showOff('Offline only: nothing leaves Compass for this project.');
+    else { const message = e instanceof ApiError ? e.message : "Couldn't reach Compass. Check your connection and try again."; setErr({ message, again }); setLive(message); }
   };
+  const showOff = (reason: string) => { setOff(reason); setLive(`${reason} Results are below.`); };
   const send = async () => {
     const message = text.trim();
     if (!message || busy) return;
     setErr(null); follow.current = true;
-    if (project?.data_boundary === 'offline') { setOff('Offline only: nothing leaves Compass for this project.'); return; }
-    if (!online()) { setOff('No connection: nothing was sent. This is what Compass has on this device.'); return; }
-    setOff(null); setBusy(true); setPending(message); follow.current = true;
+    if (project?.data_boundary === 'offline') { showOff('Offline only: nothing leaves Compass for this project.'); refocus(); return; }
+    if (!online()) { showOff('No connection: nothing was sent. This is what Compass has on this device.'); refocus(); return; }
+    setOff(null); setBusy(true); setPending(message); follow.current = true; setLive('Copilot is answering…');
     try {
       const r = await ask({ thread_id: thread?.id, project_id: thread ? undefined : projSel || undefined, provider: prov, message, preset: preset ?? undefined, page: thread ? undefined : page });
       cur.current = r.thread.id;
       setThread(r.thread); setMsgs((x) => [...x, ...r.messages]); setText(''); setPreset(null); setMissing(false);
       if (!id) onOpen(r.thread.id, true);
-      onSent();
+      onSent(); setLive('Answer ready');
     } catch (e) { fail(e, 'send'); }
-    finally { setBusy(false); setPending(null); }
+    finally { setBusy(false); setPending(null); refocus(); }
   };
   const askToo = async (p: Provider) => {
     if (!thread || busy) return;
-    setErr(null); setBusy(true); follow.current = true;
-    try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true }); setMsgs((x) => [...x, ...r.messages]); onSent(); }
+    setErr(null); setBusy(true); follow.current = true; setLive('Copilot is answering…');
+    try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true }); setMsgs((x) => [...x, ...r.messages]); onSent(); setLive('Answer ready'); }
     catch (e) { fail(e, p); }
-    finally { setBusy(false); }
+    finally { setBusy(false); refocus(); }
   };
   const save = async (m: AiMessage) => {
     try { const n = await saveMessage(m.id, !m.saved); setMsgs((x) => x.map((y) => (y.id === n.id ? n : y))); }
@@ -229,6 +232,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
         <b style={{ overflowWrap: 'anywhere' }}>{thread ? thread.title : 'New conversation'}</b>
         {thread && <span className="chip">{thread.project_id ? projects.find((p) => p.id === thread.project_id)?.name ?? 'Project' : 'Personal'}</span>}
       </div>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{live}</div>
       <div className="cp-msgs" ref={box}>
         {!thread && !pending && !off && <div className="card"><p style={{ margin: 0 }}>Ask about a situation, a plan or a page of the library. Pick a project to give the copilot its context.</p></div>}
         {msgs.map((m, i) => m.role === 'user'
@@ -237,8 +241,8 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
             onOther={i === lastAnswer && !busy && lastUser >= 0 && providerReady(usage, OTHER[m.provider ?? 'claude'])
               && !msgs.slice(lastUser).some((y) => y.role === 'assistant' && y.provider === OTHER[m.provider ?? 'claude']) && (() => void askToo(OTHER[m.provider ?? 'claude']))} />)}
         {pending && <div className="cp-user">{pending}</div>}
-        {busy && <div className="cp-typing" role="status" aria-label={`${NAME[prov]} is writing`}><i /><i /><i /></div>}
-        {err && <div className="card cp-err" role="alert"><span>{err.message}</span>
+        {busy && <div className="cp-typing" aria-hidden="true"><i /><i /><i /></div>}
+        {err && <div className="card cp-err"><span>{err.message}</span>
           <button type="button" className="btn" onClick={() => void (err.again === 'send' ? send() : askToo(err.again))}>Retry</button></div>}
         {off && <OfflinePanel text={text} reason={off} />}
       </div>
@@ -253,7 +257,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
         {(['claude', 'gemini'] as const).some((p) => !providerReady(usage, p)) && <small className="sub">Not set up: see Settings → AI ({(['claude', 'gemini'] as const).filter((p) => !providerReady(usage, p)).map((p) => NAME[p]).join(', ')})</small>}
         <div className="row" role="group" aria-label="Presets">
           {PRESETS.map((p) => <button type="button" key={p.id} className={`chip ${preset === p.id ? 'on' : ''}`} aria-pressed={preset === p.id} onClick={() => setPreset(preset === p.id ? null : p.id)}>{p.label}</button>)}</div>
-        <textarea className="field" rows={4} aria-label="Message" value={text} maxLength={8000} placeholder={preview ? preview.prompt : 'Ask anything…'}
+        <textarea ref={ta} className="field" rows={4} aria-label="Message" value={text} maxLength={8000} placeholder={preview ? preview.prompt : 'Ask anything…'}
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send(); } }} />
         {project?.data_boundary === 'offline' && <small className="sub">Offline only: Send searches Compass instead of asking a model.</small>}
         <div className="row" style={{ justifyContent: 'space-between' }}>
