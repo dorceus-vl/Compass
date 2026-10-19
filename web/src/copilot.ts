@@ -40,7 +40,5 @@ export const providerReady = (u: Usage | null, p: Provider) => !u || u.keys[p] |
 export const usd = (micro: number, digits = 2) => `$${(micro / 1e6).toFixed(digits)}`;
 export const spend = (u: Usage) => `${usd(u.month_cost_micro)} of $${+(u.cap_micro / 1e6).toFixed(2)}`;
 
-// ponytail: static list of the built-in templates (ruling P3-1); Task 11 replaces it with the real template list.
-export const BUILTIN_TEMPLATES = ['Charter', 'RAID log', 'RACI', 'WBS outline', 'Status report', 'Change request', 'Exception report', 'Lessons learned'];
 /** Words of at least 3 letters, lower-cased. */
 export const words = (q: string) => (q.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);

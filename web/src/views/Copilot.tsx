@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AiMessage, AiThread, Project, Provider, Settings } from '../../../shared/types.ts';
 import { PRESETS, type PresetId } from '../../../shared/presets.ts';
 import { api, ApiError, online } from '../api.ts';
-import { ask, loadThread, loadThreads, loadSaved, loadUsage, saveMessage, providerReady, spend, usd, words, BUILTIN_TEMPLATES, type Usage, type SavedMessage } from '../copilot.ts';
+import { ask, loadThread, loadThreads, loadSaved, loadUsage, saveMessage, providerReady, spend, usd, words, type Usage, type SavedMessage } from '../copilot.ts';
 import { govCreate } from '../gov.ts';
 import { idb } from '../store/db.ts';
 import { useStore, createTask } from '../store/useStore.ts';
 import { useLibrary } from '../library.ts';
+import { BUILTINS } from '../docs/templates.ts';
+import { useDocs } from './project/Documents.tsx';
 import { Markdown } from '../ui/Markdown.tsx';
 import { Link, navigate } from '../router.ts';
 import { toast } from '../ui/dialogs.tsx';
@@ -107,13 +109,17 @@ function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null 
 }
 
 // ---------------------------------------------------------------- offline mode
-function OfflinePanel({ text, reason }: { text: string; reason: string }) {
+function OfflinePanel({ text, reason, project }: { text: string; reason: string; project: Project | null }) {
   const { find, ready } = useLibrary();
+  const { docs } = useDocs(null);
   const [saved, setSaved] = useState<SavedMessage[]>([]);
   useEffect(() => { loadSaved().then(setSaved).catch(() => {}); }, []);
   const ws = words(text);
   const hits = text.trim() ? find(text, 5) : [];
-  const templates = BUILTIN_TEMPLATES.filter((n) => ws.some((w) => n.toLowerCase().includes(w)));
+  const match = (n: string) => ws.some((w) => n.toLowerCase().includes(w));
+  const templates = [...BUILTINS.filter((b) => match(b.name)).map((b) => ({ key: b.id, name: b.name })),
+    ...docs.filter((d) => d.is_template && match(d.name)).map((d) => ({ key: d.id, name: d.name }))];
+  const to = project ? `/projects/${project.id}/report` : '/projects';
   const answers = saved.filter((s) => ws.some((w) => s.content.toLowerCase().includes(w))).slice(0, 5);
   return (
     <div className="card cp-off">
@@ -123,7 +129,7 @@ function OfflinePanel({ text, reason }: { text: string; reason: string }) {
         <Link key={page.slug} to={`/library/${page.slug}`} className="card lib-hit" style={{ padding: 12 }}><b>{page.title}</b><p>{snippet}</p></Link>))}</div>
         : <p className="sub" style={{ margin: 0 }}>{ready ? 'Nothing in the library matches.' : 'Loading the library…'}</p>}
       <div className="eyebrow">Templates</div>
-      {templates.length ? <div className="row">{templates.map((n) => <span key={n} className="chip">{n}</span>)}</div> : <p className="sub" style={{ margin: 0 }}>No template names match.</p>}
+      {templates.length ? <div className="row">{templates.map((t) => <Link key={t.key} to={to} className="chip" title={project ? 'Open the Report tab' : 'Pick a project, then open its Report tab'}>{t.name}</Link>)}</div> : <p className="sub" style={{ margin: 0 }}>No template names match.</p>}
       <div className="eyebrow">Saved answers</div>
       {answers.length ? <div className="lib-list">{answers.map((s) => (
         <Link key={s.id} to={`/copilot/${s.thread_id}`} className="card lib-hit" style={{ padding: 12 }}><b>{s.thread_title}</b><p>{s.content.slice(0, 200)}</p></Link>))}</div>
@@ -244,7 +250,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
         {busy && <div className="cp-typing" aria-hidden="true"><i /><i /><i /></div>}
         {err && <div className="card cp-err"><span>{err.message}</span>
           <button type="button" className="btn" onClick={() => void (err.again === 'send' ? send() : askToo(err.again))}>Retry</button></div>}
-        {off && <OfflinePanel text={text} reason={off} />}
+        {off && <OfflinePanel text={text} reason={off} project={project} />}
       </div>
       <div className="card cp-compose">
         <div className="row">

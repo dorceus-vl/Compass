@@ -6,6 +6,9 @@ import { navigate, Link } from '../router.ts';
 import { pull } from '../store/sync.ts';
 import { useStore } from '../store/useStore.ts';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
+import { minutesDoc } from '../docs/templates.ts';
+import { toMarkdown } from '../docs/to-md.ts';
+import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
 
 interface Act { on: boolean; text: string; owner: string; due: string; at: string }
 interface Pick { on: boolean; text: string; at: string }
@@ -112,6 +115,12 @@ export function MeetingView({ id }: { id: string }) {
         onClick={(e) => { e.preventDefault(); setFlags((f) => { const { [k]: cur, ...rest } = f; return cur === t ? rest : { ...rest, [k]: t }; }); }}>{t === 'risk' ? 'Risk' : 'Issue'}</button>)}
     </span>);
   const h2 = { fontSize: 16, margin: '22px 0 10px' } as const;
+  const minutes = () => minutesDoc(m, projects.find((x) => x.id === (m.project_id ?? project))?.name ?? null);
+  const minutesName = fileName('Minutes', m.title, m.received_at.slice(0, 10));
+  const minutesWord = async () => {
+    try { const { toDocx } = await import('../docs/to-docx.ts'); saveBytes(await toDocx(minutes()), `${minutesName}.docx`, DOCX_TYPE); }
+    catch (e) { toast((e as Error).message); }
+  };
 
   return (
     <>
@@ -160,6 +169,13 @@ export function MeetingView({ id }: { id: string }) {
         <h2 style={h2}>Important notes</h2>
         <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6 }}>{notes.map((x, i) => <li key={i} style={{ overflowWrap: 'anywhere' }}><span className="row" style={{ gap: 6 }}><span style={{ flex: '1 1 200px', minWidth: 0 }}>{x.text}{x.at && <> <span className="chip">{x.at}</span></>}</span>{flag(`n${i}`)}</span></li>)}</ul>
       </>}
+
+      <h2 style={h2}>Minutes</h2>
+      <div className="row">
+        <button type="button" className="btn" onClick={() => void minutesWord()}>Word</button>
+        <button type="button" className="btn" onClick={() => saveText(toMarkdown(minutes()), `${minutesName}.md`)}>Markdown</button>
+        <small className="sub">The meeting as it was received: summary, decisions, actions, questions and notes.</small>
+      </div>
 
       {open && (
         <div className="row" style={{ marginTop: 24, justifyContent: 'space-between' }}>

@@ -13,10 +13,12 @@ import { Decisions } from './project/Decisions.tsx';
 import { Lessons } from './project/Lessons.tsx';
 import { ProjectCopilot } from './project/ProjectCopilot.tsx';
 import { ProjectMeetings } from './project/ProjectMeetings.tsx';
+import { Documents } from './project/Documents.tsx';
+import { Report } from './project/Report.tsx';
 import { fmtDue, today } from '../dates.ts';
 
-const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'copilot'] as const;
-const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', copilot: 'Copilot' };
+const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
+const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Copilot' };
 
 export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string }) {
   const { projects, tasks, milestones, ready } = useStore();
@@ -57,7 +59,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
   const current = (TABS as readonly string[]).includes(tab) ? tab : 'overview';
   return (
     <>
-      <div className="head">
+      <div className="head no-print">
         <div><div className="eyebrow">{p.kind} project · {p.status.replace('_', ' ')}</div>
           <input key={p.id} className="field" style={{ fontSize: 26, fontWeight: 800, background: 'transparent', border: 0, padding: 0, letterSpacing: -0.6 }} defaultValue={p.name} onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== p.name && save({ name: e.target.value.trim() })} aria-label="Project name" /></div>
         <div className="row">
@@ -66,7 +68,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
           <button className="btn" style={{ color: 'var(--danger)' }} onClick={async () => { if (await confirmAction(`Move "${p.name}" to Trash? Its tasks stay on the board.`, { danger: true })) { await trashProject(p.id); toast('Moved to Trash'); navigate('/projects'); } }}>Trash</button>
         </div>
       </div>
-      <nav className="tabs" role="tablist" aria-label="Project sections">
+      <nav className="tabs no-print" role="tablist" aria-label="Project sections">
         {TABS.map((t) => <Link key={t} to={`/projects/${p.id}${t === 'overview' ? '' : `/${t}`}`} role="tab" aria-selected={current === t}>{TAB_LABEL[t]}</Link>)}
         <Link to={`/timeline?project=${p.id}`} role="tab" aria-selected={false}>Timeline</Link>
       </nav>
@@ -75,6 +77,8 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
       {current === 'decisions' && <Decisions key={p.id} project={p} />}
       {current === 'lessons' && <Lessons key={p.id} project={p} />}
       {current === 'meetings' && <ProjectMeetings key={p.id} project={p} />}
+      {current === 'documents' && <Documents key={p.id} project={p} />}
+      {current === 'report' && <Report key={p.id} project={p} />}
       {current === 'copilot' && <ProjectCopilot key={p.id} project={p} />}
       {current === 'overview' && <div className="two" key={p.id}>
         <div style={{ display: 'grid', gap: 14 }}>

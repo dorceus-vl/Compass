@@ -7,6 +7,7 @@ import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
+import { Documents } from './project/Documents.tsx';
 
 type Patch = Partial<Omit<Settings, 'wip_limits' | 'push'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']> };
 type Save = (patch: Patch) => Promise<void>;
@@ -64,6 +65,11 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Notifications s={s} save={save} />
       <Rules />
       <Email s={s} save={save} />
+      <div className="card">
+        <div className="eyebrow" style={{ marginBottom: 6 }}>Documents</div>
+        <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-dim)' }}>Unfiled documents: files that are not in a project. Project files live on the project's Documents tab.</p>
+        <Documents project={null} />
+      </div>
       <div className="card">
         <div className="eyebrow" style={{ marginBottom: 6 }}>Board limits (work in progress)</div>
         {(['new', 'progress', 'hold', 'waiting'] as Status[]).map((k) => row(WIP_LABELS[k]!, <input key={`${k}:${s.wip_limits[k]}`} className="field" type="number" min={1} max={99} placeholder="none" defaultValue={s.wip_limits[k] ?? ''} onBlur={(e) => {
