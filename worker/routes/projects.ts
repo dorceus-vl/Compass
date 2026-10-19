@@ -77,7 +77,7 @@ projects.patch('/:id', async (c) => {
   const r = checkAll(body, PROJECT_CHECKS);
   if ('error' in r) return c.json({ error: r.error }, 400);
   if ('name' in r.values && !r.values.name) return c.json({ error: 'name is required' }, 400);
-  if (r.values.data_boundary !== undefined && r.values.data_boundary !== project.data_boundary) return c.json({ error: 'data_boundary changes need the passkey step-up', step_up: true }, 403); // Phase 3 wires the step-up here
+  if (r.values.data_boundary !== undefined && r.values.data_boundary !== project.data_boundary) return c.json({ error: 'Changing the data boundary arrives in Phase 3.' }, 403);
   const next = { ...project, ...r.values, updated_at: now() } as Project;
   const s = await seal(c.env, 'projects', { ...next });
   const cols = Object.keys(r.values).concat('updated_at', 'enc_v');

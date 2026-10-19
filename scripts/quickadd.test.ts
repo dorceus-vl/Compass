@@ -13,6 +13,8 @@ assert.equal(q('pay rent tomorrow !3').priority, 3);
 assert.equal(q('pay rent tomorrow !3').due_at, '2026-10-20');
 assert.equal(q('status report every week').recur, '{"freq":"weekly","interval":1}');
 assert.equal(q('status report every week').title, 'status report');
+assert.equal(q('status report every week').due_at, T, 'recur with no date starts today');
+assert.equal(q('standup every day wed').due_at, '2026-10-21', 'an explicit date wins');
 assert.equal(q('call mom in 3 days').due_at, '2026-10-22');
 assert.equal(q('taxes oct 24').due_at, '2026-10-24');
 assert.equal(q('taxes 24/10').due_at, '2026-10-24');

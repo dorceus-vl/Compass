@@ -15,6 +15,14 @@ export const text = (max = 1000): Check => (v, f) => {
   return { value: s || null };
 };
 
+/** An https: URL (spec §5.1 source_url); empty becomes null. */
+export const httpsUrl = (max = 2048): Check => (v, f) => {
+  const r = text(max)(v, f);
+  if ('error' in r || r.value === null) return r;
+  try { if (new URL(r.value as string).protocol === 'https:') return r; } catch { /* falls through */ }
+  return { error: `${f} must be an https URL` };
+};
+
 export const num = (min = -Infinity, max = Infinity, { nullable = true, integer = false } = {}): Check => (v, f) => {
   if ((v === null || v === '' || v === undefined) && nullable) return { value: null };
   const n = typeof v === 'string' ? Number(v) : v;

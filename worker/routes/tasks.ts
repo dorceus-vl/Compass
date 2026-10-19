@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
 import type { Task, TaskEvent, Status } from '../../shared/types.ts';
-import { checkAll, text, oneOf, date, num, type Check } from '../lib/validate.ts';
+import { checkAll, text, httpsUrl, oneOf, date, num, type Check } from '../lib/validate.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
@@ -15,7 +15,7 @@ const CHECKS: Record<string, Check> = {
   title: text(300), notes: text(20000), project_id: text(40), parent_id: text(40), kind: oneOf('personal', 'work'),
   horizon: oneOf('short', 'medium', 'long'), status: oneOf('new', 'progress', 'hold', 'waiting', 'done'), priority: num(0, 3, { integer: true, nullable: false }),
   start_at: date(), due_at: date(), estimate_minutes: num(0, 100000, { integer: true }), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
-  recur: text(300), source_url: text(2048), tags: text(1000),
+  recur: text(300), source_url: httpsUrl(2048), tags: text(1000),
 };
 const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','status','priority','start_at','due_at','done_at','estimate_minutes','waiting_on','waiting_since',
   'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
@@ -68,8 +68,9 @@ async function completeTask(env: Env, task: Task, fields: string[] = []): Promis
   await updateTask(env, done, ['status', 'done_at', ...fields]);
   await addEvent(env, done, 'you', 'done');
   const rule = parseRecur(done.recur);
-  if (!rule || !done.due_at) return { task: done };
-  const due = nextOccurrence(done.due_at, rule, localDate((await getSettings(env)).tz));
+  if (!rule) return { task: done };
+  const today = localDate((await getSettings(env)).tz);
+  const due = nextOccurrence(done.due_at ?? today, rule, today);
   if (!due) return { task: done };
   const next: Task = { ...done, id: crypto.randomUUID(), status: 'new', due_at: due, done_at: null, created_at: t, updated_at: t, sort_in_column: 0, source_ref: null };
   await insertTask(env, next);
@@ -85,7 +86,7 @@ tasks.get('/', async (c) => {
   if (q.status === 'all') { /* everything */ } else if (q.status) { where.push(`status = ?${args.push(q.status)}`); } else where.push(`status != 'done'`);
   if (q.project) where.push(`project_id = ?${args.push(q.project)}`);
   if (q.kind) where.push(`kind = ?${args.push(q.kind)}`);
-  if (q.since) where.push(`updated_at > ?${args.push(q.since)}`);
+  if (q.since) where.push(`updated_at >= ?${args.push(q.since)}`);
   const { results } = await c.env.DB.prepare(`SELECT * FROM tasks ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY sort_in_column, created_at`).bind(...args).all<Task>();
   return c.json({ tasks: await openAll(c.env, 'tasks', results) });
 });
@@ -138,10 +139,13 @@ tasks.patch('/:id', async (c) => {
   const fields = Object.keys(r.values);
   const next: Task = { ...task, ...(r.values as Partial<Task>), updated_at: now() };
   // Kind follows the project; a body `kind` only counts for a task that ends up with no project.
+  // Only re-resolve when the project changes: a task whose project is in the trash must stay editable.
   if (next.project_id) {
-    const kind = await projectKind(c.env, next.project_id);
-    if (!kind) return c.json({ error: 'project not found' }, 404);
-    next.kind = kind;
+    if ('project_id' in r.values) {
+      const kind = await projectKind(c.env, next.project_id);
+      if (!kind) return c.json({ error: 'project not found' }, 404);
+      next.kind = kind;
+    } else next.kind = task.kind;
   }
   fields.push('kind');
   if (next.status === 'waiting' && task.status !== 'waiting') { next.waiting_since = next.updated_at; fields.push('waiting_since'); }
