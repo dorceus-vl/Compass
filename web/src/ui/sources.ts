@@ -1,0 +1,1 @@
+export const SRC: Record<string, string> = { finance: 'var(--finance)', health: 'var(--health)', hollow: 'var(--hollow)', aura: 'var(--aura)', home: 'var(--aura)', sonarflow: 'var(--sonar)', kelly: 'var(--kelly)', email: 'var(--kelly)' };
