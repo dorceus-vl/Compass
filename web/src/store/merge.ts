@@ -5,10 +5,27 @@ export function mergeRows<T extends { id: string; updated_at: string }>(local: T
   return [...out.values()];
 }
 
-/** For lists the server returns in full (projects, milestones): a local row absent remotely was trashed elsewhere, unless it is an unsent `tmp-` create. */
-export function mergeComplete<T extends { id: string; updated_at: string }>(local: T[], remote: T[]): T[] {
-  const ids = new Set(remote.map((r) => r.id));
-  return mergeRows(local.filter((r) => r.id.startsWith('tmp-') || ids.has(r.id)), remote);
+type Row = { id: string; updated_at: string; deleted_at?: string | null };
+
+/** Remote rows that replace the local copy: new rows, and rows at least as new (the same rule as mergeRows). */
+export function remoteWins<T extends Row>(local: T[], remote: T[]): T[] {
+  const l = new Map(local.map((r) => [r.id, r]));
+  return remote.filter((r) => { const x = l.get(r.id); return !x || r.updated_at >= x.updated_at; });
+}
+
+/**
+ * What a pull writes, so it never rewrites rows it did not change.
+ * - Local `tmp-` rows survive only while a queued create (`claimed`) still owns them; any other is a phantom.
+ * - `complete`: the remote list is the whole truth (projects, milestones), so non-tmp rows missing remotely were trashed elsewhere.
+ * - Remote rows with `deleted_at` (trashed elsewhere) are deleted locally, never stored.
+ */
+export function planPull<T extends Row>(local: T[], remote: T[], claimed: Set<string>, complete: boolean): { put: T[]; del: string[] } {
+  const del = new Set<string>(), seen = new Set(remote.map((r) => r.id)), kept: T[] = [];
+  for (const r of local) {
+    if (r.id.startsWith('tmp-') ? !claimed.has(r.id) : complete && !seen.has(r.id)) del.add(r.id); else kept.push(r);
+  }
+  for (const r of remote) if (r.deleted_at) del.add(r.id);
+  return { put: remoteWins(kept, remote.filter((r) => !r.deleted_at)), del: [...del] };
 }
 
 /** Temporary ids of offline creates: `tmp-` + a UUID. */
