@@ -130,6 +130,42 @@ MODEL=$(D1X "SELECT count(*) AS n FROM lessons l JOIN projects p ON p.id = l.pro
 curl "${H[@]}" -X DELETE $B/api/projects/$PO >/dev/null
 curl "${H[@]}" -X DELETE $B/api/projects/$PL >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PW >/dev/null
 echo "smoke: (l) library search, tree, imports (personal lesson in, work lesson out), 404"
+# Documents (Phase 3 Task 9): personal PDF imported to the library; work PDF sealed in R2 and refused by the library; template placeholders; a renamed .exe refused.
+HF=(-s -b $J -c $J -H "Origin: $B"); SCR=$(mktemp -d)
+up() { curl "${HF[@]}" -w '\n%{http_code}' -F "file=$1" "${@:2}" $B/api/documents; }
+DP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke docs personal","kind":"personal"}' | js d.project.id)
+DW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke docs work","kind":"work"}' | js d.project.id)
+U1=$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "project_id=$DP"); [ "$(printf '%s' "$U1" | tail -1)" = 201 ] || fail "personal pdf upload: $U1"
+D1=$(printf '%s' "$U1" | head -1 | js d.document.id)
+printf '%s' "$U1" | grep -q 'r2_key' && fail "document response leaks r2_key"
+IM=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/library/import -d "{\"document_id\":\"$D1\",\"title\":\"Smoke hello $R\"}"); [ "$(printf '%s' "$IM" | tail -1)" = 201 ] || fail "library import: $IM"
+SLUG=$(printf '%s' "$IM" | head -1 | js d.page.slug)
+curl "${H[@]}" "$B/api/library?q=hello" | grep -q "\"slug\":\"$SLUG\"" || fail "imported page not found by search"
+[ "$(curl "${H[@]}" $B/api/documents/$D1 | js d.document.text_indexed)" = 1 ] || fail "text_indexed not set"
+curl "${H[@]}" $B/api/documents/$D1/file -D $SCR/h -o $SCR/f; head -c4 $SCR/f | grep -q '%PDF' || fail "personal file did not download"
+grep -qi '^content-disposition: attachment' $SCR/h || fail "document not served as attachment"
+U2=$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "project_id=$DW"); [ "$(printf '%s' "$U2" | tail -1)" = 201 ] || fail "work pdf upload: $U2"
+D2=$(printf '%s' "$U2" | head -1 | js d.document.id)
+npx wrangler r2 object get compass-files/docs/$D2 --local --file $SCR/raw >/dev/null 2>&1 || fail "could not read the sealed object"
+head -c4 $SCR/raw | grep -q '%PDF' && fail "work file is stored unsealed"
+curl "${H[@]}" $B/api/documents/$D2/file -o $SCR/w; head -c4 $SCR/w | grep -q '%PDF' || fail "sealed work file did not open"
+[ "$(D1X "SELECT enc_v AS n FROM documents WHERE id='$D2'" | js 'd[0].results[0].n')" = 2 ] || fail "work document name not sealed"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/library/import -d "{\"document_id\":\"$D2\"}")" = 403 ] || fail "work document imported to the library"
+node -e 'const f=require("fflate");const x=s=>f.strToU8(s);require("fs").writeFileSync(process.argv[1],f.zipSync({"word/document.xml":x("<w:document xmlns:w=\"x\"><w:body><w:p><w:r><w:t>Hi {{proj</w:t></w:r><w:r><w:t>ect.name}}</w:t></w:r></w:p></w:body></w:document>"),"word/header1.xml":x("<w:hdr xmlns:w=\"x\"><w:p><w:r><w:t>{{report.date}}</w:t></w:r></w:p></w:hdr>")}))' $SCR/t.docx
+U3=$(up "@$SCR/t.docx;filename=t.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document" -F "is_template=1"); [ "$(printf '%s' "$U3" | tail -1)" = 201 ] || fail "template upload: $U3"
+printf '%s' "$U3" | head -1 | js 'JSON.stringify(d.document.placeholders)==="[\"project.name\",\"report.date\"]"&&d.document.is_template===1' | grep -q true || fail "template placeholders: $U3"
+[ "$(up "@scripts/fixtures/hello.pdf;filename=evil.exe;type=application/pdf" | tail -1)" = 400 ] || fail "renamed .exe accepted"
+[ "$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "is_template=1" | tail -1)" = 400 ] || fail "pdf accepted as a template"
+D3=$(printf '%s' "$U3" | head -1 | js d.document.id)
+curl "${H[@]}" -X PATCH $B/api/documents/$D3 -d '{"name":"renamed.docx","is_template":0}' | js 'd.document.name==="renamed.docx"&&d.document.is_template===0&&d.document.placeholders.length===0' | grep -q true || fail "document patch"
+curl "${H[@]}" -X DELETE $B/api/library/$SLUG | grep -q '"ok":true' || fail "library remove"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/library/how-to-use-the-library)" = 404 ] || fail "a bundled page could be removed"
+curl "${H[@]}" "$B/api/library?q=hello" | grep -q "\"slug\":\"$SLUG\"" && fail "removed import still searchable"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'document.%' AND detail LIKE '%hello%'" | js 'd[0].results[0].n')" = 0 ] || fail "a file name reached the audit log"
+for x in $D1 $D2 $D3; do curl "${H[@]}" -X DELETE $B/api/documents/$x | grep -q '"ok":true' || fail "document trash"; done
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/documents/$D1/file)" = 404 ] || fail "trashed document still served"
+curl "${H[@]}" -X DELETE $B/api/projects/$DP >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$DW >/dev/null; rm -rf $SCR
+echo "smoke: (q) pdf upload -> import -> searchable -> removed; work pdf sealed in R2 and opens, import 403; template placeholders; .exe 400"
 # Copilot (Phase 3 Task 7), on the local stub (AI_STUB=1 with DEV_LOGIN=1 in .dev.vars; no key, no provider call).
 AT0=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 P1=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke copilot personal","kind":"personal"}' | js d.project.id)

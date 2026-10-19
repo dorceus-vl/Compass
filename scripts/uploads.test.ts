@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { checkDoc, fileResponse } from '../worker/lib/uploads.ts';
+
+const PDF = new TextEncoder().encode('%PDF-1.7'), ZIP = new Uint8Array([0x50, 0x4b, 3, 4]);
+const f = (name: string, type: string, size = 100) => ({ name, type, size });
+assert.deepEqual(checkDoc(f('a.pdf', 'application/pdf'), PDF), { kind: 'pdf', type: 'application/pdf' });
+assert.ok('error' in checkDoc(f('a.pdf', 'application/pdf'), ZIP), 'pdf needs %PDF');
+assert.ok('error' in checkDoc(f('a.pdf', 'text/plain'), PDF), 'declared type must match');
+const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+assert.deepEqual(checkDoc(f('a.docx', ''), ZIP), { kind: 'docx', type: docx });
+assert.deepEqual(checkDoc(f('A.DOCX', docx), ZIP), { kind: 'docx', type: docx });
+assert.ok('error' in checkDoc(f('a.docx', ''), PDF), 'docx needs PK');
+assert.ok('error' in checkDoc(f('a.xlsx', 'text/plain'), ZIP));
+assert.deepEqual(checkDoc(f('a.md', 'text/plain'), new Uint8Array([35])), { kind: 'md', type: 'text/markdown' });
+assert.deepEqual(checkDoc(f('a.md', ''), new Uint8Array([35])), { kind: 'md', type: 'text/markdown' });
+assert.deepEqual(checkDoc(f('a.txt', 'text/plain; charset=utf-8'), new Uint8Array([97])), { kind: 'txt', type: 'text/plain' });
+assert.ok('error' in checkDoc(f('a.txt', 'text/markdown'), new Uint8Array([97])));
+assert.ok('error' in checkDoc(f('a.exe', 'application/pdf'), PDF));
+assert.ok('error' in checkDoc(f('noext', 'application/pdf'), PDF));
+assert.deepEqual(checkDoc(f('a.pdf', 'application/pdf', 0), PDF), { error: 'That file is empty.' });
+assert.deepEqual(checkDoc(f('a.pdf', 'application/pdf', 21 * 1024 * 1024), PDF), { error: 'Files must be 20 MB or smaller.' });
+const r = fileResponse(new ArrayBuffer(1), 'pdf', 'my "file".pdf');
+assert.equal(r.headers.get('content-type'), 'application/pdf');
+assert.match(r.headers.get('content-disposition')!, /^attachment; filename="[\w.-]+"$/);
+assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+assert.equal(r.headers.get('cache-control'), 'private, no-store');
+console.log('uploads.test ok');
