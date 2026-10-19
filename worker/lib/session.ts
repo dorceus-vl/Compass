@@ -6,8 +6,8 @@ import { idFetch, type IdTokens } from './knocturn-id.ts';
 import { subOf, userAllowed } from './access.ts';
 
 export const SESSION_COOKIE = 'cp_session';
-const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
-const ACTIVE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000;
+const ACTIVE_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 const ID_CHECK_MS = 60 * 60 * 1000;
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 const now = () => new Date().toISOString();

@@ -7,7 +7,7 @@
   "observability": { "enabled": true },
   // The built app (dist/) is static and holds no data; only /api/* runs the Worker. Any other path is the app.
   "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
-  "d1_databases": [{ "binding": "DB", "database_name": "compass-db", "database_id": "REPLACED_BY_SETUP_SCRIPT", "migrations_dir": "worker/migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "compass-db", "database_id": "3820b4a9-ed77-4cea-915c-9c1c2af40491", "migrations_dir": "worker/migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "compass-files" }],
   "services": [{ "binding": "ID", "service": "knocturn-id" }],
   "vars": {

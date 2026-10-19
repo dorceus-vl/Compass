@@ -1,0 +1,24 @@
+--- a/wrangler.jsonc
++++ b/wrangler.jsonc
+@@ -28,18 +28,18 @@
+   "vars": {
+     "ISSUER": "https://id.knocturnlabs.com",
+     // Every app that may log in. The token's `aud` is one of these.
+-    "APPS": "dictation,kelly,finance,health,admin,nightowl,hollow,aura",
++    "APPS": "dictation,kelly,finance,health,admin,nightowl,hollow,aura,compass",
+     // App sign-in through the Knocturn ID sheet (INTEGRATION.md §8d): each app's one allowed redirect, `app=uri`.
+     "APP_REDIRECTS": "dictation=sonarflow://auth,hollow=hollow://auth,health=health://auth",
+     // Apps that require a passkey (Touch ID, Face ID, Windows Hello…) after the password. The admin page takes the
+     // password alone until the first passkey exists, since that's where it gets added.
+-    "PASSKEY_APPS": "admin,health,finance,kelly,dictation,nightowl,hollow,aura",
++    "PASSKEY_APPS": "admin,health,finance,kelly,dictation,nightowl,hollow,aura,compass",
+     // Passkeys belong to this domain, so one works on every subdomain; these are the pages allowed to use them.
+     // An Android app signs in as itself: "android:apk-key-hash:<base64url SHA-256 of its signing cert>" (NightOwl's
+     // debug-signed build; knocturnlabs.com/.well-known/assetlinks.json vouches for it).
+     // Overridden in .dev.vars (RP_ID=localhost) for local dev.
+     "RP_ID": "knocturnlabs.com",
+-    "PASSKEY_ORIGINS": "https://id.knocturnlabs.com,https://health.knocturnlabs.com,https://finance.knocturnlabs.com,https://kelly.knocturnlabs.com,https://sonarflow.knocturnlabs.com,https://nightowl.knocturnlabs.com,https://hollow.knocturnlabs.com,https://aura.knocturnlabs.com,android:apk-key-hash:Q0x-NP5pw6dMc5bB4bX435kxeESVVd-GxrViyfTN55I",
++    "PASSKEY_ORIGINS": "https://id.knocturnlabs.com,https://health.knocturnlabs.com,https://finance.knocturnlabs.com,https://kelly.knocturnlabs.com,https://sonarflow.knocturnlabs.com,https://nightowl.knocturnlabs.com,https://hollow.knocturnlabs.com,https://aura.knocturnlabs.com,android:apk-key-hash:Q0x-NP5pw6dMc5bB4bX435kxeESVVd-GxrViyfTN55I,https://compass.knocturnlabs.com",
+     // Sender of password-reset emails; must be an address on a domain with Email Routing on.
+     "EMAIL_FROM": "id@knocturnlabs.com",
+     // Browser origins allowed to call /v1/* directly (web dashboards), comma-separated.

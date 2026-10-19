@@ -121,7 +121,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             <button className="link" type="button" onClick={() => backToPassword()}>Use a different account</button>
           </section>
         )}
-        <p className="foot">Session kept for 30 days · Knocturn ID</p>
+        <p className="foot">Session kept for 90 days · Knocturn ID</p>
       </div>
     </main>
   );
