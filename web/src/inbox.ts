@@ -79,5 +79,11 @@ export function useInbox() {
   return { ...s, keep: keepItem, dismiss: dismissItem, snooze: snoozeItem };
 }
 
+/** Opens a task's sheet; a task made on the server may not be on this device yet, so pull first. */
+export async function openTask(taskId: string, show: (id: string) => void): Promise<void> {
+  if (!await idb.get('tasks', taskId).catch(() => undefined)) await pull().catch(() => {});
+  show(taskId);
+}
+
 /** Only https links are ever rendered as links. */
 export const safeUrl = (u: string | null): string | null => { try { return u && new URL(u).protocol === 'https:' ? u : null; } catch { return null; } };

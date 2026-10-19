@@ -1,8 +1,6 @@
 import type { InboxItem } from '../../../shared/types.ts';
-import { useInbox, reviewPath, safeUrl } from '../inbox.ts';
+import { useInbox, reviewPath, safeUrl, openTask } from '../inbox.ts';
 import { navigate } from '../router.ts';
-import { idb } from '../store/db.ts';
-import { pull } from '../store/sync.ts';
 import { trashTask } from '../store/useStore.ts';
 import { confirmAction, toast } from './dialogs.tsx';
 import { SRC, appLabel } from './sources.ts';
@@ -18,7 +16,6 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
     if (!item.task_id || !await confirmAction('Remove the task this app added?', { danger: true })) return;
     try { if (await inbox.dismiss(item.id)) await trashTask(item.task_id); } catch { toast('Could not remove the task'); }
   };
-  const open = async (taskId: string) => { if (!await idb.get('tasks', taskId)) await pull().catch(() => {}); onOpen(taskId); }; // a task made on the server may not be here yet
   const btn = (label: string, fn: () => void, primary = false) => <button type="button" key={label} className={primary ? 'p' : undefined} disabled={off} title={tip} onClick={fn}>{label}</button>;
   return (
     <div className={`ai${active ? ' active' : ''}`} id={id} role={id ? 'option' : undefined} aria-selected={id ? !!active : undefined} style={{ ['--src' as string]: SRC[item.app] ?? 'var(--text-faint)' }}>
@@ -30,7 +27,7 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
           <button type="button" className="p" onClick={async () => navigate(await reviewPath(item))}>Review</button>
           {btn('Dismiss', () => void inbox.dismiss(item.id))}
         </> : item.state === 'added' ? <>
-          {item.task_id && <button type="button" className="p" onClick={() => void open(item.task_id!)}>Open</button>}
+          {item.task_id && <button type="button" className="p" onClick={() => void openTask(item.task_id!, onOpen)}>Open</button>}
           {item.task_id && btn('Undo', () => void undo())}
         </> : <>
           {btn('Keep', () => void inbox.keep(item.id), true)}

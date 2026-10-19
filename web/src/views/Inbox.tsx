@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { useInbox, safeUrl, reviewPath } from '../inbox.ts';
+import { useInbox, safeUrl, reviewPath, openTask } from '../inbox.ts';
 import { InboxCard } from '../ui/AddedStrip.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { navigate } from '../router.ts';
@@ -22,7 +22,7 @@ export function InboxView() {
     if (k === 'j' || k === 'ArrowDown') setActiveId(items[Math.min(at + 1, items.length - 1)].id);
     else if (k === 'k' || k === 'ArrowUp') setActiveId(items[Math.max(at - 1, 0)].id);
     else if (k === 'o') { const u = safeUrl(item.url); if (u) window.open(u, '_blank', 'noopener,noreferrer'); }
-    else if (k === 'Enter' && item.state === 'added' && item.task_id) setOpen(item.task_id);
+    else if (k === 'Enter' && item.state === 'added' && item.task_id) void openTask(item.task_id, setOpen);
     else if (off) return;
     else if (item.kind === 'meeting') { if (k === 'Enter') void reviewPath(item).then(navigate); else if (k === 'd') void inbox.dismiss(item.id); else return; }
     else if (item.state === 'new' && k === 'Enter') void inbox.keep(item.id);
