@@ -11,6 +11,7 @@ import inbox, { rules } from './routes/inbox.ts';
 import meetings from './routes/meetings.ts';
 import settings from './routes/settings.ts';
 import { stepUpChallenge } from './lib/step-up.ts';
+import { email } from './email.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -39,6 +40,7 @@ app.onError((err, c) => { console.error(err); return c.json({ error: 'Internal e
 
 export default {
   fetch: app.fetch,
+  email,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(Promise.all([purgeTrash(env), purgeAudit(env), purgeSessions(env)]));
   },

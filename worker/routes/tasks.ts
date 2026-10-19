@@ -152,6 +152,15 @@ tasks.get('/:id', async (c) => {
   return c.json({ task, events: await openAll(c.env, 'task_events', ev.results), subtasks: await openAll(c.env, 'tasks', sub.results) });
 });
 
+// The raw forwarded email, kept in R2 by the email handler. Only for a task that exists and isn't trashed.
+tasks.get('/:id/email', async (c) => {
+  const id = c.req.param('id');
+  const live = await c.env.DB.prepare('SELECT 1 AS x FROM tasks WHERE id = ?1 AND deleted_at IS NULL').bind(id).first();
+  const obj = live ? await c.env.FILES.get(`email/${id}.eml`) : null;
+  if (!obj) return c.json({ error: 'Not found' }, 404);
+  return new Response(obj.body, { headers: { 'Content-Type': 'message/rfc822', 'Content-Disposition': 'attachment; filename="email.eml"', 'Cache-Control': 'private, no-store' } });
+});
+
 tasks.patch('/:id', async (c) => {
   const task = await loadTask(c.env, c.req.param('id'));
   if (!task) return c.json({ error: 'Not found' }, 404);
