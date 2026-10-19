@@ -15,17 +15,22 @@ const MAX_RAW = 2 * 1024 * 1024, MAX_PER_HOUR = 30;
 const domainOf = (a: string) => a.trim().toLowerCase().split('@')[1] ?? '';
 const kv = (seg: string) => Object.fromEntries([...seg.replace(/\([^)]*\)/g, ' ').matchAll(/([\w.-]+)=("[^"]*"|\S+)/g)].map((m) => [m[1].toLowerCase(), m[2].replace(/^"|"$/g, '').toLowerCase()]));
 
+/** Splits what headers.get() returns for repeated Authentication-Results headers (joined with ", "): each one starts with its authserv-id and ';'. */
+export const authResults = (headerValue: string | null | undefined): string[] => (headerValue ?? '').split(/,\s*(?=[\w.-]+\s*;)/).map((h) => h.trim()).filter(Boolean);
+
 /**
- * True when Cloudflare's Authentication-Results vouches for the sender: dmarc=pass, or dkim=pass signed by the sender's domain (or a parent of it),
- * or spf=pass for the envelope sender's domain. The header From must also equal the envelope sender. Only the topmost header counts (the one our edge added).
+ * True when exactly one Authentication-Results header carries our authserv-id (the one our edge added; none, or a forged second copy, fails)
+ * and it vouches for the sender: dmarc=pass for the sender's domain, or dkim=pass signed by the sender's domain (or a parent of it), or spf=pass
+ * for the envelope sender's domain. The header From must also equal the envelope sender.
  */
-export function authenticated(headerValue: string | null | undefined, envelopeFrom: string, headerFrom: string | undefined): boolean {
+export function authenticated(headerValue: string | null | undefined, envelopeFrom: string, headerFrom: string | undefined, authservId = 'mx.cloudflare.net'): boolean {
   const env = envelopeFrom.trim().toLowerCase(), dom = domainOf(env);
-  if (!env || !dom || (headerFrom ?? '').trim().toLowerCase() !== env || !headerValue) return false;
-  const top = headerValue.split(/,\s*(?=[\w.-]+\s*;)/)[0]; // headers.get() joins repeated headers with ", "
-  return top.split(';').slice(1).some((seg) => {
+  if (!env || !dom || (headerFrom ?? '').trim().toLowerCase() !== env) return false;
+  const mine = authResults(headerValue).filter((h) => h.split(';')[0].trim().toLowerCase() === authservId.trim().toLowerCase());
+  if (mine.length !== 1) return false;
+  return mine[0].split(';').slice(1).some((seg) => {
     const f = kv(seg);
-    if (f.dmarc === 'pass') return true;
+    if (f.dmarc === 'pass') return f['header.from'] === dom;
     if (f.dkim === 'pass' && f['header.d']) return dom === f['header.d'] || dom.endsWith('.' + f['header.d']);
     if (f.spf === 'pass' && f['smtp.mailfrom']) return domainOf(f['smtp.mailfrom'].includes('@') ? f['smtp.mailfrom'] : '@' + f['smtp.mailfrom']) === dom;
     return false;
@@ -48,7 +53,8 @@ export function emailToPost(parsed: { subject?: string; text?: string; html?: st
 
 /** Cloudflare Email Routing → this Worker. Only an allowed sender whose mail is authenticated gets in; anything else is dropped with a reason code (never addresses or content). */
 export async function email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
-  const drop = (reason: string) => console.warn(`[email] dropped: ${reason}`);
+  const ar = message.headers.get('authentication-results');
+  const drop = (reason: string) => console.warn(`[email] dropped: ${reason} (authentication-results headers: ${authResults(ar).length})`);
   if (!senderAllowed(message.from, env.ALLOWED_FORWARDERS)) return drop('sender-not-allowed');
   if (message.rawSize > MAX_RAW) return drop('too-large');
   let item, task;
@@ -58,7 +64,7 @@ export async function email(message: ForwardableEmailMessage, env: Env, _ctx: Ex
     const raw = await new Response(message.raw).arrayBuffer();
     if (raw.byteLength > MAX_RAW) return drop('too-large');
     const parsed = await PostalMime.parse(raw);
-    if (!authenticated(message.headers.get('authentication-results'), message.from, parsed.from?.address)) return drop('not-authenticated');
+    if (!authenticated(ar, message.from, parsed.from?.address, env.EMAIL_AUTHSERV_ID || 'mx.cloudflare.net')) return drop('not-authenticated');
     const { post, work, from } = emailToPost(parsed, await getSettings(env));
     ({ item, task } = await ingest(env, post, { work, from }));
     if (task) {

@@ -21,6 +21,8 @@ export interface Env {
   VAPID_SUBJECT?: string;
   /** Sender addresses allowed to forward email into the inbox, comma-separated. */
   ALLOWED_FORWARDERS?: string;
+  /** The authserv-id Cloudflare Email Routing puts on its Authentication-Results header (only that header is trusted). Confirm on the first real forward. */
+  EMAIL_AUTHSERV_ID?: string;
 }
 
 export interface SessionRow {

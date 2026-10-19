@@ -13,7 +13,9 @@
   "vars": {
     "COMPASS_USERS": "7cad1bd5-760b-4423-9b02-406c74d5a6e4,ab39fa67-0a88-40b6-824b-9718500e5f47",
     "ID_URL": "https://id.knocturnlabs.com",
-    "DEV_LOGIN": "0"
+    "DEV_LOGIN": "0",
+    // Confirm on the first real forward (the log line shows how many Authentication-Results headers arrived); only this authserv-id is trusted.
+    "EMAIL_AUTHSERV_ID": "mx.cloudflare.net"
   },
   // Every 15 minutes: Trash purge (30 days), audit purge (90 days). Later phases add pushes here.
   "triggers": { "crons": ["*/15 * * * *"] },

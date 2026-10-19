@@ -19,7 +19,7 @@ assert.equal(senderAllowed('me@gmail.com', ''), false, 'empty list allows nobody
 console.log('email-parse: ok');
 
 // ---- authenticated(): fail closed ----
-import { authenticated } from '../worker/email.ts';
+import { authenticated, authResults } from '../worker/email.ts';
 const ar = (s: string) => `mx.cloudflare.net; ${s}`;
 assert.equal(authenticated(ar('dmarc=pass header.from=gmail.com'), 'me@gmail.com', 'me@gmail.com'), true, 'dmarc pass');
 assert.equal(authenticated(ar('dkim=pass header.d=gmail.com header.i=@gmail.com'), 'me@gmail.com', 'ME@gmail.com'), true, 'dkim aligned, case-insensitive');
@@ -32,9 +32,17 @@ assert.equal(authenticated(ar('dkim=pass header.d=mail.gmail.com'), 'me@gmail.co
 assert.equal(authenticated(ar('dmarc=fail header.from=gmail.com; spf=fail smtp.mailfrom=me@gmail.com; dkim=none'), 'me@gmail.com', 'me@gmail.com'), false, 'no pass');
 assert.equal(authenticated(null, 'me@gmail.com', 'me@gmail.com'), false, 'missing header');
 assert.equal(authenticated('', 'me@gmail.com', 'me@gmail.com'), false, 'empty header');
-assert.equal(authenticated(ar('dmarc=pass'), 'me@gmail.com', 'other@gmail.com'), false, 'header From differs from envelope');
-assert.equal(authenticated(ar('dmarc=pass'), 'me@gmail.com', undefined), false, 'no header From');
-assert.equal(authenticated(`mx.cloudflare.net; dmarc=fail, forged.example; dmarc=pass`, 'me@gmail.com', 'me@gmail.com'), false, 'only the topmost header counts');
+assert.equal(authenticated(ar('dmarc=pass header.from=gmail.com'), 'me@gmail.com', 'other@gmail.com'), false, 'header From differs from envelope');
+assert.equal(authenticated(ar('dmarc=pass header.from=gmail.com'), 'me@gmail.com', undefined), false, 'no header From');
+assert.equal(authenticated(`mx.cloudflare.net; dmarc=fail, forged.example; dmarc=pass`, 'me@gmail.com', 'me@gmail.com'), false, 'a fail on our header is not rescued by another');
+assert.equal(authenticated(`mx.cloudflare.net; dmarc=pass header.from=gmail.com, mx.cloudflare.net; dmarc=pass header.from=gmail.com`, 'me@gmail.com', 'me@gmail.com'), false, 'a second header with our id (forged copy) -> drop');
+assert.equal(authenticated(`forged.example; dmarc=pass header.from=gmail.com`, 'me@gmail.com', 'me@gmail.com'), false, 'only a foreign authserv-id');
+assert.equal(authenticated(`forged.example; dmarc=pass header.from=gmail.com, mx.cloudflare.net; dmarc=pass header.from=gmail.com`, 'me@gmail.com', 'me@gmail.com'), true, 'a forged foreign header beside ours is ignored');
+assert.equal(authenticated(`other.example; dmarc=pass header.from=gmail.com`, 'me@gmail.com', 'me@gmail.com', 'other.example'), true, 'the pinned id is configurable');
+assert.equal(authenticated(ar('dmarc=pass header.from=evil.com'), 'me@gmail.com', 'me@gmail.com'), false, 'dmarc pass for another header.from');
+assert.equal(authenticated(ar('dmarc=pass'), 'me@gmail.com', 'me@gmail.com'), false, 'dmarc pass without header.from');
+assert.equal(authResults(`a.example; x=pass, b.example; y=pass`).length, 2);
+assert.equal(authResults(null).length, 0);
 
 // ---- post details ----
 const b = emailToPost({ subject: 'a\r\nb\t\u0007c', html: '<style>p{}</style><p>Hello&nbsp;<b>there</b></p><script>x()</script>', messageId: '<abc@x>', from: { address: 'ME@Bell.CA' } }, { work_email_domains: ['BELL.ca'] });
