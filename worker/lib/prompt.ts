@@ -4,7 +4,8 @@ import type { AiTurn } from './ai.ts';
 
 /** Untrusted text goes into a prompt only inside a data block; the markers are defanged so it can't close its own block. */
 export function fence(label: string, text: string): string {
-  return `<<<data ${label}\n${text.replaceAll('<<<', '‹‹‹').replaceAll('>>>', '›››')}\n>>>`;
+  const clean = (v: string) => v.replaceAll('<<<', '‹‹‹').replaceAll('>>>', '›››');
+  return `<<<data ${clean(label.replace(/[\r\n\u2028\u2029]+/g, ' '))}\n${clean(text)}\n>>>`;
 }
 
 const META = `End every answer with one block in exactly this form (nothing after it):

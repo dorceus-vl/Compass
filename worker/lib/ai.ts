@@ -81,7 +81,8 @@ export function readAnthropic(j: any): Read {
 export function readGemini(j: any): Read {
   return {
     text: (Array.isArray(j?.candidates?.[0]?.content?.parts) ? j.candidates[0].content.parts : []).map((p: { text?: string }) => p?.text ?? '').join(''),
-    input_tokens: Number(j?.usageMetadata?.promptTokenCount) || 0, output_tokens: Number(j?.usageMetadata?.candidatesTokenCount) || 0,
+    input_tokens: Number(j?.usageMetadata?.promptTokenCount) || 0, // Thinking tokens bill at the output rate.
+    output_tokens: (Number(j?.usageMetadata?.candidatesTokenCount) || 0) + (Number(j?.usageMetadata?.thoughtsTokenCount) || 0),
   };
 }
 
