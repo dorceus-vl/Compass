@@ -37,12 +37,18 @@ export const govPatch = <T>(path: GovPath, id: string, body: Record<string, unkn
   write(async () => (await api<{ item: T }>(`/${path}/${id}`, { method: 'PATCH', json: body })).item);
 export const govTrash = (path: GovPath, id: string) => write(async () => { await api(`/${path}/${id}`, { method: 'DELETE' }); return true; });
 
-/** onBlur/onChange saver for one row: sends only a changed value (blank text becomes null, or is refused for a required field). */
-export function rowSaver(path: GovPath, row: { id: string } & Record<string, unknown>, reload: () => Promise<void>, required: string[] = []) {
-  return async (key: string, raw: string | number | null) => {
+/**
+ * Saver for one row: sends only a changed value (blank text becomes null). Inputs are uncontrolled and keyed on `k(field)`, which is
+ * stable while the user types and changes only when a save was refused or a required field was blanked, so that one input is reset to the stored text.
+ */
+export function useRowSaver(path: GovPath, row: { id: string } & Record<string, unknown>, reload: () => Promise<void>, required: string[] = []) {
+  const [rev, setRev] = useState<Record<string, number>>({});
+  const revert = (key: string) => setRev((r) => ({ ...r, [key]: (r[key] ?? 0) + 1 }));
+  const save = async (key: string, raw: string | number | null) => {
     const v = typeof raw === 'string' ? raw.trim() || null : raw;
     if (v === (row[key] ?? null)) return;
-    if (v === null && required.includes(key)) { await reload(); return; } // put the old text back
-    if (await govPatch(path, row.id, { [key]: v })) await reload();
+    if (v === null && required.includes(key)) { toast("This can't be empty"); revert(key); return; }
+    if (await govPatch(path, row.id, { [key]: v })) await reload(); else revert(key);
   };
+  return { save, k: (key: string) => `${row.id}:${key}:${rev[key] ?? 0}` };
 }

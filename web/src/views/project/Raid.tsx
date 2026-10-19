@@ -1,7 +1,7 @@
 import { Fragment, useState, type FormEvent } from 'react';
 import type { Project, RaidItem, RaidType } from '../../../../shared/types.ts';
 import { riskScore, scoreTone } from '../../../../shared/gov.ts';
-import { useGov, govCreate, govPatch, govTrash, rowSaver } from '../../gov.ts';
+import { useGov, govCreate, govPatch, govTrash, useRowSaver } from '../../gov.ts';
 import { createTask } from '../../store/useStore.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { fmtDue } from '../../dates.ts';
@@ -10,25 +10,25 @@ const TYPES: RaidType[] = ['risk', 'assumption', 'issue', 'dependency'];
 const N15 = [1, 2, 3, 4, 5];
 
 function Row({ it, project, reload }: { it: RaidItem; project: Project; reload: () => Promise<void> }) {
-  const save = rowSaver('raid', it as never, reload, ['text']);
+  const { save, k } = useRowSaver('raid', it as never, reload, ['text']);
   const score = riskScore(it.probability, it.impact);
   const lvl = (key: 'probability' | 'impact', label: string) => (
-    <label className="sub">{label}<select className="field" style={{ width: 'auto', padding: '6px 8px' }} aria-label={key === 'probability' ? 'Probability' : 'Impact'} value={it[key] ?? ''} onChange={(e) => void save(key, e.target.value ? Number(e.target.value) : null)}>
+    <label className="sub">{label}<select className="field pi" aria-label={key === 'probability' ? 'Probability' : 'Impact'} value={it[key] ?? ''} onChange={(e) => void save(key, e.target.value ? Number(e.target.value) : null)}>
       <option value="">–</option>{N15.map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
   );
   const txt = (key: 'owner' | 'response' | 'trigger', label: string) => (
-    <input className="field" key={`${key}:${it.updated_at}`} aria-label={label} placeholder={label} defaultValue={it[key] ?? ''} maxLength={key === 'owner' ? 200 : 2000} onBlur={(e) => void save(key, e.target.value)} />
+    <input className="field" key={k(key)} aria-label={label} placeholder={label} defaultValue={it[key] ?? ''} maxLength={key === 'owner' ? 200 : 2000} onBlur={(e) => void save(key, e.target.value)} />
   );
   return (
     <div className="card gov-row" style={{ padding: 12, opacity: it.status === 'closed' ? 0.65 : 1 }}>
       <div className="row"><span className="chip">{it.type}</span>
         {it.type === 'risk' && <span className={`chip ${scoreTone(score)}`} title="Probability × impact">score {score}</span>}
         {it.from_meeting_id && <span className="chip">from meeting</span>}</div>
-      <textarea className="field" rows={2} key={`t:${it.updated_at}`} aria-label="Text" defaultValue={it.text} maxLength={2000} onBlur={(e) => void save('text', e.target.value)} />
+      <textarea className="field" rows={2} key={k('text')} aria-label="Text" defaultValue={it.text} maxLength={2000} onBlur={(e) => void save('text', e.target.value)} />
       <div className="row">
         {it.type === 'risk' && lvl('probability', 'P')}{(it.type === 'risk' || it.type === 'issue') && lvl('impact', 'I')}
         {txt('owner', 'Owner')}{txt('response', 'Response')}{it.type === 'risk' && txt('trigger', 'Trigger')}
-        <input className="field" style={{ flex: '0 1 160px' }} type="date" aria-label="Due date" value={it.due_at ?? ''} onChange={(e) => void save('due_at', e.target.value || null)} />
+        <input className="field" style={{ flex: '0 1 160px' }} type="date" key={k('due_at')} aria-label="Due date" defaultValue={it.due_at ?? ''} onBlur={(e) => void save('due_at', e.target.value || null)} />
         {it.due_at && <span className={`chip ${fmtDue(it.due_at).tone}`}>{fmtDue(it.due_at).text}</span>}
       </div>
       <div className="row">
@@ -64,7 +64,7 @@ export function Raid({ project }: { project: Project }) {
       </form>
       <div className="row">
         {(['', ...TYPES] as const).map((t) => <button type="button" key={t} className={`chip ${filter === t ? 'on' : ''}`} aria-pressed={filter === t} onClick={() => setFilter(t)}>{t || 'All'}</button>)}
-        <label className="sub" style={{ marginLeft: 'auto' }}><input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} style={{ accentColor: 'var(--accent)' }} /> Show closed</label>
+        <label className="sub tap" style={{ marginLeft: 'auto' }}><input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} style={{ accentColor: 'var(--accent)' }} /> Show closed</label>
       </div>
       <div className="two">
         <div style={{ display: 'grid', gap: 10 }}>

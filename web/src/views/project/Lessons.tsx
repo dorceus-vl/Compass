@@ -1,15 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import type { Lesson, Project } from '../../../../shared/types.ts';
-import { useGov, govCreate, govTrash, rowSaver } from '../../gov.ts';
+import { useGov, govCreate, govTrash, useRowSaver } from '../../gov.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 
 function Row({ it, reload }: { it: Lesson; reload: () => Promise<void> }) {
-  const save = rowSaver('lessons', it as never, reload, ['text']);
+  const { save, k } = useRowSaver('lessons', it as never, reload, ['text']);
   return (
     <div className="card gov-row" style={{ padding: 12 }}>
-      <textarea className="field" rows={2} key={`t:${it.updated_at}`} aria-label="Lesson" defaultValue={it.text} maxLength={4000} onBlur={(e) => void save('text', e.target.value)} />
+      <textarea className="field" rows={2} key={k('text')} aria-label="Lesson" defaultValue={it.text} maxLength={4000} onBlur={(e) => void save('text', e.target.value)} />
       <div className="row">
-        <input className="field" style={{ flex: '0 1 220px' }} key={`c:${it.updated_at}`} aria-label="Category" placeholder="Category" defaultValue={it.category ?? ''} maxLength={60} onBlur={(e) => void save('category', e.target.value)} />
+        <input className="field" style={{ flex: '0 1 220px' }} key={k('category')} aria-label="Category" placeholder="Category" defaultValue={it.category ?? ''} maxLength={60} onBlur={(e) => void save('category', e.target.value)} />
         <button type="button" className="btn" style={{ marginLeft: 'auto', color: 'var(--danger)' }} onClick={async () => { if (await confirmAction('Move this lesson to Trash?', { danger: true }) && await govTrash('lessons', it.id)) { toast('Moved to Trash'); await reload(); } }}>Trash</button>
       </div>
     </div>

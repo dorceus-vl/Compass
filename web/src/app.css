@@ -147,3 +147,16 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 .scroll-x{overflow-x:auto}
 .card .prog{height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
 .card .prog i{display:block;height:100%;background:var(--accent);width:var(--w)}
+.gov-row select.pi{width:auto;padding:6px 8px}
+.tap{display:inline-flex;align-items:center;gap:8px}
+/* DESIGN.md: 44px minimum for anything tapped (phone width or a coarse pointer) */
+@media (max-width:760px),(pointer:coarse){
+  .tabs a{min-height:44px;display:inline-flex;align-items:center}
+  button.chip,a.chip{min-height:44px;display:inline-flex;align-items:center;padding:0 14px}
+  .heat{grid-template-columns:auto repeat(5,44px)}
+  .heat button{min-width:44px;min-height:44px}
+  .gov-row select.pi{min-height:44px}
+  .seg button{min-height:44px}
+  .tap{min-height:44px}
+  .tap input[type=checkbox]{width:22px;height:22px}
+}

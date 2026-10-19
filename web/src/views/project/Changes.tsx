@@ -1,27 +1,27 @@
 import { useState, type FormEvent } from 'react';
 import type { ChangeRequest, Project } from '../../../../shared/types.ts';
-import { useGov, govCreate, govPatch, govTrash, rowSaver } from '../../gov.ts';
+import { useGov, govCreate, govPatch, govTrash, useRowSaver } from '../../gov.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { today } from '../../dates.ts';
 
 function Row({ it, reload }: { it: ChangeRequest; reload: () => Promise<void> }) {
-  const save = rowSaver('changes', it as never, reload, ['title']);
+  const { save, k } = useRowSaver('changes', it as never, reload, ['title']);
   const [more, setMore] = useState(false);
   const area = (key: 'description' | 'impact_scope' | 'impact_time' | 'impact_cost', label: string) => (
     <label className="sub" style={{ display: 'grid', gap: 4 }}>{label}
-      <textarea className="field" rows={2} key={`${key}:${it.updated_at}`} defaultValue={it[key] ?? ''} maxLength={key === 'description' ? 5000 : 2000} onBlur={(e) => void save(key, e.target.value)} /></label>
+      <textarea className="field" rows={2} key={k(key)} defaultValue={it[key] ?? ''} maxLength={key === 'description' ? 5000 : 2000} onBlur={(e) => void save(key, e.target.value)} /></label>
   );
   return (
     <div className="card gov-row" style={{ padding: 12 }}>
-      <input className="field" key={`t:${it.updated_at}`} aria-label="Title" defaultValue={it.title} maxLength={200} onBlur={(e) => void save('title', e.target.value)} />
+      <input className="field" key={k('title')} aria-label="Title" defaultValue={it.title} maxLength={200} onBlur={(e) => void save('title', e.target.value)} />
       <div className="row">
         <select className="field" aria-label="Decision" value={it.decision} onChange={async (e) => {
           // A decision stamps its date when the change is approved or rejected; back to pending clears it.
           const decision = e.target.value;
           if (await govPatch('changes', it.id, { decision, decided_at: decision === 'pending' ? null : it.decided_at ?? today() })) await reload();
         }}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
-        {it.decision !== 'pending' && <input className="field" type="date" aria-label="Decided on" value={it.decided_at ?? ''} onChange={(e) => void save('decided_at', e.target.value || null)} />}
-        <input className="field" key={`a:${it.updated_at}`} aria-label="Approver" placeholder="Approver" defaultValue={it.approver ?? ''} maxLength={200} onBlur={(e) => void save('approver', e.target.value)} />
+        {it.decision !== 'pending' && <input className="field" type="date" key={k('decided_at')} aria-label="Decided on" defaultValue={it.decided_at ?? ''} onBlur={(e) => void save('decided_at', e.target.value || null)} />}
+        <input className="field" key={k('approver')} aria-label="Approver" placeholder="Approver" defaultValue={it.approver ?? ''} maxLength={200} onBlur={(e) => void save('approver', e.target.value)} />
       </div>
       <div className="row">
         <button type="button" className="btn" aria-expanded={more} onClick={() => setMore(!more)}>{more ? 'Hide details' : 'Details and impact'}</button>

@@ -1,20 +1,20 @@
 import { useState, type FormEvent } from 'react';
 import type { Decision, Project } from '../../../../shared/types.ts';
-import { useGov, govCreate, govTrash, rowSaver } from '../../gov.ts';
+import { useGov, govCreate, govTrash, useRowSaver } from '../../gov.ts';
 import { Link } from '../../router.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { today } from '../../dates.ts';
 
 function Row({ it, reload }: { it: Decision; reload: () => Promise<void> }) {
-  const save = rowSaver('decisions', it as never, reload, ['text', 'decided_at']);
+  const { save, k } = useRowSaver('decisions', it as never, reload, ['text', 'decided_at']);
   return (
     <div className="card gov-row" style={{ padding: 12 }}>
       <div className="row">
-        <input className="field" style={{ flex: '0 1 160px', width: 'auto' }} type="date" aria-label="Decided on" value={it.decided_at} onChange={(e) => void save('decided_at', e.target.value)} />
+        <input className="field" style={{ flex: '0 1 160px', width: 'auto' }} type="date" key={k('decided_at')} aria-label="Decided on" defaultValue={it.decided_at} onBlur={(e) => void save('decided_at', e.target.value)} />
         {it.from_meeting_id && <Link to={`/meetings/${it.from_meeting_id}`} className="chip">From meeting{it.at_ref ? ` · ${it.at_ref}` : ''}</Link>}
         <button type="button" className="btn" style={{ marginLeft: 'auto', color: 'var(--danger)' }} onClick={async () => { if (await confirmAction('Move this decision to Trash?', { danger: true }) && await govTrash('decisions', it.id)) { toast('Moved to Trash'); await reload(); } }}>Trash</button>
       </div>
-      <textarea className="field" rows={2} key={it.updated_at} aria-label="Decision" defaultValue={it.text} maxLength={2000} onBlur={(e) => void save('text', e.target.value)} />
+      <textarea className="field" rows={2} key={k('text')} aria-label="Decision" defaultValue={it.text} maxLength={2000} onBlur={(e) => void save('text', e.target.value)} />
     </div>
   );
 }
