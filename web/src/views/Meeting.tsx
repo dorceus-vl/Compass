@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MeetingReview } from '../../../shared/types.ts';
-import { api, SignedOut } from '../api.ts';
+import { api, ApiError, SignedOut } from '../api.ts';
 import { loadMeetings, refreshInbox, safeUrl } from '../inbox.ts';
 import { navigate, Link } from '../router.ts';
 import { pull } from '../store/sync.ts';
@@ -10,6 +10,13 @@ import { confirmAction, toast } from '../ui/dialogs.tsx';
 interface Act { on: boolean; text: string; owner: string; due: string; at: string }
 interface Pick { on: boolean; text: string; at: string }
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
+// The server's text is not trusted to be well-formed: coerce every field, drop rows with no text.
+type Raw = { text?: unknown; at?: unknown; owner?: unknown; due?: unknown } | null | undefined;
+const norm = (xs: unknown) => (Array.isArray(xs) ? (xs as Raw[]) : []).map((x) => ({
+  text: String(x?.text ?? ''), at: typeof x?.at === 'string' ? x.at : '',
+  owner: typeof x?.owner === 'string' ? x.owner : null, due: typeof x?.due === 'string' && YMD.test(x.due) ? x.due : '',
+})).filter((x) => x.text.trim());
+const atOf = (s: string) => (s.trim() ? s.trim().slice(0, 12) : null);
 
 export function MeetingView({ id }: { id: string }) {
   const [m, setM] = useState<MeetingReview | null | undefined>(undefined); // undefined: loading; null: not found
@@ -17,12 +24,12 @@ export function MeetingView({ id }: { id: string }) {
   const [acts, setActs] = useState<Act[]>([]);
   const [decs, setDecs] = useState<Pick[]>([]);
   const [qs, setQs] = useState<Pick[]>([]);
+  const [notes, setNotes] = useState<{ text: string; at: string }[]>([]);
   const [project, setProject] = useState('');
   const [busy, setBusy] = useState(false);
   const { projects } = useStore();
-  const [, tick] = useState(0);
-  useEffect(() => { // online/offline changes re-render so the buttons follow
-    const f = () => tick((x) => x + 1);
+  useEffect(() => { // the flag follows the browser, so the buttons come back after reconnecting
+    const f = () => setOffline(!navigator.onLine);
     window.addEventListener('online', f); window.addEventListener('offline', f);
     return () => { window.removeEventListener('online', f); window.removeEventListener('offline', f); };
   }, []);
@@ -39,9 +46,10 @@ export function MeetingView({ id }: { id: string }) {
       if (!live) return;
       setOffline(off); setM(found);
       if (!found) return;
-      setActs(found.action_items.map((a) => ({ on: true, text: a.text, owner: a.owner ?? '', due: a.due && YMD.test(a.due) ? a.due : '', at: a.at })));
-      setDecs(found.decisions.map((d) => ({ on: true, text: d.text, at: d.at })));
-      setQs(found.open_questions.map((q) => ({ on: false, text: q.text, at: q.at })));
+      setActs(norm(found.action_items).map((a) => ({ on: true, text: a.text, owner: a.owner ?? '', due: a.due, at: a.at })));
+      setDecs(norm(found.decisions).map((d) => ({ on: true, text: d.text, at: d.at })));
+      setQs(norm(found.open_questions).map((q) => ({ on: false, text: q.text, at: q.at })));
+      setNotes(norm(found.important_notes));
     })();
     return () => { live = false; };
   }, [id]);
@@ -56,38 +64,44 @@ export function MeetingView({ id }: { id: string }) {
   const sendQs = qs.filter((q) => q.on && q.text.trim());
   const sendDecs = decs.filter((d) => d.on && d.text.trim());
   const nTasks = sendActs.length + sendQs.length;
+  const tooMany = sendActs.length + sendQs.length > 50 || sendDecs.length > 50;
   const link = safeUrl(m.url);
   const live = projects.filter((p) => !p.deleted_at && p.status !== 'closed');
   const byKind = (k: string) => live.filter((p) => p.kind === k).sort((a, b) => a.sort - b.sort);
 
   const patch = <T,>(set: (f: (xs: T[]) => T[]) => void, i: number, p: Partial<T>) => set((xs) => xs.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  const fail = (e: unknown) => {
+    if (e instanceof SignedOut) return;
+    if (e instanceof ApiError && e.status === 409) { toast('Already reviewed'); void refreshInbox(); navigate('/meetings'); return; }
+    toast((e as Error).message); setBusy(false);
+  };
   const accept = async () => {
-    if (busy || off || !nTasks && !sendDecs.length) return;
+    if (busy || off || tooMany || !nTasks && !sendDecs.length) return;
     setBusy(true);
     try {
-      const at = (s: string) => s.slice(0, 12);
       await api(`/meetings/${m.id}/accept`, { method: 'POST', json: {
         project_id: project || null,
         tasks: [
-          ...sendActs.map((a) => ({ text: a.text.trim().slice(0, 300), due: a.due || null, owner: a.owner.trim() || null, at: at(a.at) })),
-          ...sendQs.map((q) => ({ text: `Follow up: ${q.text.trim()}`.slice(0, 300), due: null, owner: null, at: at(q.at) })),
+          ...sendActs.map((a) => ({ text: a.text.trim().slice(0, 300), due: a.due || null, owner: a.owner.trim().slice(0, 200) || null, at: atOf(a.at) })),
+          ...sendQs.map((q) => ({ text: `Follow up: ${q.text.trim()}`.slice(0, 300), due: null, owner: null, at: atOf(q.at) })),
         ],
-        decisions: sendDecs.map((d) => ({ text: d.text.trim().slice(0, 300), at: at(d.at) })),
+        decisions: sendDecs.map((d) => ({ text: d.text.trim().slice(0, 300), at: atOf(d.at) })),
       } });
-      toast(`Added ${nTasks} task${nTasks === 1 ? '' : 's'}`);
+      const parts = [nTasks && `${nTasks} task${nTasks === 1 ? '' : 's'}`, sendDecs.length && `${sendDecs.length} decision${sendDecs.length === 1 ? '' : 's'}`].filter(Boolean);
+      toast(`Added ${parts.join(' and ')}`);
       await pull().catch(() => {});
       void refreshInbox();
       navigate(project ? `/projects/${project}` : '/');
-    } catch (e) { if (!(e instanceof SignedOut)) toast((e as Error).message); setBusy(false); }
+    } catch (e) { fail(e); }
   };
   const dismiss = async () => {
     if (busy || off || !await confirmAction('Dismiss this meeting without adding anything?')) return;
     setBusy(true);
     try { await api(`/meetings/${m.id}/dismiss`, { method: 'POST' }); void refreshInbox(); navigate('/meetings'); }
-    catch (e) { if (!(e instanceof SignedOut)) toast((e as Error).message); setBusy(false); }
+    catch (e) { fail(e); }
   };
-  const check = (label: string, on: boolean, change: (b: boolean) => void) =>
-    <input type="checkbox" aria-label={label} checked={on} disabled={!open || busy} onChange={(e) => change(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--accent)', flex: 'none' }} />;
+  const check = (label: string, on: boolean, change: (b: boolean) => void) => !open ? null :
+    <input type="checkbox" aria-label={label} checked={on} disabled={busy} onChange={(e) => change(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--accent)', flex: 'none' }} />;
   const h2 = { fontSize: 16, margin: '22px 0 10px' } as const;
 
   return (
@@ -102,14 +116,16 @@ export function MeetingView({ id }: { id: string }) {
       <div style={{ display: 'grid', gap: 8 }}>{acts.map((a, i) => (
         <div key={i} className="card row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap', padding: 12 }}>
           {check(`Add action item ${i + 1}`, a.on, (on) => patch(setActs, i, { on }))}
+          {!open ? <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{a.text}
+            <div className="sub">{[a.owner && `Owner: ${a.owner}`, a.due && `Due ${a.due}`].filter(Boolean).join(' · ')}{a.at && <span className="chip">{a.at}</span>}</div></div> :
           <div style={{ display: 'grid', gap: 6, flex: 1, minWidth: 0 }}>
-            <input className="field" aria-label={`Action item ${i + 1} text`} value={a.text} maxLength={300} disabled={!open || busy} onChange={(e) => patch(setActs, i, { text: e.target.value })} />
+            <input className="field" aria-label={`Action item ${i + 1} text`} value={a.text} maxLength={300} disabled={busy} onChange={(e) => patch(setActs, i, { text: e.target.value })} />
             <div className="row" style={{ gap: 6 }}>
-              <input className="field" style={{ flex: '1 1 140px', width: 'auto' }} aria-label={`Action item ${i + 1} owner`} placeholder="Owner" value={a.owner} maxLength={200} disabled={!open || busy} onChange={(e) => patch(setActs, i, { owner: e.target.value })} />
-              <input className="field" style={{ flex: '0 1 170px', width: 'auto' }} type="date" aria-label={`Action item ${i + 1} due date`} value={a.due} disabled={!open || busy} onChange={(e) => patch(setActs, i, { due: e.target.value })} />
+              <input className="field" style={{ flex: '1 1 140px', width: 'auto' }} aria-label={`Action item ${i + 1} owner`} placeholder="Owner" value={a.owner} maxLength={200} disabled={busy} onChange={(e) => patch(setActs, i, { owner: e.target.value })} />
+              <input className="field" style={{ flex: '0 1 170px', width: 'auto' }} type="date" aria-label={`Action item ${i + 1} due date`} value={a.due} disabled={busy} onChange={(e) => patch(setActs, i, { due: e.target.value })} />
               {a.at && <span className="chip" title="Transcript time">{a.at}</span>}
             </div>
-          </div>
+          </div>}
         </div>))}</div>
 
       <h2 style={h2}>Decisions</h2>
@@ -129,9 +145,9 @@ export function MeetingView({ id }: { id: string }) {
         </label>))}</div>
       {qs.length > 0 && open && <div className="sub">Checked questions become "Follow up" tasks.</div>}
 
-      {m.important_notes.length > 0 && <>
+      {notes.length > 0 && <>
         <h2 style={h2}>Important notes</h2>
-        <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6 }}>{m.important_notes.map((x, i) => <li key={i} style={{ overflowWrap: 'anywhere' }}>{x.text}{x.at && <> <span className="chip">{x.at}</span></>}</li>)}</ul>
+        <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6 }}>{notes.map((x, i) => <li key={i} style={{ overflowWrap: 'anywhere' }}>{x.text}{x.at && <> <span className="chip">{x.at}</span></>}</li>)}</ul>
       </>}
 
       {open && (
@@ -143,9 +159,10 @@ export function MeetingView({ id }: { id: string }) {
             </select></label>
           <div className="row">
             <button type="button" className="btn" disabled={off || busy} title={tip} onClick={() => void dismiss()}>Dismiss</button>
-            <button type="button" className="btn primary" disabled={off || busy || (!nTasks && !sendDecs.length)} title={tip} onClick={() => void accept()}>
+            <button type="button" className="btn primary" disabled={off || busy || tooMany || (!nTasks && !sendDecs.length)} title={tip} onClick={() => void accept()}>
               Accept {nTasks} task{nTasks === 1 ? '' : 's'} and {sendDecs.length} decision{sendDecs.length === 1 ? '' : 's'}</button>
           </div>
+          {tooMany && <div className="sub" role="status" style={{ width: '100%', justifyContent: 'flex-end' }}>At most 50 at a time</div>}
         </div>
       )}
     </>
