@@ -4,13 +4,13 @@ import { useInbox } from '../inbox.ts';
 
 const NAV = [
   ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'],
-  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'],
+  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'],
 ] as const;
 
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {
   const { path } = useRoute();
   const fresh = useInbox().items.filter((i) => i.state === 'new').length;
-  const on = (k: string) => (path === k || (k === 'projects' && path === 'project') ? 'on' : '');
+  const on = (k: string) => (path === k || (k === 'projects' && path === 'project') || (k === 'library' && path === 'libpage') ? 'on' : '');
   return (
     <div className="shell">
       <nav className="rail" aria-label="Main">

@@ -1,15 +1,21 @@
 const CACHE = 'compass-v1'; // placeholder: vite.config.ts stamps a fresh name into dist/sw.js at every build
+// Clone before the page reads the body: cloning later (inside the cache.open callback) throws and nothing gets cached.
+const keep = (req, r) => { if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return r; };
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest']).catch(() => {}))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.pathname.startsWith('/api') || e.request.method !== 'GET') return;
   if (e.request.mode === 'navigate' || url.pathname === '/') {
-    e.respondWith(fetch(e.request).then((r) => { if (r.ok) caches.open(CACHE).then((c) => c.put('/', r.clone())); return r; }).catch(() => caches.match('/')));
+    e.respondWith(fetch(e.request).then((r) => keep('/', r)).catch(() => caches.match('/')));
+    return;
+  }
+  if (url.pathname === '/library.json') { // network first so a new build shows at once; the last copy keeps search working offline
+    e.respondWith(fetch(e.request).then((r) => keep(e.request, r)).catch(() => caches.match(e.request).then((hit) => hit || Response.error())));
     return;
   }
   if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
-    e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((r) => { if (r.ok) caches.open(CACHE).then((c) => c.put(e.request, r.clone())); return r; })));
+    e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((r) => keep(e.request, r))));
   }
 });
 // Web Push: the Worker sends {title, body, url, tag}. A message is data: it only ever becomes notification text.

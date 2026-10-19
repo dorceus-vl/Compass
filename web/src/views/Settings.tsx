@@ -20,7 +20,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   const goTo = (
     <div className="card">
       <div className="eyebrow" style={{ marginBottom: 6 }}>Go to</div>
-      <div className="row"><Link to="/inbox" className="btn">Inbox</Link><Link to="/meetings" className="btn">Meetings</Link><Link to="/review" className="btn">Weekly review</Link><Link to="/list" className="btn">List</Link><Link to="/upcoming" className="btn">Upcoming</Link><Link to="/timeline" className="btn">Timeline</Link><Link to="/trash" className="btn">Trash</Link></div>
+      <div className="row"><Link to="/inbox" className="btn">Inbox</Link><Link to="/meetings" className="btn">Meetings</Link><Link to="/review" className="btn">Weekly review</Link><Link to="/library" className="btn">Library</Link><Link to="/list" className="btn">List</Link><Link to="/upcoming" className="btn">Upcoming</Link><Link to="/timeline" className="btn">Timeline</Link><Link to="/trash" className="btn">Trash</Link></div>
     </div>
   );
   if (!s) return goTo;

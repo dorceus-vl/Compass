@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:worker": "mkdir -p dist && wrangler dev --test-scheduled --port 8790 --local-upstream localhost:8790",
-    "typecheck": "tsc -p tsconfig.json && tsc -p worker/tsconfig.json",
+    "library": "node scripts/library-build.mjs",
+    "dev": "npm run library && vite",
+    "dev:worker": "npm run library && mkdir -p dist && wrangler dev --test-scheduled --port 8790 --local-upstream localhost:8790",
+    "typecheck": "npm run library && tsc -p tsconfig.json && tsc -p worker/tsconfig.json",
     "check": "for f in scripts/*.test.ts; do [ -e \"$f\" ] || continue; node --experimental-strip-types \"$f\" || exit 1; done",
     "build": "npm run typecheck && vite build",
     "deploy:preview": "npm run build && wrangler versions upload",

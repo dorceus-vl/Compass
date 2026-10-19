@@ -107,5 +107,19 @@ EMPTY=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)
 LEFT=$(D1X "SELECT (SELECT count(*) FROM raid_items WHERE project_id='$P3')+(SELECT count(*) FROM change_requests WHERE project_id='$P3')+(SELECT count(*) FROM lessons WHERE project_id='$P3')+(SELECT count(*) FROM decisions WHERE project_id='$P3')+(SELECT count(*) FROM documents WHERE id='smk-doc')+(SELECT count(*) FROM library_pages WHERE id='smk-lib')+(SELECT count(*) FROM ai_threads WHERE id='smk-thr')+(SELECT count(*) FROM ai_messages WHERE id='smk-msg')+(SELECT count(*) FROM projects WHERE id='$P3') AS n" | node -pe 'JSON.parse(require("fs").readFileSync(0))[0].results[0].n')
 [ "$LEFT" = 0 ] || fail "PM rows survived Empty Trash ($LEFT left)"
 echo "smoke: (e) Empty Trash with RAID, change, lesson, decision, document, import, thread and message rows -> $(printf '%s' "$EMPTY" | head -1)"
+# Library (Phase 3 Task 3): bundled page found by search; a personal lesson is listed in full, a work lesson never.
+PL=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke personal","kind":"personal"}' | js d.project.id)
+PW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke work","kind":"work"}' | js d.project.id)
+curl "${H[@]}" -X POST $B/api/projects/$PL/lessons -d "{\"text\":\"Zebrafish lesson $R\"}" | grep -q '"item"' || fail "personal lesson create"
+curl "${H[@]}" -X POST $B/api/projects/$PW/lessons -d "{\"text\":\"Walrus lesson $R\"}" | grep -q '"item"' || fail "work lesson create"
+curl "${H[@]}" "$B/api/library?q=library" | grep -q '"slug":"how-to-use-the-library"' || fail "library search"
+curl "${H[@]}" $B/api/library | grep -q '"slug":"how-to-use-the-library"' || fail "library tree"
+IMP=$(curl "${H[@]}" $B/api/library/imports)
+echo "$IMP" | grep -q "Zebrafish lesson $R" || fail "personal lesson missing from library imports"
+echo "$IMP" | grep -q "Walrus lesson $R" && fail "work lesson leaked into library imports"
+curl "${H[@]}" "$B/api/library?q=zebrafish" | grep -q '"source":"lesson"' || fail "lesson search"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/library/no-such-page)" = 404 ] || fail "library 404"
+curl "${H[@]}" -X DELETE $B/api/projects/$PL >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PW >/dev/null
+echo "smoke: (l) library search, tree, imports (personal lesson in, work lesson out), 404"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"
