@@ -100,6 +100,7 @@ meetings.post('/:id/accept', async (c) => {
   const decidedAt = localDate((await getSettings(c.env)).tz, new Date(meeting.received_at));
   const writes: D1PreparedStatement[] = [guardStmt(c.env, meeting.id)];
   const madeTasks: Task[] = [];
+  const perStatus: Record<string, number> = {};
   for (const i of items) {
     const mine = !i.owner || ME.includes(i.owner.toLowerCase());
     const task = await buildTaskFromSource(c.env, {
@@ -107,6 +108,8 @@ meetings.post('/:id/accept', async (c) => {
       project_id: project_id as string | null, kind: pkind ?? i.kind, source_app: 'sonarflow', source_kind: 'meeting', source_ref: null,
       source_url: meeting.url ? meeting.url + (i.at ? `${meeting.url.includes('?') ? '&' : '?'}t=${encodeURIComponent(i.at)}` : '') : null,
     });
+    task.sort_in_column += 1000 * (perStatus[task.status] ?? 0); // every task read the same column maximum; step them apart, per status
+    perStatus[task.status] = (perStatus[task.status] ?? 0) + 1;
     writes.push(await insertTaskStmt(c.env, task));
     const ev: TaskEvent = { id: crypto.randomUUID(), task_id: task.id, at: t, actor: 'meeting', type: 'created', data: JSON.stringify({ meeting_id: meeting.id }), enc_v: 0 };
     const s = await seal(c.env, 'task_events', { ...ev }, task.kind);
