@@ -66,6 +66,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
 }
 export async function purgeAudit(env: Env): Promise<void> {
   await env.DB.prepare('DELETE FROM audit_log WHERE at < ?1').bind(daysAgo(AUDIT_DAYS)).run();
+  await env.DB.prepare('DELETE FROM push_log WHERE sent_at < ?1').bind(daysAgo(30)).run(); // push dedupe keys outlive nothing useful past 30 days
 }
 /** Sessions that expired (or were revoked and last seen) over 30 days ago. */
 export async function purgeSessions(env: Env): Promise<void> {

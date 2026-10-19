@@ -7,6 +7,7 @@ import { seal, openAll, open } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
 import { oneOf, text, num, bool, dateTime } from '../lib/validate.ts';
+import { notifyIngest } from '../lib/notify.ts';
 import { buildTaskFromSource, insertTaskStmt, updateTask, loadTask, addEvent } from './tasks.ts';
 
 const inbox = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -173,7 +174,9 @@ inbox.post('/', async (c) => {
   if (!apps.includes(post.app)) return refuse(c, 403, 'app does not match the secret used', caller);
   const p = (post.payload ?? {}) as { from?: unknown; account?: unknown };
   const work = post.kind === 'meeting' || (post.app === 'kelly' && post.kind === 'email' && isWorkAccount(p.account, (await getSettings(c.env)).work_email_domains));
-  const { item } = await ingest(c.env, post, { work, from: post.kind === 'email' ? str(p.from) : null });
+  const result = await ingest(c.env, post, { work, from: post.kind === 'email' ? str(p.from) : null });
+  const { item } = result;
+  c.executionCtx.waitUntil(notifyIngest(c.env, result, post.app)); // never fails or delays the post
   return c.json({ id: item.id, state: item.state, task_id: item.task_id }, 201);
 });
 

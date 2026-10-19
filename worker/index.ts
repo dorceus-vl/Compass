@@ -10,6 +10,7 @@ import trash, { purgeTrash, purgeAudit, purgeSessions } from './routes/trash.ts'
 import inbox, { rules } from './routes/inbox.ts';
 import meetings from './routes/meetings.ts';
 import settings from './routes/settings.ts';
+import push from './routes/push.ts';
 import { stepUpChallenge } from './lib/step-up.ts';
 import { email } from './email.ts';
 
@@ -33,6 +34,7 @@ app.route('/api/settings', settings);
 app.route('/api/inbox', inbox);
 app.route('/api/rules', rules);
 app.route('/api/meetings', meetings);
+app.route('/api/push', push);
 app.post('/api/step-up/challenge', stepUpChallenge);
 app.get('/api/email/address', (c) => c.json({ address: c.env.EMAIL_INBOX_ADDRESS || null }, 200, { 'Cache-Control': 'private, no-store' }));
 app.route('/api', views);

@@ -2,6 +2,7 @@ import PostalMime from 'postal-mime';
 import type { Env } from './types.ts';
 import type { Settings } from '../shared/types.ts';
 import { safeEqual, type InboxPost } from './lib/inbox-parse.ts';
+import { notifyIngest } from './lib/notify.ts';
 import { ingest } from './routes/inbox.ts';
 import { getSettings, audit } from './lib/db.ts';
 import { sealBytes } from './lib/enc.ts';
@@ -49,12 +50,14 @@ export async function email(message: ForwardableEmailMessage, env: Env, _ctx: Ex
     const parsed = await PostalMime.parse(raw);
     if ((parsed.from?.address ?? '').trim().toLowerCase() !== message.from.trim().toLowerCase()) return drop('from-mismatch');
     const { post, work, from } = emailToPost(parsed, await getSettings(env));
-    ({ item, task } = await ingest(env, post, { work, from }));
+    const result = await ingest(env, post, { work, from });
+    ({ item, task } = result);
     if (task) {
       try { await env.FILES.put(`email/${task.id}.eml`, await sealBytes(env, raw, 'email.eml'), { httpMetadata: { contentType: 'text/plain' } }); }
       catch { console.error('[email] could not keep the raw email'); } // the task stays; only the download is missing
     }
     await audit(env, 'email', 'inbox.email', item.id, { work });
+    await notifyIngest(env, result, 'email'); // after the raw email is kept; never throws
   } catch {
     console.error('[email] failed'); // no content in the log
   }
