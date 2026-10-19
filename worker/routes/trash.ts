@@ -68,6 +68,10 @@ export async function purgeAudit(env: Env): Promise<void> {
   await env.DB.prepare('DELETE FROM audit_log WHERE at < ?1').bind(daysAgo(AUDIT_DAYS)).run();
   await env.DB.prepare('DELETE FROM push_log WHERE sent_at < ?1').bind(daysAgo(30)).run(); // push dedupe keys outlive nothing useful past 30 days
 }
+/** Inbox rows that were dealt with (dismissed, kept, added) over 30 days ago can still hold email text, so they go. New and snoozed rows stay. */
+export async function purgeInbox(env: Env): Promise<void> {
+  await env.DB.prepare(`DELETE FROM inbox_items WHERE state IN ('dismissed','kept','added') AND updated_at < ?1`).bind(daysAgo(30)).run();
+}
 /** Sessions that expired (or were revoked and last seen) over 30 days ago. */
 export async function purgeSessions(env: Env): Promise<void> {
   await env.DB.prepare('DELETE FROM auth_sessions WHERE (revoked = 1 AND last_seen_at < ?1) OR expires_at < ?1').bind(daysAgo(SESSION_DAYS)).run();

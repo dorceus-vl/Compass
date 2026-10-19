@@ -6,13 +6,14 @@ import auth from './routes/auth.ts';
 import projects, { milestones } from './routes/projects.ts';
 import tasks from './routes/tasks.ts';
 import views from './routes/views.ts';
-import trash, { purgeTrash, purgeAudit, purgeSessions } from './routes/trash.ts';
+import trash from './routes/trash.ts';
 import inbox, { rules } from './routes/inbox.ts';
 import meetings from './routes/meetings.ts';
 import settings from './routes/settings.ts';
 import push from './routes/push.ts';
 import { stepUpChallenge } from './lib/step-up.ts';
 import { email } from './email.ts';
+import { runCron } from './cron.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -45,6 +46,6 @@ export default {
   fetch: app.fetch,
   email,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(Promise.all([purgeTrash(env), purgeAudit(env), purgeSessions(env)]));
+    ctx.waitUntil(runCron(env));
   },
 } satisfies ExportedHandler<Env>;
