@@ -1,7 +1,7 @@
 import { useEffect, useState, createElement, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 
 const listeners = new Set<() => void>();
-export function navigate(path: string) { history.pushState(null, '', path); listeners.forEach((l) => l()); }
+export function navigate(path: string, replace = false) { history[replace ? 'replaceState' : 'pushState'](null, '', path); listeners.forEach((l) => l()); }
 window.addEventListener('popstate', () => listeners.forEach((l) => l()));
 
 /** Paths: / board list upcoming timeline projects projects/:id settings trash. */

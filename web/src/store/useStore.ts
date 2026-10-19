@@ -14,7 +14,7 @@ const now = () => new Date().toISOString();
 const tmp = () => `tmp-${crypto.randomUUID()}`;
 
 /** A caller may still hold `tmp-…` after replay gave the row its real id; follow the saved map so the edit is not lost. */
-async function resolveId(store: Store, id: string): Promise<string> {
+export async function resolveId(store: Store, id: string): Promise<string> {
   if (!id.startsWith('tmp-') || await idb.get(store, id)) return id;
   return (await idb.get<{ real: string }>('meta', `idmap:${id}`))?.real ?? id;
 }
