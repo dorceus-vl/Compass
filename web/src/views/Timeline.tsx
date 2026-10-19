@@ -59,15 +59,15 @@ export function Timeline() {
         </div>
       </div>
       <div className="card" style={{ overflowX: 'auto', padding: 0 }}>
-        <svg width={LEFT + days * px} height={height} style={{ display: 'block', fontFamily: 'var(--font)', fontSize: 12, touchAction: 'pan-y' }} aria-label="Timeline">
+        <svg width={LEFT + days * px} height={height} style={{ display: 'block', fontFamily: 'var(--font)', fontSize: 12 }} aria-label="Timeline">
           {ticks.map((d) => <g key={d}><line x1={LEFT + dayIndex(d, from) * px} y1={0} x2={LEFT + dayIndex(d, from) * px} y2={height} stroke="rgba(255,255,255,.06)" /><text x={LEFT + dayIndex(d, from) * px + 4} y={14} fill="var(--text-faint)" className="mono" fontSize={10}>{label(d)}</text></g>)}
           <line x1={LEFT + dayIndex(t, from) * px} y1={0} x2={LEFT + dayIndex(t, from) * px} y2={height} stroke="var(--accent)" strokeDasharray="3 3" />
-          {rows.map((r) => { const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = r.w + (drag?.edge && drag.id === r.id ? d : 0); return (
+          {rows.map((r) => { const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === r.id ? d : 0), px); return (
             <g key={r.id} transform={`translate(0, ${r.y + 24})`}>
               <text x={8} y={ROW / 2 + 4} fill="var(--text)" style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)}>{r.title.slice(0, 32)}</text>
-              {r.due ? <path d={`M${x + px / 2} 8 l8 9 l-8 9 l-8 -9 z`} fill="var(--accent)" style={{ cursor: 'grab' }} onPointerDown={(e) => onDown(e, r.id, false)} />
-                : <><rect x={x} y={8} width={Math.max(w, 4)} height={18} rx={6} fill="rgba(var(--accent-rgb),.25)" stroke="var(--accent)" style={{ cursor: 'grab' }} onPointerDown={(e) => onDown(e, r.id, false)} />
-                  <rect x={x + Math.max(w, 4) - 6} y={8} width={6} height={18} fill="var(--accent)" style={{ cursor: 'ew-resize' }} onPointerDown={(e) => onDown(e, r.id, true)} /></>}
+              {r.due ? <path d={`M${x + px / 2} 8 l8 9 l-8 9 l-8 -9 z`} fill="var(--accent)" style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
+                : <><rect x={x} y={8} width={w} height={18} rx={6} fill="rgba(var(--accent-rgb),.25)" stroke="var(--accent)" style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
+                  <rect x={x + w - 6} y={8} width={6} height={18} fill="var(--accent)" style={{ cursor: 'ew-resize', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, true)} /></>}
             </g>); })}
           {ms.map((m) => <g key={m.id} transform={`translate(${LEFT + dayIndex(m.due_at!, from) * px + px / 2}, ${height - 16})`}><title>{m.name}</title><path d="M0 -8 l7 8 l-7 8 l-7 -8 z" fill="var(--nightowl)" /><text x={10} y={4} fill="var(--text-dim)" fontSize={11}>{m.name}{projects.length > 1 ? ` · ${projects.find((p) => p.id === m.project_id)?.name ?? ''}` : ''}</text></g>)}
         </svg>
