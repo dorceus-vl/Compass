@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Status, Task } from '../../../shared/types.ts';
+import type { Status } from '../../../shared/types.ts';
 import { useStore, moveTask } from '../store/useStore.ts';
 import { api } from '../api.ts';
 import { Card } from '../ui/Card.tsx';
@@ -19,9 +19,11 @@ export function Board() {
   const [wip, setWip] = useState<Record<string, number | null>>({});
   const drag = useRef<{ id: string; moved: boolean; el: HTMLElement | null } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const stopDrag = useRef<(() => void) | null>(null);
   const lastDrag = useRef(0); // a drag released over its own card still fires click; ignore it
   useEffect(() => { api<{ wip_limits: Record<string, number | null> }>('/settings').then((s) => setWip(s.wip_limits)).catch(() => {}); }, []);
   useEffect(() => localStorage.setItem('compass.board.kind', kind), [kind]);
+  useEffect(() => () => stopDrag.current?.(), []); // unmount mid-drag: drop the clone and listeners
   if (!ready) return null;
 
   const wk = startOfWeek(today());
@@ -31,37 +33,52 @@ export function Board() {
 
   // Pointer drag: a card follows the pointer; the column and the card under it on release decide the drop.
   function onPointerDown(e: ReactPointerEvent, id: string) {
-    if (e.button !== 0) return;
-    drag.current = { id, moved: false, el: null };
+    if (e.button !== 0 || drag.current) return; // one drag at a time: a second finger is ignored
+    const card = e.currentTarget as HTMLElement, r0 = card.getBoundingClientRect(), pid = e.pointerId;
+    const grab = { x: e.clientX - r0.left, y: e.clientY - r0.top }; // keep the grab point so the clone does not jump
     const start = { x: e.clientX, y: e.clientY };
-    const onMove = (ev: PointerEvent) => {
-      const d = drag.current; if (!d) return;
-      if (!d.moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
-      if (!d.moved) { d.moved = true; setDragId(id); d.el = (ev.target as HTMLElement).closest('.kc')?.cloneNode(true) as HTMLElement; if (d.el) { d.el.style.cssText = 'position:fixed;pointer-events:none;width:240px;z-index:60;opacity:.9'; document.body.appendChild(d.el); } }
-      if (d.el) { d.el.style.left = `${ev.clientX - 120}px`; d.el.style.top = `${ev.clientY - 20}px`; }
+    drag.current = { id, moved: false, el: null };
+    const stop = () => {
+      window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel);
+      drag.current?.el?.remove(); drag.current = null; stopDrag.current = null; setDragId(null);
     };
+    stopDrag.current = stop;
+    const onMove = (ev: PointerEvent) => {
+      const d = drag.current; if (!d || ev.pointerId !== pid) return;
+      if (!d.moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+      if (!d.moved) {
+        d.moved = true; setDragId(id);
+        d.el = card.cloneNode(true) as HTMLElement;
+        d.el.style.cssText = `position:fixed;pointer-events:none;width:${r0.width}px;z-index:60;opacity:.9`;
+        document.body.appendChild(d.el);
+      }
+      d.el!.style.left = `${ev.clientX - grab.x}px`; d.el!.style.top = `${ev.clientY - grab.y}px`;
+    };
+    const onCancel = (ev: PointerEvent) => { if (ev.pointerId === pid) stop(); };
     const onUp = async (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
-      const d = drag.current; drag.current = null; d?.el?.remove(); setDragId(null);
-      if (!d?.moved) return;
+      if (ev.pointerId !== pid) return;
+      const moved = drag.current?.moved; stop();
+      if (!moved) return;
       lastDrag.current = Date.now();
       const under = document.elementFromPoint(ev.clientX, ev.clientY);
       const col = under?.closest<HTMLElement>('[data-col]'); if (!col) return;
       const status = col.dataset.col as Status;
       const cardEl = under?.closest<HTMLElement>('[data-task]');
+      if (cardEl?.dataset.task === id) return; // dropped on itself
       const column = byCol(status).filter((t) => t.id !== id);
       let beforeId: string | null = null;
-      if (cardEl && cardEl.dataset.task !== id) {
+      if (cardEl) {
         const r = cardEl.getBoundingClientRect();
         const i = column.findIndex((t) => t.id === cardEl.dataset.task);
         beforeId = ev.clientY < r.top + r.height / 2 ? column[i]?.id ?? null : column[i + 1]?.id ?? null;
       }
-      const limit = wip[status];
-      if (limit && status !== 'done' && byCol(status).filter((t) => t.id !== id).length >= limit) toast(`${COLS.find((c) => c[0] === status)![1]} is at its limit of ${limit}`);
       const bi = beforeId ? column.findIndex((t) => t.id === beforeId) : column.length;
+      if (tasks.find((t) => t.id === id)?.status === status && byCol(status).findIndex((t) => t.id === id) === bi) return; // same place
+      const limit = wip[status];
+      if (limit && status !== 'done' && column.length >= limit) toast(`${COLS.find((c) => c[0] === status)![1]} is at its limit of ${limit}`);
       await moveTask(id, status, beforeId, positionBetween(column[bi - 1]?.sort_in_column ?? null, column[bi]?.sort_in_column ?? null));
     };
-    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('pointercancel', onCancel);
   }
 
   const column = (s: Status, label: string, colour: string, pid?: string | null) => {
