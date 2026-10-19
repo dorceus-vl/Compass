@@ -31,6 +31,8 @@ export interface Env {
   AI_MODEL_GEMINI: string;
   /** JSON {"claude":{"in":usd,"out":usd},"gemini":{...}}: USD per million tokens, for the usage cost. */
   AI_PRICES: string;
+  /** "1" with DEV_LOGIN=1 answers from a canned stub instead of calling a provider (local tests only). */
+  AI_STUB?: string;
 }
 
 export interface SessionRow {

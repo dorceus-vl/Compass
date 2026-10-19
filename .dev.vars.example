@@ -13,5 +13,6 @@ ALLOWED_FORWARDERS=
 # Secret forward-to address; only mail sent to it is accepted.
 EMAIL_INBOX_ADDRESS=compass-xxxxxxxxxxxxxxxx@knocturnlabs.com
 # Phase 3 copilot: local tests use the AI_STUB path (never real keys).
+AI_STUB=1
 # ANTHROPIC_API_KEY=
 # GEMINI_API_KEY=
