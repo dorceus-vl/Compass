@@ -10,6 +10,12 @@ export const ENC_COLS = {
   inbox_items: ['title', 'body', 'payload'],
   meeting_reviews: ['title', 'summary', 'decisions', 'action_items', 'open_questions', 'important_notes'],
   decisions: ['text'],
+  raid_items: ['text', 'response', 'owner', 'trigger'],
+  change_requests: ['title', 'description', 'impact_scope', 'impact_time', 'impact_cost', 'approver'],
+  lessons: ['text'],
+  documents: ['name'],
+  ai_threads: ['title'],
+  ai_messages: ['content', 'proposals'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string }; // typed rows (Project, Milestone) have no index signature

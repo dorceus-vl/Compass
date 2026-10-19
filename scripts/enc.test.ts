@@ -22,6 +22,19 @@ assert.equal(m.enc_v, 2);
 assert.equal((await open(env, 'milestones', { ...m })).name, 'Go / no-go');
 assert.deepEqual(ENC_COLS.projects, ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria']);
 
+// Phase 3 tables: every listed column changes when sealed as work, round-trips, and stays put as personal.
+for (const [table, row] of [
+  ['raid_items', { id: 'r1', text: 'Vendor slips', response: 'Escalate', owner: 'Sam', trigger: 'No PO by Friday', probability: 3, enc_v: 0 }],
+  ['ai_messages', { id: 'a1', content: 'Plan looks tight', proposals: '{"tasks":[]}', citations: '[]', enc_v: 0 }],
+] as const) {
+  const w = await seal(env, table, { ...row }, 'work') as any;
+  assert.equal(w.enc_v, 2);
+  for (const col of ENC_COLS[table]) assert.notEqual(w[col], (row as any)[col], `${table}.${col} sealed`);
+  assert.deepEqual(await open(env, table, { ...w }), { ...row, enc_v: 2 });
+  assert.deepEqual(await seal(env, table, { ...row }, 'personal'), row, `${table} personal untouched`);
+}
+for (const t of ['raid_items', 'change_requests', 'lessons', 'documents', 'ai_threads', 'ai_messages'] as const) assert.ok(ENC_COLS[t].length > 0);
+
 // Raw bytes (every byte value, bigger than one base64 chunk) round-trip; the context binds them.
 const bytes = Uint8Array.from({ length: 70_000 }, (_, i) => i % 256);
 const box = await sealBytes(env, bytes, 'email.eml');

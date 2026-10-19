@@ -17,10 +17,15 @@
     "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
+    "docx": "^9.12.0",
+    "docxtemplater": "^3.71.1",
+    "fflate": "^0.8.3",
     "hono": "^4.6.14",
+    "pizzip": "^3.3.0",
     "postal-mime": "^4.0.11",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "unpdf": "^1.9.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260828.1",

@@ -7,3 +7,5 @@ dist/
 .superpowers/
 web/dist/
 .secrets/
+worker/library/bundle.json
+web/public/library.json

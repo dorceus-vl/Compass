@@ -14,7 +14,12 @@
     "COMPASS_USERS": "7cad1bd5-760b-4423-9b02-406c74d5a6e4,ab39fa67-0a88-40b6-824b-9718500e5f47",
     "ID_URL": "https://id.knocturnlabs.com",
     "VAPID_SUBJECT": "mailto:vladimir.bigvlad@gmail.com",
-    "DEV_LOGIN": "0"
+    "DEV_LOGIN": "0",
+    // Phase 3 copilot (worker/lib/ai.ts). Keys are secrets Vlad puts himself: ANTHROPIC_API_KEY, GEMINI_API_KEY.
+    "AI_MODEL_CLAUDE": "claude-sonnet-5-5",
+    "AI_MODEL_GEMINI": "gemini-3.6-flash",
+    // USD per million tokens; update when a provider changes prices.
+    "AI_PRICES": "{\"claude\":{\"in\":3,\"out\":15},\"gemini\":{\"in\":0.75,\"out\":3.75}}"
   },
   // Every 15 minutes: Trash purge (30 days), audit purge (90 days). Later phases add pushes here.
   "triggers": { "crons": ["*/15 * * * *"] },

@@ -23,6 +23,14 @@ export interface Env {
   ALLOWED_FORWARDERS?: string;
   /** Secret forward-to address (compass-<random>@knocturnlabs.com); only mail sent to it gets in. Unset = all email dropped. */
   EMAIL_INBOX_ADDRESS?: string;
+  /** Phase 3 copilot keys (secrets Vlad sets himself); unset = that provider is unavailable. */
+  ANTHROPIC_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  /** Model ids per provider (wrangler.jsonc vars). */
+  AI_MODEL_CLAUDE: string;
+  AI_MODEL_GEMINI: string;
+  /** JSON {"claude":{"in":usd,"out":usd},"gemini":{...}}: USD per million tokens, for the usage cost. */
+  AI_PRICES: string;
 }
 
 export interface SessionRow {

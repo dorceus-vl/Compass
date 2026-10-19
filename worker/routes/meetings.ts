@@ -118,8 +118,8 @@ meetings.post('/:id/accept', async (c) => {
   }
   const madeDecisions: Decision[] = [];
   for (const d of decs) {
-    const dec: Decision = { id: crypto.randomUUID(), project_id: project_id as string | null, text: d.text, decided_at: decidedAt, from_meeting_id: meeting.id, at_ref: d.at };
-    const s = await seal(c.env, 'decisions', { ...dec, enc_v: 0 }, pkind ?? 'work');
+    const dec: Decision = { id: crypto.randomUUID(), project_id: project_id as string | null, text: d.text, decided_at: decidedAt, from_meeting_id: meeting.id, at_ref: d.at, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
+    const s = await seal(c.env, 'decisions', { ...dec }, pkind ?? 'work');
     writes.push(c.env.DB.prepare('INSERT INTO decisions (id, project_id, text, decided_at, from_meeting_id, at_ref, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?7,?8)')
       .bind(s.id, s.project_id, s.text, s.decided_at, s.from_meeting_id, s.at_ref, t, s.enc_v));
     madeDecisions.push(dec);

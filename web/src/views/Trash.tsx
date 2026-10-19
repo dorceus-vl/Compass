@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Task, Project, Milestone } from '../../../shared/types.ts';
+import type { Task, Project, Milestone, RaidItem, ChangeRequest, Decision, Lesson, DocumentRow, AiThread } from '../../../shared/types.ts';
 import { api } from '../api.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { pull } from '../store/sync.ts';
 
-type TrashAnswer = { tasks: Task[]; projects: Project[]; milestones: Milestone[]; purge_after_days: number };
+type InProject<T> = T & { project_name: string | null };
+type TrashAnswer = {
+  tasks: Task[]; projects: Project[]; milestones: Milestone[]; purge_after_days: number;
+  raid_items: InProject<RaidItem>[]; change_requests: InProject<ChangeRequest>[]; decisions: InProject<Decision>[];
+  lessons: InProject<Lesson>[]; documents: InProject<DocumentRow>[]; ai_threads: InProject<AiThread>[];
+};
+type Table = 'tasks' | 'projects' | 'milestones' | 'raid_items' | 'change_requests' | 'decisions' | 'lessons' | 'documents' | 'ai_threads';
+type TrashRow = { id: string; deleted_at: string | null; title?: string; name?: string; text?: string; project_name?: string | null };
 
 export function TrashView() {
   const [t, setT] = useState<TrashAnswer | null>(null);
@@ -13,20 +20,22 @@ export function TrashView() {
   const load = () => api<TrashAnswer>('/trash').then(setT).catch(() => toast('Trash needs a connection'));
   useEffect(() => { void load(); }, []);
   if (!t) return null;
-  const restore = async (table: 'tasks' | 'projects' | 'milestones', id: string) => {
+  const restore = async (table: Table, id: string) => {
     try { await api(`/trash/${table}/${id}/restore`, { method: 'POST' }); toast('Restored'); await load(); await pull(); }
     catch (e) { toast((e as Error).message || 'Restore needs a connection'); }
   };
-  const section = (title: string, table: 'tasks' | 'projects' | 'milestones', rows: { id: string; deleted_at: string | null; title?: string; name?: string }[]) => rows.length > 0 && (
+  const section = (title: string, table: Table, rows: TrashRow[]) => rows.length > 0 && (
     <div className="hz"><div className="hh"><b>{title}</b><small>{rows.length}</small></div>
-      {rows.map((r) => <div key={r.id} className="task"><div className="tt" style={{ flex: 1 }}>{r.title ?? r.name}</div><span className="chip">{r.deleted_at?.slice(0, 10)}</span><button type="button" className="btn" onClick={() => restore(table, r.id)}>Restore</button></div>)}</div>);
-  const total = t.tasks.length + t.projects.length + t.milestones.length;
+      {rows.map((r) => <div key={r.id} className="task"><div className="tt" style={{ flex: 1 }}>{r.title ?? r.name ?? r.text}{r.project_name ? ` · ${r.project_name}` : ''}</div><span className="chip">{r.deleted_at?.slice(0, 10)}</span><button type="button" className="btn" onClick={() => restore(table, r.id)}>Restore</button></div>)}</div>);
+  const total = t.tasks.length + t.projects.length + t.milestones.length + t.raid_items.length + t.change_requests.length + t.decisions.length + t.lessons.length + t.documents.length + t.ai_threads.length;
   return (
     <>
       <div className="head"><div><div className="eyebrow">Trash</div><h1 style={{ marginTop: 6 }}>Gone, <b>not forgotten</b></h1><div className="sub">Items stay {t.purge_after_days} days, then go for good.</div></div>
         <button type="button" className="btn" style={{ color: 'var(--danger)' }} disabled={total === 0} onClick={() => dlg.current?.showModal()}>Empty Trash</button></div>
       {total === 0 && <p style={{ color: 'var(--text-faint)' }}>Trash is empty.</p>}
       {section('Tasks', 'tasks', t.tasks)}{section('Projects', 'projects', t.projects)}{section('Milestones', 'milestones', t.milestones)}
+      {section('RAID', 'raid_items', t.raid_items)}{section('Changes', 'change_requests', t.change_requests)}{section('Decisions', 'decisions', t.decisions)}
+      {section('Lessons', 'lessons', t.lessons)}{section('Documents', 'documents', t.documents)}{section('Copilot threads', 'ai_threads', t.ai_threads)}
       <dialog ref={dlg} onClose={() => setWord('')}><p>This deletes everything in Trash for good. Type <b>EMPTY</b> to continue; your passkey is asked next.</p>
         <input className="field" value={word} onChange={(e) => setWord(e.target.value)} />
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}><button type="button" className="btn" onClick={() => dlg.current?.close()}>Cancel</button>

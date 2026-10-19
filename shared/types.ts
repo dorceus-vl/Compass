@@ -28,12 +28,13 @@ export interface Settings {
   day_start_hour: number; digest_hour: number; quiet_from: string; quiet_to: string; weekly_review_day: number;
   wip_limits: Record<Status, number | null>; saved_views: { name: string; query: string }[]; tz: string;
   push: Record<PushType, boolean>; work_email_domains: string[]; last_review_at: string | null;
+  ai_monthly_cap_micro: number; default_provider: Provider;
 }
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
   wip_limits: { new: null, progress: 5, hold: null, waiting: null, done: null }, saved_views: [], tz: 'America/Toronto',
   push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true },
-  work_email_domains: ['bell.ca'], last_review_at: null,
+  work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
 };
 export interface TodayAnswer {
   date: string; short: Task[]; medium: Task[]; long: Task[]; overdue: Task[]; done_this_week: number; open_today: number;
@@ -58,5 +59,34 @@ export interface MeetingReview {
   action_items: MeetingActionItem[]; open_questions: MeetingNotes['open_questions']; important_notes: MeetingNotes['important_notes'];
   project_id: string | null; state: 'new' | 'reviewed'; received_at: string; reviewed_at: string | null;
 }
-export interface Decision { id: string; project_id: string | null; text: string; decided_at: string; from_meeting_id: string | null; at_ref: string | null }
+export interface Decision { id: string; project_id: string | null; text: string; decided_at: string; from_meeting_id: string | null; at_ref: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
 export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting';
+
+export type RaidType = 'risk' | 'assumption' | 'issue' | 'dependency';
+export interface RaidItem {
+  id: string; project_id: string; type: RaidType; text: string; probability: number | null; impact: number | null;
+  response: string | null; owner: string | null; trigger: string | null; status: 'open' | 'closed'; due_at: string | null;
+  from_meeting_id: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
+}
+export interface ChangeRequest {
+  id: string; project_id: string; title: string; description: string | null; impact_scope: string | null; impact_time: string | null;
+  impact_cost: string | null; decision: 'pending' | 'approved' | 'rejected'; approver: string | null; decided_at: string | null;
+  created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
+}
+export interface Lesson { id: string; project_id: string; text: string; category: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
+export type DocKind = 'pdf' | 'docx' | 'xlsx' | 'md' | 'txt';
+export interface DocumentRow {
+  id: string; name: string; kind: DocKind; size: number; content_type: string; project_id: string | null; is_template: number;
+  placeholders: string[]; text_indexed: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
+}
+export interface LibraryPage { slug: string; section: string; title: string; body: string; source: 'bundled' | 'import' | 'lesson' }
+export type Provider = 'claude' | 'gemini';
+export type AiFeature = 'copilot' | 'status_report' | 'plan_review' | 'brief';
+export interface ProposedTask { title: string; horizon: Horizon; due_at: string | null }
+export interface ProposedRaid { type: RaidType; text: string; probability: number | null; impact: number | null }
+export interface Proposals { tasks: ProposedTask[]; raid: ProposedRaid[]; decisions: { text: string }[] }
+export interface AiThread { id: string; project_id: string | null; title: string; provider: Provider; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
+export interface AiMessage {
+  id: string; thread_id: string; role: 'user' | 'assistant'; provider: Provider | null; content: string; citations: string[];
+  proposals: Proposals | null; cost_micro: number; saved: number; created_at: string; enc_v: number;
+}
