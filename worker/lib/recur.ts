@@ -23,19 +23,25 @@ function addMonthsClamped(d: Date, n: number, dayOfMonth: number): Date {
   return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(dayOfMonth, last)));
 }
 
+/** Next listed weekday strictly after base; past the last one this week, the first one `interval` weeks on. */
+function nextWeekday(base: Date, days: number[], interval: number): Date {
+  const sorted = [...days].sort((a, b) => a - b);
+  const wd = isoWeekday(base);
+  const later = sorted.find((d) => d > wd);
+  return later ? addDays(base, later - wd) : addDays(base, 7 * interval - wd + sorted[0]);
+}
+
+/** doneAt is the day it was done in the user's zone (YYYY-MM-DD; a timestamp's first 10 chars are used as is). */
 export function nextOccurrence(dueAt: string, rule: RecurRule, doneAt: string): string | null {
   const done = day(doneAt);
   const base = rule.after_completion ? done : day(dueAt);
   let next: Date;
   if (rule.freq === 'daily') next = addDays(base, rule.interval);
   else if (rule.freq === 'monthly') next = addMonthsClamped(base, rule.interval, day(dueAt).getUTCDate());
-  else if (rule.weekdays?.length) {
-    const days = [...rule.weekdays].sort((a, b) => a - b);
-    const wd = isoWeekday(base);
-    const later = days.find((d) => d > wd);
-    next = later ? addDays(base, later - wd) : addDays(base, 7 * rule.interval - wd + days[0]);
-  } else next = addDays(base, 7 * rule.interval);
+  else if (rule.weekdays?.length) next = nextWeekday(base, rule.weekdays, rule.interval);
+  else next = addDays(base, 7 * rule.interval);
   // Never schedule into the past: an overdue task done today recurs from today.
+  if (next.getTime() <= done.getTime() && rule.freq === 'weekly' && rule.weekdays?.length) next = nextWeekday(done, rule.weekdays, rule.interval);
   while (next.getTime() <= done.getTime()) next = rule.freq === 'daily' ? addDays(next, rule.interval) : rule.freq === 'monthly' ? addMonthsClamped(next, rule.interval, day(dueAt).getUTCDate()) : addDays(next, 7 * rule.interval);
   return ymd(next);
 }

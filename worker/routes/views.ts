@@ -3,19 +3,14 @@ import type { Env, Variables } from '../types.ts';
 import type { Task, Milestone, Project, Status, TodayAnswer } from '../../shared/types.ts';
 import { openAll } from '../lib/enc.ts';
 import { getSettings } from '../lib/db.ts';
+import { localDate, addDays, weekStart as weekStartOf } from '../lib/dates.ts';
 
 const views = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-/** Today's date in the user's zone (settings.tz), as YYYY-MM-DD. */
-export function localDate(tz: string, at = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
-}
-const addDays = (ymd: string, n: number) => new Date(new Date(ymd + 'T00:00:00Z').getTime() + n * 86_400_000).toISOString().slice(0, 10);
 
 views.get('/today', async (c) => {
   const settings = await getSettings(c.env);
   const date = localDate(settings.tz);
-  const weekStart = addDays(date, -((new Date(date + 'T00:00:00Z').getUTCDay() + 6) % 7));
+  const weekStart = weekStartOf(date);
   const open = await c.env.DB.prepare(`SELECT * FROM tasks WHERE deleted_at IS NULL AND status != 'done' AND parent_id IS NULL ORDER BY due_at IS NULL, due_at, priority DESC, sort_in_column`).all<Task>();
   const tasks = await openAll(c.env, 'tasks', open.results);
   const doneWeek = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE deleted_at IS NULL AND status = 'done' AND done_at >= ?1`).bind(weekStart).first<{ n: number }>();
@@ -45,7 +40,7 @@ views.get('/board', async (c) => {
   // Done shows this week's only; older done cards live in List (status=done) and Trash.
   const settings = await getSettings(c.env);
   const date = localDate(settings.tz);
-  const weekStart = addDays(date, -((new Date(date + 'T00:00:00Z').getUTCDay() + 6) % 7));
+  const weekStart = weekStartOf(date);
   where.push(`(status != 'done' OR done_at >= ?${args.push(weekStart)})`);
   const { results } = await c.env.DB.prepare(`SELECT * FROM tasks WHERE ${where.join(' AND ')} ORDER BY sort_in_column, created_at`).bind(...args).all<Task>();
   const tasks = await openAll(c.env, 'tasks', results);

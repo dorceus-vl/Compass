@@ -3,7 +3,8 @@ import type { Env, Variables } from '../types.ts';
 import type { Task, TaskEvent, Status } from '../../shared/types.ts';
 import { checkAll, text, oneOf, date, num, type Check } from '../lib/validate.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
-import { now, audit } from '../lib/db.ts';
+import { now, audit, getSettings } from '../lib/db.ts';
+import { localDate } from '../lib/dates.ts';
 import { projectKind } from './projects.ts';
 import { parseRecur, nextOccurrence } from '../lib/recur.ts';
 import { positionBetween } from '../../shared/position.ts';
@@ -55,6 +56,25 @@ const badTags = (v: unknown) => { if (v === null || v === undefined) return fals
 async function resolveKind(env: Env, projectId: string | null, given: unknown): Promise<'personal' | 'work' | null> {
   if (projectId) return projectKind(env, projectId);
   return given === 'work' ? 'work' : 'personal';
+}
+
+/**
+ * The one way a task becomes done: marks it done, writes the 'done' event and, for a recurring task, creates
+ * the next occurrence (counted from the user's local date). `task` is the already-edited task; `fields` are its extra changed columns.
+ */
+async function completeTask(env: Env, task: Task, fields: string[] = []): Promise<{ task: Task; next?: Task }> {
+  const t = now();
+  const done: Task = { ...task, status: 'done', done_at: t, updated_at: t };
+  await updateTask(env, done, ['status', 'done_at', ...fields]);
+  await addEvent(env, done, 'you', 'done');
+  const rule = parseRecur(done.recur);
+  if (!rule || !done.due_at) return { task: done };
+  const due = nextOccurrence(done.due_at, rule, localDate((await getSettings(env)).tz));
+  if (!due) return { task: done };
+  const next: Task = { ...done, id: crypto.randomUUID(), status: 'new', due_at: due, done_at: null, created_at: t, updated_at: t, sort_in_column: 0, source_ref: null };
+  await insertTask(env, next);
+  await addEvent(env, next, 'you', 'created', { recurred_from: done.id });
+  return { task: done, next };
 }
 
 tasks.get('/', async (c) => {
@@ -117,14 +137,20 @@ tasks.patch('/:id', async (c) => {
   if (r.values.tags === null) r.values.tags = '[]';
   const fields = Object.keys(r.values);
   const next: Task = { ...task, ...(r.values as Partial<Task>), updated_at: now() };
-  if ('project_id' in r.values) {
-    const kind = await resolveKind(c.env, next.project_id, next.kind);
+  // Kind follows the project; a body `kind` only counts for a task that ends up with no project.
+  if (next.project_id) {
+    const kind = await projectKind(c.env, next.project_id);
     if (!kind) return c.json({ error: 'project not found' }, 404);
-    next.kind = kind; fields.push('kind');
+    next.kind = kind;
   }
+  fields.push('kind');
   if (next.status === 'waiting' && task.status !== 'waiting') { next.waiting_since = next.updated_at; fields.push('waiting_since'); }
-  if (next.status === 'done' && task.status !== 'done') { next.done_at = next.updated_at; fields.push('done_at'); }
   if (next.status !== 'done' && task.status === 'done') { next.done_at = null; fields.push('done_at'); }
+  if (next.status === 'done' && task.status !== 'done') {
+    const res = await completeTask(c.env, next, fields);
+    await addEvent(c.env, res.task, 'you', 'edited', fields);
+    return c.json(res);
+  }
   await updateTask(c.env, next, fields);
   await addEvent(c.env, next, 'you', 'edited', fields);
   return c.json({ task: next });
@@ -157,7 +183,9 @@ tasks.post('/:id/move', async (c) => {
     prev = p?.m ?? null;
   }
   const t = now();
-  const next: Task = { ...task, status, sort_in_column: positionBetween(prev, nextPos), updated_at: t,
+  const sort_in_column = positionBetween(prev, nextPos);
+  if (status === 'done' && task.status !== 'done') return c.json(await completeTask(c.env, { ...task, sort_in_column }, ['sort_in_column']));
+  const next: Task = { ...task, status, sort_in_column, updated_at: t,
     done_at: status === 'done' ? (task.done_at ?? t) : null, waiting_since: status === 'waiting' ? (task.waiting_since ?? t) : task.waiting_since };
   await updateTask(c.env, next, ['status', 'sort_in_column', 'done_at', 'waiting_since']);
   if (status !== task.status) await addEvent(c.env, next, 'you', 'moved', { from: task.status, to: status });
@@ -169,21 +197,7 @@ tasks.post('/:id/done', async (c) => {
   const task = await loadTask(c.env, c.req.param('id'));
   if (!task) return c.json({ error: 'Not found' }, 404);
   if (task.status === 'done') return c.json({ task }); // already done: no second recurrence
-  const t = now();
-  const done: Task = { ...task, status: 'done', done_at: t, updated_at: t };
-  await updateTask(c.env, done, ['status', 'done_at']);
-  await addEvent(c.env, done, 'you', 'done');
-  const rule = parseRecur(task.recur);
-  let next: Task | undefined;
-  if (rule && task.due_at) {
-    const due = nextOccurrence(task.due_at, rule, t);
-    if (due) {
-      next = { ...task, id: crypto.randomUUID(), status: 'new', due_at: due, done_at: null, created_at: t, updated_at: t, sort_in_column: 0, source_ref: null };
-      await insertTask(c.env, next);
-      await addEvent(c.env, next, 'you', 'created', { recurred_from: task.id });
-    }
-  }
-  return c.json({ task: done, ...(next ? { next } : {}) });
+  return c.json(await completeTask(c.env, task));
 });
 
 tasks.post('/:id/comment', async (c) => {
