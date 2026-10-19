@@ -22,3 +22,8 @@ Catalogue of everything planned: `docs/compass-features.md`. Read `assets/brand/
 6. No `alert()` / `confirm()`; `<dialog>` for modals; no inline scripts or `on*=` (CSP); edit in place.
 7. Timestamps: ISO strings from `new Date().toISOString()`, never `datetime('now')`.
 8. Every task in a plan ends with `npm run typecheck && npm run check` passing and a commit.
+
+## Phase 2: sources
+- The inbox contract (what outside apps post, which secret may post which app, limits, dedupe by `ref`) lives in `docs/integration.md`. Outside apps post to `/api/inbox` with their own inbox secret; no cookie.
+- Secrets live only in `.secrets/compass-inbox.env` (git-ignored, mode 600) and as Worker secrets; never commit, print or paste them. `bash scripts/setup-phase2.sh` generates the missing ones; `--put` also sets them on the Worker (only when Vlad says so). Local test values live in `.dev.vars`.
+- Forwarded email goes to the secret `EMAIL_INBOX_ADDRESS` (shown in Settings → Email); only `ALLOWED_FORWARDERS` may send to it.
