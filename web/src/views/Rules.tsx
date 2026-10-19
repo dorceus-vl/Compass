@@ -21,7 +21,9 @@ export function Rules() {
   useEffect(() => { void load(); }, []);
   if (!rules) return null;
 
-  const patch = async (r: Rule, body: Record<string, unknown>) => {
+  // `local` is shown at once; a failure reloads the saved rules, which puts the old value back.
+  const patch = async (r: Rule, body: Record<string, unknown>, local: Partial<Rule> = {}) => {
+    setRules((xs) => xs && xs.map((x) => (x.id === r.id ? { ...x, ...local } : x)));
     try {
       const { rule } = await api<{ rule: Rule }>(`/rules/${r.id}`, { method: 'PATCH', json: body });
       setRules((xs) => xs && xs.map((x) => (x.id === rule.id ? rule : x)));
@@ -49,14 +51,14 @@ export function Rules() {
         <div key={r.id} style={{ borderTop: '1px solid var(--border-soft)', padding: '12px 0', display: 'grid', gap: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
             <label style={field}>Name<input key={`${rev}:${r.name}`} className="field" defaultValue={r.name} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (!v) { toast('A rule needs a name'); e.target.value = r.name; } else if (v !== r.name) void patch(r, { name: v }); }} /></label>
-            <label style={field}>App<select className="field" value={r.app} onChange={(e) => patch(r, { app: e.target.value })}>{APPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-            <label style={field}>What to do<select className="field" value={r.mode} onChange={(e) => patch(r, { mode: e.target.value })}>{MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+            <label style={field}>App<select className="field" value={r.app} onChange={(e) => patch(r, { app: e.target.value }, { app: e.target.value as Rule['app'] })}>{APPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+            <label style={field}>What to do<select className="field" value={r.mode} onChange={(e) => patch(r, { mode: e.target.value }, { mode: e.target.value as RuleMode })}>{MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
             <label style={field}>Due in (days)<input key={`${rev}:${r.then_set.due_offset_days ?? ''}`} className="field" type="number" min={0} max={365} placeholder="none" defaultValue={r.then_set.due_offset_days ?? ''} onBlur={(e) => offset(r, e.target.value)} /></label>
           </div>
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span style={{ fontSize: 12, color: 'var(--text-faint)', overflowWrap: 'anywhere' }}>{matchText(r)}</span>
             <span className="row">
-              <label className="row" style={{ gap: 6, fontSize: 13 }}><input type="checkbox" checked={!!r.enabled} onChange={(e) => patch(r, { enabled: e.target.checked })} style={{ accentColor: 'var(--accent)' }} />Enabled</label>
+              <label className="row" style={{ gap: 6, fontSize: 13 }}><input type="checkbox" checked={!!r.enabled} onChange={(e) => patch(r, { enabled: e.target.checked }, { enabled: e.target.checked ? 1 : 0 })} style={{ accentColor: 'var(--accent)' }} />Enabled</label>
               <button type="button" className="btn" style={{ color: 'var(--danger)' }} onClick={() => remove(r)}>Delete</button>
             </span>
           </div>
@@ -78,7 +80,9 @@ function AddRule({ onAdded }: { onAdded: (r: Rule) => void }) {
     if (get('suggest')) match.suggest = get('suggest');
     const re = get('regex') || (get('words') ? escapeRe(get('words')) : '');
     if (re) match.title_regex = re;
-    const then_set: Record<string, unknown> = { horizon: get('horizon') as Horizon, kind: get('kind') as Kind };
+    const then_set: Record<string, unknown> = {}; // horizon and kind only when chosen: otherwise the source decides (work email stays work)
+    if (get('horizon')) then_set.horizon = get('horizon') as Horizon;
+    if (get('kind')) then_set.kind = get('kind') as Kind;
     if (get('offset') !== '') {
       const n = Number(get('offset'));
       if (!(Number.isInteger(n) && n >= 0 && n <= 365)) { setErr('Due in: use a whole number of days from 0 to 365'); return; }
@@ -98,10 +102,10 @@ function AddRule({ onAdded }: { onAdded: (r: Rule) => void }) {
         {f('Name', <input name="name" className="field" required maxLength={80} />)}
         {f('App', <select name="app" className="field">{APPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>)}
         {f('Suggest (optional)', <input name="suggest" className="field" maxLength={40} />)}
-        {f('Title contains (optional)', <input name="words" className="field" maxLength={60} />)}
+        {f('Title contains (optional)', <input name="words" className="field" maxLength={50} />)}
         {f('What to do', <select name="mode" className="field">{MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>)}
-        {f('Horizon', <select name="horizon" className="field"><option value="short">Short</option><option value="medium">Medium</option><option value="long">Long</option></select>)}
-        {f('Kind', <select name="kind" className="field"><option value="personal">Personal</option><option value="work">Work</option></select>)}
+        {f('Horizon', <select name="horizon" className="field"><option value="">Default (this week)</option><option value="short">Short · this week</option><option value="medium">Medium · this quarter</option><option value="long">Long · this year</option></select>)}
+        {f('Kind', <select name="kind" className="field"><option value="">Follows the source</option><option value="personal">Personal</option><option value="work">Work</option></select>)}
         {f('Due in (days)', <input name="offset" className="field" type="number" min={0} max={365} placeholder="none" />)}
       </div>
       <details><summary style={{ cursor: 'pointer', fontSize: 13 }}>Advanced</summary>

@@ -63,7 +63,9 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
           const n = e.target.value === '' ? null : Number(e.target.value);
           if (n === (task.nudge_every_days ?? null)) return;
           if (n !== null && !(Number.isInteger(n) && n >= 1 && n <= 365)) { toast('Use a whole number of days from 1 to 365'); e.target.value = String(task.nudge_every_days ?? ''); return; }
-          save({ nudge_every_days: n });
+          const input = e.target, was = task.nudge_every_days ?? null;
+          setDraft((d) => ({ ...d, nudge_every_days: n }));
+          updateTask(task.id, { nudge_every_days: n }).catch(() => { setDraft((d) => ({ ...d, nudge_every_days: was })); input.value = String(was ?? ''); toast('Could not save the nudge'); });
         }} />)}
         {field('Tags (comma separated)', <input ref={tagsRef} className="field" defaultValue={JSON.parse(v.tags || '[]').join(', ')} onBlur={(e) => save({ tags: JSON.stringify(e.target.value.split(',').map((s) => s.trim()).filter(Boolean)) })} />)}
       </div>

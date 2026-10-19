@@ -21,13 +21,17 @@ export function deviceName(): string {
   return `${br} on ${dev}`;
 }
 
+/** The service worker, or null when none becomes ready in 5 s (no worker registered, e.g. a dev build). */
+const readyReg = () => Promise.race([navigator.serviceWorker.ready, new Promise<null>((r) => setTimeout(() => r(null), 5000))]);
+
 export async function pushState(): Promise<PushState> {
   if (needsHomeScreen()) return 'home-screen';
   if (!supported()) return 'unsupported';
   if (Notification.permission === 'denied') return 'blocked';
   if (Notification.permission !== 'granted') return 'off';
-  const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
-  return sub ? 'on' : 'off';
+  const reg = await readyReg();
+  if (!reg) return 'unsupported';
+  return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
 }
 
 const keyBytes = (b64u: string) => {
@@ -41,18 +45,20 @@ export async function enablePush(): Promise<'enabled' | 'denied' | 'unsupported'
   if ((await Notification.requestPermission()) !== 'granted') return 'denied';
   const { publicKey } = await api<{ publicKey: string | null }>('/push/key');
   if (!publicKey) throw new Error('Notifications are not set up on the server yet');
-  const reg = await navigator.serviceWorker.ready;
-  const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) }));
+  const reg = await readyReg();
+  if (!reg) return 'unsupported';
+  const existing = await reg.pushManager.getSubscription();
+  const sub = existing ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) }));
   const j = sub.toJSON();
   try {
     const { id } = await api<{ id: string }>('/push/subscribe', { method: 'POST', json: { endpoint: j.endpoint, keys: j.keys, device_name: deviceName() } });
     store.set(id);
-  } catch (e) { await sub.unsubscribe().catch(() => {}); throw e; } // no half-on state: the browser and the server agree
+  } catch (e) { if (!existing) await sub.unsubscribe().catch(() => {}); throw e; } // undo only what this call made: the browser and the server agree
   return 'enabled';
 }
 
 export async function disablePush(): Promise<void> {
-  const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+  const sub = await (await readyReg())?.pushManager.getSubscription();
   await sub?.unsubscribe().catch(() => {});
   const id = store.get();
   store.set(null);
