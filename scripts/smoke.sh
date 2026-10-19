@@ -119,6 +119,15 @@ echo "$IMP" | grep -q "Zebrafish lesson $R" || fail "personal lesson missing fro
 echo "$IMP" | grep -q "Walrus lesson $R" && fail "work lesson leaked into library imports"
 curl "${H[@]}" "$B/api/library?q=zebrafish" | grep -q '"source":"lesson"' || fail "lesson search"
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/library/no-such-page)" = 404 ] || fail "library 404"
+# P3-6: a lesson of a personal project switched to offline stays on the device lists but is not model-facing (retrieve has no HTTP route; scripts/library-boundary.test.ts covers the split, this runs the model-facing SQL for real).
+PO=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke offline personal","kind":"personal"}' | js d.project.id)
+curl "${H[@]}" -X POST $B/api/projects/$PO/lessons -d "{\"text\":\"Narwhal lesson $R\"}" | grep -q '"item"' || fail "offline-personal lesson create"
+curl "${H[@]}" -X PATCH $B/api/projects/$PO -d '{"data_boundary":"offline"}' | grep -q '"data_boundary":"offline"' || fail "personal boundary to offline"
+curl "${H[@]}" $B/api/library/imports | grep -q "Narwhal lesson $R" || fail "offline-boundary lesson missing from device imports"
+curl "${H[@]}" "$B/api/library?q=narwhal" | grep -q '"source":"lesson"' || fail "offline-boundary lesson missing from device search"
+MODEL=$(D1X "SELECT count(*) AS n FROM lessons l JOIN projects p ON p.id = l.project_id WHERE p.kind = 'personal' AND l.deleted_at IS NULL AND l.enc_v = 0 AND p.deleted_at IS NULL AND p.data_boundary = 'cloud' AND l.text LIKE '%Narwhal lesson $R%'" | js 'd[0].results[0].n')
+[ "$MODEL" = 0 ] || fail "offline-boundary lesson reached the model-facing query"
+curl "${H[@]}" -X DELETE $B/api/projects/$PO >/dev/null
 curl "${H[@]}" -X DELETE $B/api/projects/$PL >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PW >/dev/null
 echo "smoke: (l) library search, tree, imports (personal lesson in, work lesson out), 404"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
