@@ -43,15 +43,17 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const cutoff = all ? '9999' : daysAgo(TRASH_DAYS);
   const goneTasks = 'SELECT id FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
   const goneProjects = 'SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
-  const run = async (sql: string) => (await env.DB.prepare(sql).bind(cutoff).run()).meta.changes;
-  const out: Record<string, number> = {};
-  out.task_events = await run(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`);
-  await run(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`);
-  out.tasks = await run(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1`);
-  out.milestones = await run(`DELETE FROM milestones WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`);
-  await run(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`);
-  out.projects = await run(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`);
-  return out;
+  const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
+  // One transaction: a concurrent trash or restore can't slip between the steps.
+  const [events, , tasks, milestones, , projects] = await env.DB.batch([
+    q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
+    q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
+    q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
+    q(`DELETE FROM milestones WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`),
+    q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
+    q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
+  ]);
+  return { task_events: events.meta.changes, tasks: tasks.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes };
 }
 export async function purgeAudit(env: Env): Promise<void> {
   await env.DB.prepare('DELETE FROM audit_log WHERE at < ?1').bind(daysAgo(AUDIT_DAYS)).run();
