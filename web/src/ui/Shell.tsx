@@ -4,7 +4,7 @@ import { useInbox } from '../inbox.ts';
 
 const NAV = [
   ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'],
-  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'],
+  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['copilot', '/copilot', 'Copilot'],
 ] as const;
 
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {

@@ -184,3 +184,40 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
   .head .btn,.card a.btn{min-height:44px}
   .md a{padding:13px 2px} /* inline: the padding grows the tap area, not the line */
 }
+
+/* Phase 3: copilot */
+.cp{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:14px;align-items:start}
+.cp-list,.cp-threads,.cp-conv,.cp-msgs{display:grid;gap:10px;min-width:0}
+.cp-list{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto;align-content:start}
+.cp-item{display:grid;gap:2px;text-align:left;font:inherit;color:var(--text);background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:10px 12px;cursor:pointer;min-width:0}
+.cp-item b{font-size:14px;overflow-wrap:anywhere}
+.cp-item small{color:var(--text-faint);font-size:12px}
+.cp-item[aria-current="true"]{border-color:var(--accent)}
+.cp-top{padding:2px 0}
+.cp-user{justify-self:end;max-width:min(80%,640px);background:var(--field);border:1px solid var(--field-border);border-radius:14px;padding:10px 14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px;line-height:1.55}
+.cp-msg{display:grid;gap:12px;min-width:0}
+.cp-msg .md{max-width:none}
+.cp-foot{justify-content:flex-start}
+.cp-foot .btn{padding:8px 14px}
+.cp-foot .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.cp-prop{display:grid;gap:8px;background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:12px}
+.cp-prop-row{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
+.cp-prop-row input{margin-top:3px;flex:none}
+.cp-err{display:flex;gap:12px;align-items:center;justify-content:space-between;border-color:rgba(255,77,94,.4);color:var(--danger)}
+.cp-off{display:grid;gap:10px}
+.cp-compose{display:grid;gap:10px}
+.cp-compose textarea{resize:vertical}
+.cp-typing{display:flex;gap:5px;padding:10px 4px}
+.cp-typing i{width:8px;height:8px;border-radius:99px;background:var(--text-faint);animation:cp-dot 1.2s infinite ease-in-out}
+.cp-typing i:nth-child(2){animation-delay:.2s}.cp-typing i:nth-child(3){animation-delay:.4s}
+@keyframes cp-dot{0%,80%,100%{opacity:.25}40%{opacity:1}}
+@media (max-width:760px){
+  .cp{grid-template-columns:1fr}
+  .cp .cp-conv{display:none}.cp.show-conv .cp-conv{display:grid}.cp.show-conv .cp-list{display:none}
+  .cp-list{position:static;max-height:none}
+  .cp-user{max-width:92%}
+}
+@media (max-width:760px),(pointer:coarse){
+  .cp-item,.cp-foot .btn,.cp-top .btn,.cp-list .btn,.cp-err .btn,.cp-prop .btn,.cp-compose .btn{min-height:44px}
+  .cp-compose .field:not(textarea){min-height:44px}
+}

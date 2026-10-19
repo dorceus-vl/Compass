@@ -11,11 +11,12 @@ import { Raid } from './project/Raid.tsx';
 import { Changes } from './project/Changes.tsx';
 import { Decisions } from './project/Decisions.tsx';
 import { Lessons } from './project/Lessons.tsx';
+import { ProjectCopilot } from './project/ProjectCopilot.tsx';
 import { ProjectMeetings } from './project/ProjectMeetings.tsx';
 import { fmtDue, today } from '../dates.ts';
 
-const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings'] as const;
-const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings' };
+const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'copilot'] as const;
+const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', copilot: 'Copilot' };
 
 export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string }) {
   const { projects, tasks, milestones, ready } = useStore();
@@ -74,6 +75,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
       {current === 'decisions' && <Decisions key={p.id} project={p} />}
       {current === 'lessons' && <Lessons key={p.id} project={p} />}
       {current === 'meetings' && <ProjectMeetings key={p.id} project={p} />}
+      {current === 'copilot' && <ProjectCopilot key={p.id} project={p} />}
       {current === 'overview' && <div className="two" key={p.id}>
         <div style={{ display: 'grid', gap: 14 }}>
           <div className="card" style={{ display: 'grid', gap: 10, gridTemplateColumns: '1fr 1fr' }}>
