@@ -18,6 +18,7 @@ Each outside app's live version matched its `main` before deploy, so a deploy ad
 - `/` and `/sw.js`: CSP, HSTS, nosniff, `X-Frame-Options: DENY`, referrer policy present.
 - `POST /api/inbox` with no secret → 401; wrong secret → 401; `GET /api/email/address` without a session → 401.
 - A post with the Kelly secret ("Compass pipe test", app `kelly`) → 201, state `new` (waits in the Inbox to be dismissed).
+- Scheduled run (every 15 min): two production runs watched, both outcome ok, no exceptions or error logs.
 
 ## Waiting on a natural trigger or on Vlad
 
