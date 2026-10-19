@@ -3,7 +3,7 @@ import { Link, useRoute } from '../router.ts';
 import { useInbox } from '../inbox.ts';
 
 const NAV = [
-  ['today', '/', 'Today'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'],
+  ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'],
   ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'],
 ] as const;
 
@@ -15,8 +15,9 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
     <div className="shell">
       <nav className="rail" aria-label="Main">
         <div className="logo"><i /><em /></div>
-        {NAV.map(([k, to, label]) => <Link key={k} to={to} className={on(k)}>{label}</Link>)}
-        <Link to="/inbox" className={on('inbox')} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}>Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+        {NAV.map(([k, to, label]) => k === 'inbox'
+          ? <Link key={k} to={to} className={on(k)} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}>Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+          : <Link key={k} to={to} className={on(k)}>{label}</Link>)}
         <button className="btn" style={{ width: 56, padding: '8px 0', fontSize: 11 }} onClick={onPalette} aria-label="Command palette">⌘K</button>
         <div className="spacer" />
         <Link to="/settings" className={on('settings')}>Settings</Link>

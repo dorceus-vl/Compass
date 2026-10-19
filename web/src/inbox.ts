@@ -6,8 +6,8 @@ import { pull } from './store/sync.ts';
 import { toast } from './ui/dialogs.tsx';
 
 // One shared list for the rail badge, Today's strip and the Inbox view. Online-only for actions (ruling P7); the last list is cached in IndexedDB meta.
-interface S { items: InboxItem[]; loading: boolean; offline: boolean }
-let st: S = { items: [], loading: true, offline: false };
+interface S { items: InboxItem[]; loading: boolean; offline: boolean; known: boolean } // known: a list (cached or fresh) has been seen
+let st: S = { items: [], loading: true, offline: false, known: false };
 const subs = new Set<() => void>();
 const set = (p: Partial<S>) => { st = { ...st, ...p }; subs.forEach((f) => f()); };
 const live = (xs: InboxItem[]) => xs.filter((i) => i.state === 'new' || i.state === 'added');
@@ -19,11 +19,11 @@ export function refreshInbox(): Promise<void> {
     if (!cached) { // show the last list at once, before the network answers
       cached = true;
       const c = await idb.get<{ items: InboxItem[] }>('meta', 'cache:inbox').catch(() => undefined);
-      if (c && st.loading) set({ items: live(c.items) });
+      if (c && st.loading) set({ items: live(c.items), known: true });
     }
     try {
       const items = live((await api<{ items: InboxItem[] }>('/inbox')).items);
-      set({ items, loading: false, offline: false });
+      set({ items, loading: false, offline: false, known: true });
       await idb.put('meta', { id: 'cache:inbox', items, at: new Date().toISOString() }).catch(() => {});
     } catch (e) {
       if (!(e instanceof SignedOut)) set({ loading: false, offline: true });
