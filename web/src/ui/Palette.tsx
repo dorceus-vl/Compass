@@ -22,7 +22,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const items: { label: string; hint: string; run: () => void | Promise<void> }[] = jump
     ? JUMPS.filter(([, l]) => l.toLowerCase().includes(needle)).map(([to, l]) => ({ label: l, hint: 'Go', run: () => { navigate(to); ref.current?.close(); } }))
     : [
-        ...(q.trim() ? [{ label: `Add "${parsed.title}"`, hint, run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, tags: JSON.stringify(parsed.tags) }); toast('Added'); } }] : []),
+        ...(parsed.title ? [{ label: `Add "${parsed.title}"`, hint, run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, tags: JSON.stringify(parsed.tags) }); toast('Added'); } }] : []),
         ...projects.filter((p) => needle && p.name.toLowerCase().includes(needle)).slice(0, 3).map((p) => ({ label: p.name, hint: 'Project', run: () => { navigate(`/projects/${p.id}`); ref.current?.close(); } })),
         ...tasks.filter((t) => needle && !t.deleted_at && t.status !== 'done' && t.title.toLowerCase().includes(needle)).slice(0, 6).map((t) => ({ label: t.title, hint: 'Task', run: () => setOpen(t.id) })),
       ];
@@ -40,7 +40,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
           {items.map((it, i) => <div key={i} id={`palette-opt-${i}`} className="task" style={i === sel ? { borderColor: 'var(--accent)' } : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => void it.run()} role="option" aria-selected={i === sel}><div className="tt" style={{ flex: 1 }}>{it.label}</div><span className="chip">{it.hint}</span></div>)}
         </div>
       </dialog>
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }

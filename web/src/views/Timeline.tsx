@@ -72,7 +72,7 @@ export function Timeline() {
           {ms.map((m) => <g key={m.id} transform={`translate(${LEFT + dayIndex(m.due_at!, from) * px + px / 2}, ${height - 16})`}><title>{m.name}</title><path d="M0 -8 l7 8 l-7 8 l-7 -8 z" fill="var(--nightowl)" /><text x={10} y={4} fill="var(--text-dim)" fontSize={11}>{m.name}{projects.length > 1 ? ` · ${projects.find((p) => p.id === m.project_id)?.name ?? ''}` : ''}</text></g>)}
         </svg>
       </div>
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }

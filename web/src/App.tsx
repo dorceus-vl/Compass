@@ -21,7 +21,7 @@ export function App() {
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking');
   const [palette, setPalette] = useState(false);
   useEffect(() => {
-    api('/auth/me').then(() => setAuth('in')).catch((e) => setAuth(e instanceof SignedOut ? 'out' : navigator.onLine ? 'out' : 'in'));
+    api('/auth/me').then(() => setAuth('in')).catch((e) => setAuth(e instanceof SignedOut ? 'out' : 'in'));
   }, []);
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
   useEffect(() => {

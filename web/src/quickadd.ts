@@ -35,6 +35,7 @@ export function parseQuickAdd(text: string, projects: Pick<Project, 'id' | 'name
   take(/ (\d{1,2})\/(\d{1,2}) /, (m) => { const d = nextDate(today, Number(m[2]), Number(m[1])); if (!d) return false; out.due_at = d; });
   take(new RegExp(` (${MON.join('|')}) (\\d{1,2}) `, 'i'), (m) => { const d = nextDate(today, idx(MON, m[1]) + 1, Number(m[2])); if (!d) return false; out.due_at = d; });
   take(new RegExp(` (${DOW.join('|')}) `, 'i'), (m) => { const cur = new Date(today + 'T00:00:00Z').getUTCDay(); out.due_at = add(today, ((idx(DOW, m[1]) - cur + 7) % 7) || 7); });
+  if (out.recur && !out.due_at) out.due_at = today; // a recurring task needs a first date to count from
   out.title = s.replace(/\s+/g, ' ').trim();
   return out;
 }

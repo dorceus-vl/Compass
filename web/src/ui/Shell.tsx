@@ -5,7 +5,6 @@ const NAV = [
   ['today', '/', 'Today'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'],
   ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'],
 ] as const;
-const PHONE = [['today', '/', 'Today'], ['board', '/board', 'Board'], ['projects', '/projects', 'Projects'], ['list', '/list', 'List'], ['settings', '/settings', 'More']] as const;
 
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {
   const { path } = useRoute();
@@ -20,7 +19,11 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
         <Link to="/settings" className={on('settings')}>Settings</Link>
       </nav>
       <div className="main">{children}</div>
-      <nav className="ptab phone-only" aria-label="Main">{PHONE.map(([k, to, label]) => <Link key={k} to={to} className={on(k)}>{label}</Link>)}</nav>
+      <nav className="ptab phone-only" aria-label="Main">
+        <Link to="/" className={on('today')}>Today</Link><Link to="/board" className={on('board')}>Board</Link>
+        <button type="button" onClick={onPalette} aria-label="Quick add">+</button>
+        <Link to="/projects" className={on('projects')}>Projects</Link><Link to="/settings" className={on('settings')}>More</Link>
+      </nav>
     </div>
   );
 }

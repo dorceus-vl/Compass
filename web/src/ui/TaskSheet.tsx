@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { Task, Horizon, Status } from '../../../shared/types.ts';
-import { useStore, updateTask, trashTask } from '../store/useStore.ts';
+import { useStore, updateTask, trashTask, resolveId } from '../store/useStore.ts';
+import { idb } from '../store/db.ts';
 import { confirmAction, toast } from './dialogs.tsx';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
@@ -8,13 +9,25 @@ const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['
 
 export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const { tasks, projects } = useStore();
-  const task = tasks.find((t) => t.id === taskId);
+  const { tasks, projects, ready } = useStore();
+  const [realId, setRealId] = useState<string | null>(null); // a tmp- id swapped for the server's after sync
+  const task = tasks.find((t) => t.id === taskId) ?? tasks.find((t) => t.id === realId);
   const [draft, setDraft] = useState<Partial<Task>>({});
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const tagsRef = useRef<HTMLInputElement>(null);
   const trashed = useRef(false);
-  useEffect(() => { ref.current?.showModal(); }, []);
+  const has = !!task;
+  useEffect(() => { if (ref.current && !ref.current.open) ref.current.showModal(); }, [has]);
+  // The task is gone (trashed elsewhere, purged): follow a tmp- id to its real one, otherwise tell the parent to close.
+  useEffect(() => {
+    if (!ready || task) return;
+    let live = true;
+    void resolveId('tasks', taskId).then(async (real) => {
+      if (!live) return;
+      if (real !== taskId && await idb.get('tasks', real)) setRealId(real); else onClose();
+    });
+    return () => { live = false; };
+  }, [ready, has, taskId]);
   if (!task) return null;
   const v = { ...task, ...draft } as Task;
   const save = (patch: Partial<Task>) => { setDraft((d) => ({ ...d, ...patch })); void updateTask(task.id, patch); };

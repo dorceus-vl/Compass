@@ -20,8 +20,9 @@ export function List() {
   const [open, setOpen] = useState<string | null>(null);
   const [views, setViews] = useState<View[]>([]);
   const [name, setName] = useState('');
+  const [viewsLoaded, setViewsLoaded] = useState(false); // saving before the GET succeeds would overwrite the server's list
   const dlg = useRef<HTMLDialogElement>(null);
-  useEffect(() => { api<{ saved_views: View[] }>('/settings').then((s) => setViews(s.saved_views)).catch(() => {}); }, []);
+  useEffect(() => { api<{ saved_views: View[] }>('/settings').then((s) => { setViews(s.saved_views); setViewsLoaded(true); }).catch(() => {}); }, []);
   if (!ready) return null;
   const rows = applyQuery(tasks.filter((t) => !t.parent_id), parseQuery(q), projects, today()).sort((a, b) =>
     sort === 'due' ? (a.due_at ?? '9').localeCompare(b.due_at ?? '9') : sort === 'priority' ? b.priority - a.priority : sort === 'title' ? a.title.localeCompare(b.title) : b.updated_at.localeCompare(a.updated_at));
@@ -45,7 +46,7 @@ export function List() {
           <input className="field" style={{ maxWidth: 380 }} placeholder="risk kind:work status:progress due:<2026-10-31 tag:x" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter" />
           <select className="field" style={{ width: 'auto' }} value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort"><option value="due">Sort: due</option><option value="priority">Sort: priority</option><option value="title">Sort: title</option><option value="updated">Sort: updated</option></select>
           <select className="field" style={{ width: 'auto' }} value={group} onChange={(e) => setGroup(e.target.value as Group)} aria-label="Group"><option value="none">Group: none</option><option value="project">Group: project</option><option value="horizon">Group: horizon</option><option value="status">Group: status</option></select>
-          <button type="button" className="btn" onClick={() => { setName(''); dlg.current?.showModal(); }}>Save view</button>
+          <button type="button" className="btn" disabled={!viewsLoaded} title={viewsLoaded ? undefined : 'Saved views have not loaded yet (needs a connection)'} onClick={() => { setName(''); dlg.current?.showModal(); }}>Save view</button>
         </div>
       </div>
       {views.length > 0 && <div className="row">{views.map((v) => <button type="button" key={v.name} className="chip" onClick={() => setQ(v.query)}>{v.name}</button>)}</div>}
@@ -60,7 +61,7 @@ export function List() {
           </div>
         </form>
       </dialog>
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }

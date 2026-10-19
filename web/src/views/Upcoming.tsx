@@ -24,7 +24,7 @@ export function Upcoming() {
       {days.map((d) => section(d === t ? 'Today' : d === days[1] ? 'Tomorrow' : heading(d), live.filter((x) => x.due_at === d)))}
       {section('Later', later)}
       {section('No date', none)}
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }

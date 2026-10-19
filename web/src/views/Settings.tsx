@@ -13,7 +13,14 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const latest = useRef(0); // only the newest request may write state
   useEffect(() => { api<Settings>('/settings').then(setS).catch(() => toast('Settings need a connection')); }, []);
-  if (!s) return null;
+  // Also shown while settings can't load (offline): on a phone this is the only way to the views that have no tab.
+  const goTo = (
+    <div className="card">
+      <div className="eyebrow" style={{ marginBottom: 6 }}>Go to</div>
+      <div className="row"><Link to="/list" className="btn">List</Link><Link to="/upcoming" className="btn">Upcoming</Link><Link to="/timeline" className="btn">Timeline</Link><Link to="/trash" className="btn">Trash</Link></div>
+    </div>
+  );
+  if (!s) return goTo;
   // Optimistic: show the change now, send only the changed key (the server merges WIP per status), ignore replies older than the newest request.
   const save = async (patch: Patch) => {
     const n = ++latest.current;
@@ -41,6 +48,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <div className="head"><div><div className="eyebrow">Settings</div><h1 style={{ marginTop: 6 }}>Make it <b>yours</b></h1></div>
         <div className="row"><a className="btn" href="https://id.knocturnlabs.com/" target="_blank" rel="noopener">Manage your Knocturn ID ↗</a><Link to="/trash" className="btn">Trash</Link>
           <button type="button" className="btn" onClick={signOut}>Sign out</button></div></div>
+      {goTo}
       <div className="card">
         <div className="eyebrow" style={{ marginBottom: 6 }}>Day</div>
         {row('Day starts at', <select className="field" value={s.day_start_hour} onChange={(e) => save({ day_start_hour: Number(e.target.value) })}>{hours.map((h) => <option key={h} value={h}>{h}:00</option>)}</select>)}

@@ -38,14 +38,24 @@ export function Board() {
     const grab = { x: e.clientX - r0.left, y: e.clientY - r0.top }; // keep the grab point so the clone does not jump
     const start = { x: e.clientX, y: e.clientY };
     drag.current = { id, moved: false, el: null };
+    // Touch: a drag starts only after a 300 ms press that stayed within 6 px; moving sooner is a scroll, so the drag is dropped.
+    const touch = e.pointerType === 'touch';
+    let armed = !touch, timer = 0;
+    const block = (ev: TouchEvent) => ev.preventDefault(); // once dragging, the page must not scroll under the finger
+    if (touch) timer = window.setTimeout(() => { armed = true; window.addEventListener('touchmove', block, { passive: false }); }, 300);
     const stop = () => {
+      clearTimeout(timer); window.removeEventListener('touchmove', block);
       window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel);
       drag.current?.el?.remove(); drag.current = null; stopDrag.current = null; setDragId(null);
     };
     stopDrag.current = stop;
     const onMove = (ev: PointerEvent) => {
       const d = drag.current; if (!d || ev.pointerId !== pid) return;
-      if (!d.moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+      if (!d.moved) {
+        const far = Math.hypot(ev.clientX - start.x, ev.clientY - start.y) >= 6;
+        if (!armed) { if (far) stop(); return; }
+        if (!far) return;
+      }
       if (!d.moved) {
         d.moved = true; setDragId(id);
         d.el = card.cloneNode(true) as HTMLElement;
@@ -106,7 +116,7 @@ export function Board() {
       {lanes && [...projects.map((p) => ({ id: p.id as string | null, name: p.name })), { id: null, name: 'No project' }].map((lane) => (
         <section key={lane.id ?? 'none'}><div className="eyebrow" style={{ margin: '14px 0 8px' }}>{lane.name}</div><div className="board">{COLS.map(([s, l, c]) => column(s, l, c, lane.id))}</div></section>
       ))}
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }

@@ -37,7 +37,7 @@ export function ProjectPage({ id }: { id: string }) {
     <>
       <div className="head">
         <div><div className="eyebrow">{p.kind} project · {p.status.replace('_', ' ')}</div>
-          <input className="field" style={{ fontSize: 26, fontWeight: 800, background: 'transparent', border: 0, padding: 0, letterSpacing: -0.6 }} defaultValue={p.name} onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== p.name && save({ name: e.target.value.trim() })} aria-label="Project name" /></div>
+          <input key={p.id} className="field" style={{ fontSize: 26, fontWeight: 800, background: 'transparent', border: 0, padding: 0, letterSpacing: -0.6 }} defaultValue={p.name} onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== p.name && save({ name: e.target.value.trim() })} aria-label="Project name" /></div>
         <div className="row">
           <select className="field" style={{ width: 'auto' }} value={p.rag} onChange={(e) => save({ rag: e.target.value as Rag })}><option value="none">RAG: none</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select>
           <select className="field" style={{ width: 'auto' }} value={p.status} onChange={(e) => save({ status: e.target.value as Project['status'] })}><option value="active">Active</option><option value="on_hold">On hold</option><option value="closed">Closed</option></select>
@@ -65,7 +65,7 @@ export function ProjectPage({ id }: { id: string }) {
             <input className="field" placeholder="New milestone" value={newMs.name} onChange={(e) => setNewMs({ ...newMs, name: e.target.value })} />
             <div className="row"><input className="field" type="date" value={newMs.due_at} onChange={(e) => setNewMs({ ...newMs, due_at: e.target.value })} /><button className="btn primary">Add</button></div></form></div>
       </div>
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }

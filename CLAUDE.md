@@ -11,7 +11,7 @@ Catalogue of everything planned: `docs/compass-features.md`. Read `assets/brand/
 
 ## Commands
 `npm run dev` (Vite 5173 → Worker 8790), `npm run dev:worker`, `npm run typecheck`, `npm run check`, `npm run build`,
-`npm run deploy:preview` (preview URL), `npm run deploy` (production, only when Vlad says so), `npm run db:migrate:local|remote`.
+`npm run deploy:preview` (uploads a version; its preview URL cannot sign in because passkeys are bound to knocturnlabs.com, so production checks happen on compass.knocturnlabs.com), `npm run deploy` (production, only when Vlad says so), `npm run db:migrate:local|remote`.
 
 ## Standing rules
 1. Settings over hardcoding: hosts, secrets, limits in `wrangler.jsonc` vars and secrets.

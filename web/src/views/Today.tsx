@@ -20,7 +20,7 @@ export function Today() {
     return (
       <div className="hz">
         <div className="hh"><b>{title}</b><small>{xs.length}</small></div>
-        {xs.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Nothing here. ⌘K to add.</p>}
+        {xs.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Nothing here. ⌘K or + to add.</p>}
         {xs.slice(0, 12).map((x) => <TaskRow key={x.id} task={x} onOpen={setOpen} />)}
         {xs.length > 12 && <Link to="/list" className="chip">+{xs.length - 12} more in List</Link>}
       </div>
@@ -41,7 +41,7 @@ export function Today() {
       <div className="horizons">{col('short', 'Short · this week')}{col('medium', 'Medium · this quarter')}{col('long', 'Long · this year and beyond')}</div>
       {next.length > 0 && <div className="inbox"><div className="top"><h2>Next milestones</h2></div>
         {next.map((m) => <div key={m.id} className="task"><div className="tt">{m.name}</div><span className="chip" style={{ marginLeft: 'auto' }}>{projects.find((p) => p.id === m.project_id)?.name} · {fmtDue(m.due_at).text}</span></div>)}</div>}
-      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );
 }
