@@ -19,7 +19,7 @@ assert.equal(senderAllowed('me@gmail.com', ''), false, 'empty list allows nobody
 console.log('email-parse: ok');
 
 // ---- authenticated(): fail closed ----
-import { authenticated, authResults } from '../worker/email.ts';
+import { authenticated, authResults, arProblem } from '../worker/email.ts';
 const ar = (s: string) => `mx.cloudflare.net; ${s}`;
 assert.equal(authenticated(ar('dmarc=pass header.from=gmail.com'), 'me@gmail.com', 'me@gmail.com'), true, 'dmarc pass');
 assert.equal(authenticated(ar('dkim=pass header.d=gmail.com header.i=@gmail.com'), 'me@gmail.com', 'ME@gmail.com'), true, 'dkim aligned, case-insensitive');
@@ -43,6 +43,21 @@ assert.equal(authenticated(ar('dmarc=pass header.from=evil.com'), 'me@gmail.com'
 assert.equal(authenticated(ar('dmarc=pass'), 'me@gmail.com', 'me@gmail.com'), false, 'dmarc pass without header.from');
 assert.equal(authResults(`a.example; x=pass, b.example; y=pass`).length, 2);
 assert.equal(authResults(null).length, 0);
+// forgeries that hide a header boundary or inject segments
+const ok = 'header.from=gmail.com';
+assert.equal(authenticated(`real.example; dmarc=fail, (x) mx.cloudflare.net; dmarc=pass ${ok}`, 'me@gmail.com', 'me@gmail.com'), false, 'comment before a forged id');
+assert.equal(authenticated(`real.example; dmarc=fail, "mx.cloudflare.net"; dmarc=pass ${ok}`, 'me@gmail.com', 'me@gmail.com'), false, 'quoted forged id');
+assert.equal(authenticated(`real, (x) mx.cloudflare.net; dmarc=pass ${ok}`, 'me@gmail.com', 'me@gmail.com'), false, 'the reported forgery 1');
+assert.equal(authenticated(`real, "mx.cloudflare.net"; dmarc=pass ${ok}`, 'me@gmail.com', 'me@gmail.com'), false, 'the reported forgery 2');
+assert.equal(authenticated(`real; dkim=pass header.i=x mx.cloudflare.net`, 'me@gmail.com', 'me@gmail.com'), false, 'pinned id inside a value');
+assert.equal(authenticated(`mx.cloudflare.net; dmarc=fail reason="a;dmarc=pass ${ok}"`, 'me@gmail.com', 'me@gmail.com'), false, 'quoted ; injects a segment');
+assert.equal(authenticated(`mx.cloudflare.net; dmarc=pass ${ok}`, 'me@gmail.com', 'me@gmail.com'), true, 'the plain good case still passes');
+assert.equal(authenticated(`MX.Cloudflare.NET ; dmarc=pass ${ok}`, 'me@gmail.com', 'me@gmail.com'), true, 'id case-insensitive');
+assert.equal(arProblem('a; b=c (x)', 'mx.cloudflare.net'), 'ar-unparseable');
+assert.equal(arProblem('real.example; dmarc=pass', 'mx.cloudflare.net'), 'ar-ambiguous', 'no pinned id');
+assert.equal(arProblem('mx.cloudflare.net; a=b, mx.cloudflare.net; a=b', 'mx.cloudflare.net'), 'ar-ambiguous', 'twice');
+assert.equal(arProblem('mx.cloudflare.net; a=b', 'mx.cloudflare.net'), null);
+assert.equal(arProblem('mx.cloudflare.net.evil; a=b, mx.cloudflare.net; a=b', 'mx.cloudflare.net'), null, 'a longer id is another token');
 
 // ---- post details ----
 const b = emailToPost({ subject: 'a\r\nb\t\u0007c', html: '<style>p{}</style><p>Hello&nbsp;<b>there</b></p><script>x()</script>', messageId: '<abc@x>', from: { address: 'ME@Bell.CA' } }, { work_email_domains: ['BELL.ca'] });

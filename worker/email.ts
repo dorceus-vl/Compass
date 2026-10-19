@@ -19,13 +19,26 @@ const kv = (seg: string) => Object.fromEntries([...seg.replace(/\([^)]*\)/g, ' '
 export const authResults = (headerValue: string | null | undefined): string[] => (headerValue ?? '').split(/,\s*(?=[\w.-]+\s*;)/).map((h) => h.trim()).filter(Boolean);
 
 /**
+ * Why the joined Authentication-Results value can't be trusted to split correctly, or null. We don't parse RFC 8601 comments or quotes (a forger can hide
+ * a header boundary or a ';' in them), so any of ( ) " is refused; and our authserv-id must appear exactly once as a whole token, at the start of a header.
+ */
+export function arProblem(headerValue: string | null | undefined, authservId: string): 'ar-unparseable' | 'ar-ambiguous' | null {
+  const v = headerValue ?? '';
+  if (/[()"]/.test(v)) return 'ar-unparseable';
+  const id = authservId.trim().toLowerCase();
+  const token = new RegExp(`(?<![^,\\s;])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![^,\\s;])`, 'gi');
+  const starts = authResults(v).filter((h) => h.split(';')[0].trim().toLowerCase() === id).length;
+  return (v.match(token) ?? []).length === 1 && starts === 1 ? null : 'ar-ambiguous';
+}
+
+/**
  * True when exactly one Authentication-Results header carries our authserv-id (the one our edge added; none, or a forged second copy, fails)
  * and it vouches for the sender: dmarc=pass for the sender's domain, or dkim=pass signed by the sender's domain (or a parent of it), or spf=pass
  * for the envelope sender's domain. The header From must also equal the envelope sender.
  */
 export function authenticated(headerValue: string | null | undefined, envelopeFrom: string, headerFrom: string | undefined, authservId = 'mx.cloudflare.net'): boolean {
   const env = envelopeFrom.trim().toLowerCase(), dom = domainOf(env);
-  if (!env || !dom || (headerFrom ?? '').trim().toLowerCase() !== env) return false;
+  if (!env || !dom || (headerFrom ?? '').trim().toLowerCase() !== env || arProblem(headerValue, authservId)) return false;
   const mine = authResults(headerValue).filter((h) => h.split(';')[0].trim().toLowerCase() === authservId.trim().toLowerCase());
   if (mine.length !== 1) return false;
   return mine[0].split(';').slice(1).some((seg) => {
@@ -64,7 +77,10 @@ export async function email(message: ForwardableEmailMessage, env: Env, _ctx: Ex
     const raw = await new Response(message.raw).arrayBuffer();
     if (raw.byteLength > MAX_RAW) return drop('too-large');
     const parsed = await PostalMime.parse(raw);
-    if (!authenticated(ar, message.from, parsed.from?.address, env.EMAIL_AUTHSERV_ID || 'mx.cloudflare.net')) return drop('not-authenticated');
+    const id = env.EMAIL_AUTHSERV_ID || 'mx.cloudflare.net';
+    const bad = arProblem(ar, id);
+    if (bad) return drop(bad);
+    if (!authenticated(ar, message.from, parsed.from?.address, id)) return drop('not-authenticated');
     const { post, work, from } = emailToPost(parsed, await getSettings(env));
     ({ item, task } = await ingest(env, post, { work, from }));
     if (task) {
