@@ -12,3 +12,22 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((r) => { if (r.ok) caches.open(CACHE).then((c) => c.put(e.request, r.clone())); return r; })));
   }
 });
+// Web Push: the Worker sends {title, body, url, tag}. A message is data: it only ever becomes notification text.
+self.addEventListener('push', (e) => {
+  let m = { title: 'Compass', body: '', url: '/' };
+  try { m = { ...m, ...e.data.json() }; } catch {}
+  e.waitUntil(self.registration.showNotification(String(m.title || 'Compass'), { body: String(m.body || ''), tag: m.tag ? String(m.tag) : undefined, data: { url: m.url }, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png' }));
+});
+// Only same-origin paths are ever opened; anything else (another site, a bad value) becomes '/'.
+const safeUrl = (raw) => {
+  try { const u = new URL(String(raw || '/'), self.location.origin); return u.origin === self.location.origin ? u.pathname + u.search + u.hash : '/'; } catch { return '/'; }
+};
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const path = safeUrl(e.notification.data && e.notification.data.url);
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => c.url.startsWith(self.location.origin));
+    if (!open) return self.clients.openWindow(path);
+    return open.focus().then((c) => (c || open).navigate(path)).catch(() => self.clients.openWindow(path));
+  }));
+});

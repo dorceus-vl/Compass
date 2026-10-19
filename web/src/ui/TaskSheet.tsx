@@ -59,6 +59,12 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
         {field('Priority', <select className="field" value={v.priority} onChange={(e) => save({ priority: Number(e.target.value) })}><option value={0}>None</option><option value={1}>Low</option><option value={2}>Medium</option><option value={3}>High</option></select>)}
         {field('Repeat', <select className="field" value={v.recur ?? ''} onChange={(e) => save({ recur: e.target.value || null })}>{RECUR.map(([val, l]) => <option key={val} value={val}>{l}</option>)}</select>)}
         {v.status === 'waiting' && field('Waiting on', <input className="field" value={v.waiting_on ?? ''} onChange={(e) => setDraft({ ...draft, waiting_on: e.target.value })} onBlur={(e) => save({ waiting_on: e.target.value || null })} />)}
+        {v.status === 'waiting' && field('Nudge me every N days', <input key={String(task.nudge_every_days)} className="field" type="number" min={1} max={365} placeholder="never" defaultValue={v.nudge_every_days ?? ''} onBlur={(e) => {
+          const n = e.target.value === '' ? null : Number(e.target.value);
+          if (n === (task.nudge_every_days ?? null)) return;
+          if (n !== null && !(Number.isInteger(n) && n >= 1 && n <= 365)) { toast('Use a whole number of days from 1 to 365'); e.target.value = String(task.nudge_every_days ?? ''); return; }
+          save({ nudge_every_days: n });
+        }} />)}
         {field('Tags (comma separated)', <input ref={tagsRef} className="field" defaultValue={JSON.parse(v.tags || '[]').join(', ')} onBlur={(e) => save({ tags: JSON.stringify(e.target.value.split(',').map((s) => s.trim()).filter(Boolean)) })} />)}
       </div>
       {field('Notes', <textarea ref={notesRef} className="field" rows={5} defaultValue={v.notes ?? ''} onBlur={(e) => save({ notes: e.target.value || null })} />)}
