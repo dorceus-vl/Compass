@@ -20,10 +20,15 @@ export function ProjectPage({ id }: { id: string }) {
   if (!ready) return null;
   if (!p) return <p>Project not found.</p>;
   const save = (patch: Partial<Project>) => void updateProject(p.id, patch);
+  // Save only a changed value; an untouched field tabbed through must not queue a PATCH.
+  const commit = (key: keyof Project, raw: string, type: string) => {
+    const v = type === 'number' ? (raw === '' ? null : Number(raw)) : raw || null;
+    if (v !== p[key]) save({ [key]: v });
+  };
   const inp = (key: keyof Project, label: string, type = 'text') => (
     <label style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--text-faint)' }}>{label}
-      {type === 'area' ? <textarea className="field" rows={3} defaultValue={(p[key] as string) ?? ''} onBlur={(e) => save({ [key]: e.target.value || null })} />
-        : <input className="field" type={type} defaultValue={(p[key] as string | number) ?? ''} onBlur={(e) => save({ [key]: type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value || null })} />}
+      {type === 'area' ? <textarea className="field" rows={3} defaultValue={(p[key] as string) ?? ''} onBlur={(e) => commit(key, e.target.value, type)} />
+        : <input className="field" type={type} defaultValue={(p[key] as string | number) ?? ''} onBlur={(e) => commit(key, e.target.value, type)} />}
     </label>
   );
   const ms = milestones.filter((m) => m.project_id === p.id && !m.deleted_at).sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'));
@@ -32,14 +37,14 @@ export function ProjectPage({ id }: { id: string }) {
     <>
       <div className="head">
         <div><div className="eyebrow">{p.kind} project · {p.status.replace('_', ' ')}</div>
-          <input className="field" style={{ fontSize: 26, fontWeight: 800, background: 'transparent', border: 0, padding: 0, letterSpacing: -0.6 }} defaultValue={p.name} onBlur={(e) => e.target.value.trim() && save({ name: e.target.value.trim() })} aria-label="Project name" /></div>
+          <input className="field" style={{ fontSize: 26, fontWeight: 800, background: 'transparent', border: 0, padding: 0, letterSpacing: -0.6 }} defaultValue={p.name} onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== p.name && save({ name: e.target.value.trim() })} aria-label="Project name" /></div>
         <div className="row">
           <select className="field" style={{ width: 'auto' }} value={p.rag} onChange={(e) => save({ rag: e.target.value as Rag })}><option value="none">RAG: none</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select>
           <select className="field" style={{ width: 'auto' }} value={p.status} onChange={(e) => save({ status: e.target.value as Project['status'] })}><option value="active">Active</option><option value="on_hold">On hold</option><option value="closed">Closed</option></select>
           <button className="btn" style={{ color: 'var(--danger)' }} onClick={async () => { if (await confirmAction(`Move "${p.name}" to Trash? Its tasks stay on the board.`, { danger: true })) { await trashProject(p.id); toast('Moved to Trash'); navigate('/projects'); } }}>Trash</button>
         </div>
       </div>
-      <div className="two">
+      <div className="two" key={p.id}>
         <div style={{ display: 'grid', gap: 14 }}>
           <div className="card" style={{ display: 'grid', gap: 10, gridTemplateColumns: '1fr 1fr' }}>
             {inp('rag_reason', 'RAG reason')}{inp('sponsor', 'Sponsor')}{inp('phase', 'Phase')}{inp('start_at', 'Start', 'date')}{inp('end_at', 'End', 'date')}
@@ -53,9 +58,9 @@ export function ProjectPage({ id }: { id: string }) {
               <input className="field" placeholder="Add a task to this project…" value={newTask} onChange={(e) => setNewTask(e.target.value)} /></form></div>
         </div>
         <div className="hz"><div className="hh"><b>Milestones</b><small>{ms.length}</small></div>
-          {ms.map((m) => <div key={m.id} className="task"><button className={`cb ${m.done_at ? 'done' : ''}`} aria-label="Done" onClick={() => updateMilestone(m.id, { done_at: m.done_at ? null : today() })} />
+          {ms.map((m) => <div key={m.id} className="task"><button type="button" className={`cb ${m.done_at ? 'done' : ''}`} aria-pressed={!!m.done_at} aria-label={`${m.name}: done`} onClick={() => updateMilestone(m.id, { done_at: m.done_at ? null : today() })} />
             <div style={{ flex: 1 }}><div className={`tt ${m.done_at ? 'done' : ''}`}>{m.gate ? '◆ ' : ''}{m.name}</div>
-              <div className="meta"><input type="date" className="chip" style={{ background: 'transparent', color: 'inherit' }} value={m.due_at ?? ''} onChange={(e) => updateMilestone(m.id, { due_at: e.target.value || null })} />{m.due_at && <span className={`chip ${fmtDue(m.due_at).tone}`}>{fmtDue(m.due_at).text}</span>}</div></div></div>)}
+              <div className="meta"><input type="date" aria-label={`${m.name} due date`} className="chip" style={{ background: 'transparent', color: 'inherit' }} value={m.due_at ?? ''} onChange={(e) => updateMilestone(m.id, { due_at: e.target.value || null })} />{m.due_at && <span className={`chip ${fmtDue(m.due_at).tone}`}>{fmtDue(m.due_at).text}</span>}</div></div></div>)}
           <form onSubmit={async (e) => { e.preventDefault(); if (!newMs.name.trim()) return; await createMilestone(p.id, { name: newMs.name.trim(), due_at: newMs.due_at || null }); setNewMs({ name: '', due_at: '' }); }} style={{ display: 'grid', gap: 6 }}>
             <input className="field" placeholder="New milestone" value={newMs.name} onChange={(e) => setNewMs({ ...newMs, name: e.target.value })} />
             <div className="row"><input className="field" type="date" value={newMs.due_at} onChange={(e) => setNewMs({ ...newMs, due_at: e.target.value })} /><button className="btn primary">Add</button></div></form></div>
