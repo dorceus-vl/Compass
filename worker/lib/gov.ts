@@ -26,7 +26,7 @@ export const GOV: Record<GovTable, GovSpec> = {
     },
   },
   decisions: {
-    path: 'decisions', required: ['text'], defaults: (today) => ({ decided_at: today }), order: 'decided_at DESC, created_at DESC',
+    path: 'decisions', required: ['text', 'decided_at'], defaults: (today) => ({ decided_at: today }), order: 'decided_at DESC, created_at DESC',
     checks: { text: text(2000), decided_at: date(), at_ref: text(40) },
   },
   lessons: {

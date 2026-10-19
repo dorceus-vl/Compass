@@ -13,5 +13,8 @@ assert.deepEqual(govInput(cr, { decision: 'approved' }, false, today, { decision
 assert.deepEqual(govInput(cr, { decision: 'approved', decided_at: '2026-10-01' }, false, today), { values: { decision: 'approved', decided_at: '2026-10-01' } });
 assert.deepEqual(govInput(cr, { decision: 'pending' }, false, today, { decision: 'approved' }), { values: { decision: 'pending', decided_at: null } });
 assert.equal((govInput(dec, { text: 'Go with vendor B' }, true, today) as { values: Record<string, unknown> }).values.decided_at, today);
+assert.ok('error' in govInput(dec, { text: 'x', decided_at: null }, true, today), 'decided_at is NOT NULL: null on create');
+assert.ok('error' in govInput(dec, { decided_at: '' }, false, today), 'decided_at is NOT NULL: emptied on patch');
+assert.equal((govInput(dec, { text: 'x' }, true, today) as { values: Record<string, unknown> }).values.decided_at, today, 'default still applies when absent');
 assert.equal(riskScore(4, 5), 20); assert.equal(riskScore(null, 5), 0);
 console.log('gov: ok');
