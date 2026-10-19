@@ -7,6 +7,8 @@ import { sameOrigin } from '../lib/access.ts';
 const PUBLIC = new Set(['/api/auth/login', '/api/auth/dev-login']);
 
 export async function authGuard(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
+  // POST /api/inbox is sent by other servers (no cookie, no Origin); the route checks the per-sender secret itself.
+  if (c.req.method === 'POST' && new URL(c.req.url).pathname.replace(/\/$/, '') === '/api/inbox') return next();
   if (!sameOrigin(c.req.raw)) return c.json({ error: 'Forbidden' }, 403);
   if (PUBLIC.has(new URL(c.req.url).pathname)) return next();
   const session = await getSession(c);

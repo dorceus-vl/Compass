@@ -34,7 +34,7 @@ export async function loadTask(env: Env, id: string): Promise<Task | null> {
   const row = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?1 AND deleted_at IS NULL').bind(id).first<Task>();
   return row ? open(env, 'tasks', row) : null;
 }
-async function updateTask(env: Env, task: Task, fields: string[]): Promise<void> {
+export async function updateTask(env: Env, task: Task, fields: string[]): Promise<void> {
   const s = await seal(env, 'tasks', { ...task, enc_v: 0 });
   task.enc_v = s.enc_v;
   const cols = [...new Set(fields.concat(TEXT_COLS, 'updated_at', 'enc_v'))];
@@ -47,6 +47,26 @@ export async function addEvent(env: Env, task: Task, actor: TaskEvent['actor'], 
   ev.enc_v = s.enc_v;
   await env.DB.prepare('INSERT INTO task_events (id, task_id, at, actor, type, data, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7)').bind(s.id, s.task_id, s.at, s.actor, s.type, s.data, s.enc_v).run();
   return ev;
+}
+/**
+ * A task made by a rule or from an inbox item (not typed by the user). Fills the defaults, follows the project's kind
+ * (a project that is gone is dropped), puts it last in its column and inserts it. The caller writes the 'created' event.
+ */
+export async function createTaskFromSource(env: Env, f: Partial<Task> & { title: string }): Promise<Task> {
+  const t = now();
+  const status = f.status ?? 'new';
+  let project_id = f.project_id ?? null;
+  let kind: Task['kind'] = f.kind ?? 'personal';
+  if (project_id) { const k = await projectKind(env, project_id); if (k) kind = k; else project_id = null; }
+  const last = await env.DB.prepare('SELECT MAX(sort_in_column) AS m FROM tasks WHERE status = ?1 AND deleted_at IS NULL').bind(status).first<{ m: number | null }>();
+  const task: Task = {
+    parent_id: null, notes: null, horizon: 'short', priority: 0, start_at: null, due_at: null, done_at: null, estimate_minutes: null, waiting_on: null,
+    waiting_since: status === 'waiting' ? t : null, nudge_every_days: null, recur: null, source_app: 'manual', source_kind: null, source_ref: null, source_url: null,
+    tags: '[]', enc_v: 0, ...f, id: crypto.randomUUID(), project_id, kind, status, sort_in_column: positionBetween(last?.m ?? null, null),
+    created_at: t, updated_at: t, deleted_at: null,
+  };
+  await insertTask(env, task);
+  return task;
 }
 function bad(r: ReturnType<typeof checkAll>): r is { error: string } { return 'error' in r; }
 const badRecur = (v: unknown) => typeof v === 'string' && v !== '' && !parseRecur(v);

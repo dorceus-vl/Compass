@@ -2,7 +2,7 @@ export type Kind = 'personal' | 'work';
 export type Horizon = 'short' | 'medium' | 'long';
 export type Status = 'new' | 'progress' | 'hold' | 'waiting' | 'done';
 export type Rag = 'green' | 'amber' | 'red' | 'none';
-export type SourceApp = 'manual' | 'finance' | 'health' | 'hollow' | 'aura' | 'home' | 'sonarflow' | 'kelly' | 'email';
+export type SourceApp = 'manual' | 'finance' | 'health' | 'hollow' | 'aura' | 'nightowl' | 'home' | 'sonarflow' | 'kelly' | 'email';
 
 export interface Project {
   id: string; name: string; kind: Kind; status: 'active' | 'on_hold' | 'closed'; rag: Rag; rag_reason: string | null;
