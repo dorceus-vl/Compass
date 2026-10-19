@@ -22,18 +22,18 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const items: { label: string; hint: string; run: () => void | Promise<void> }[] = jump
     ? JUMPS.filter(([, l]) => l.toLowerCase().includes(needle)).map(([to, l]) => ({ label: l, hint: 'Go', run: () => { navigate(to); ref.current?.close(); } }))
     : [
-        ...(q.trim() ? [{ label: `Add "${parsed.title}"`, hint, run: async () => { await createTask({ ...parsed, tags: JSON.stringify(parsed.tags) }); toast('Added'); setQ(''); } }] : []),
+        ...(q.trim() ? [{ label: `Add "${parsed.title}"`, hint, run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, tags: JSON.stringify(parsed.tags) }); toast('Added'); } }] : []),
         ...projects.filter((p) => needle && p.name.toLowerCase().includes(needle)).slice(0, 3).map((p) => ({ label: p.name, hint: 'Project', run: () => { navigate(`/projects/${p.id}`); ref.current?.close(); } })),
         ...tasks.filter((t) => needle && !t.deleted_at && t.status !== 'done' && t.title.toLowerCase().includes(needle)).slice(0, 6).map((t) => ({ label: t.title, hint: 'Task', run: () => setOpen(t.id) })),
       ];
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, items.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
-    if (e.key === 'Enter') { e.preventDefault(); void items[sel]?.run(); }
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void items[sel]?.run(); }
   };
   return (
     <>
-      <dialog ref={ref} onClose={onClose} style={{ width: 'min(640px, calc(100vw - 32px))', padding: 10, marginTop: '12vh' }}>
+      <dialog ref={ref} aria-label="Command palette" onClose={onClose} style={{ width: 'min(640px, calc(100vw - 32px))', padding: 10, marginTop: '12vh' }}>
         <input className="field" autoFocus placeholder="Add a task… (#project @work !3 +tag fri) or / to jump" value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onKey}
           aria-label="Command" role="combobox" aria-expanded={items.length > 0} aria-controls="palette-list" aria-activedescendant={items[sel] ? `palette-opt-${sel}` : undefined} />
         <div id="palette-list" role="listbox" aria-label="Results" style={{ marginTop: 8 }}>

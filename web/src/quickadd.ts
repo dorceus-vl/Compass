@@ -27,7 +27,7 @@ export function parseQuickAdd(text: string, projects: Pick<Project, 'id' | 'name
   take(/ @(work|personal)/i, (m) => { if (!out.project_id) out.kind = m[1].toLowerCase() as 'work'; });
   take(/ !([1-3])/, (m) => { out.priority = Number(m[1]); });
   for (;;) { const m = s.match(/ \+(\S+)/); if (!m) break; out.tags.push(m[1]); s = s.replace(m[0], ' '); }
-  take(/ every (day|week|month|weekday)s?/i, (m) => { const w = m[1].toLowerCase(); out.recur = w === 'weekday' ? '{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}' : `{"freq":"${w === 'day' ? 'daily' : w + 'ly'}","interval":1}`; });
+  take(/ every (weekday|day|week|month)s?(?= )/i, (m) => { const w = m[1].toLowerCase(); out.recur = w === 'weekday' ? '{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}' : `{"freq":"${w === 'day' ? 'daily' : w + 'ly'}","interval":1}`; });
   take(/ today /i, () => { out.due_at = today; });
   take(/ tomorrow /i, () => { out.due_at = add(today, 1); });
   take(/ next week /i, () => { out.due_at = add(today, 7 - ((new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7)); });
