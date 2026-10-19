@@ -139,7 +139,7 @@ export function Report({ project }: { project: Project }) {
     <>
       <div className="no-print" style={{ display: 'grid', gap: 14 }}>
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{live}</div>
-        <div className="card" style={{ display: 'grid', gap: 10 }}>
+        <div className="card report-bar" style={{ display: 'grid', gap: 10 }}>
           <div className="row">
             <div className="seg" role="group" aria-label="Report period">
               {PRESETS.map(([p, l]) => <button type="button" key={p} className={preset === p ? 'on' : ''} aria-pressed={preset === p} onClick={() => setPreset(p)}>{l}</button>)}</div>

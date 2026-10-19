@@ -245,7 +245,7 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 .printdoc .pd-fields th{width:30%}
 .report-preview{overflow-x:auto}
 @media (max-width:760px),(pointer:coarse){
-  .doc-row .btn,.doc-row .field,.doc-row select,.drop .btn,.card .seg button{min-height:44px}
+  .doc-row .btn,.doc-row .field,.doc-row select,.drop .btn,.card .seg button,.report-bar .btn,.report-bar .field,.doc-actions .btn{min-height:44px}
   .doc-row input[type=date],.card input[type=date]{min-height:44px}
 }
 @page{size:Letter;margin:.6in}

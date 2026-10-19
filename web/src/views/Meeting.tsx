@@ -171,7 +171,7 @@ export function MeetingView({ id }: { id: string }) {
       </>}
 
       <h2 style={h2}>Minutes</h2>
-      <div className="row">
+      <div className="row doc-actions">
         <button type="button" className="btn" onClick={() => void minutesWord()}>Word</button>
         <button type="button" className="btn" onClick={() => saveText(toMarkdown(minutes()), `${minutesName}.md`)}>Markdown</button>
         <small className="sub">The meeting as it was received: summary, decisions, actions, questions and notes.</small>
