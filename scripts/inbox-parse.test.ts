@@ -29,6 +29,16 @@ const meeting = parseInboxBody({ app: 'sonarflow', kind: 'meeting', title: 'Stee
   payload: { title: 'Steering', summary: 's', decisions: [], action_items: [{ text: 'Send SOW', owner: 'Vlad', due: null, at: '12:30' }], important_notes: [], open_questions: [] } });
 assert.equal(typeof meeting, 'object');
 
+const notes = { title: 'T', summary: 's', decisions: [], action_items: [], important_notes: [], open_questions: [] };
+const mt = (o: Record<string, unknown>) => parseInboxBody({ app: 'sonarflow', kind: 'meeting', title: 'T', ref: 'sonarflow:recording:r1', payload: notes, ...o });
+assert.equal(typeof mt({}), 'object');
+assert.equal(typeof mt({ app: 'hollow' }), 'string', 'meeting only from sonarflow');
+assert.equal(typeof mt({ app: 'kelly' }), 'string', 'meeting only from sonarflow (kelly)');
+for (const ref of ['kelly:finance:x', 'sonarflow:recording:', 'sonarflow:recording:a:b', 'sonarflow:recording:a b', 'sonarflow:recording:' + 'x'.repeat(101), undefined]) assert.equal(typeof mt({ ref }), 'string', `meeting ref ${ref}`);
+assert.equal(typeof parseInboxBody({ app: 'kelly', kind: 'email', title: 't', ref: 'email:gmail:1' }), 'object');
+assert.equal(typeof parseInboxBody({ app: 'hollow', kind: 'email', title: 't' }), 'string', 'email only from kelly');
+assert.equal(typeof parseInboxBody({ app: 'finance', kind: 'email', title: 't' }), 'string', 'email only from kelly (finance)');
+
 assert.equal(isWorkAccount('vlad@bell.ca', ['bell.ca']), true);
 assert.equal(isWorkAccount('Vlad@Mail.Bell.CA', ['bell.ca']), true, 'subdomain, any case');
 assert.equal(isWorkAccount('vlad@notbell.ca', ['bell.ca']), false, 'suffix is not a subdomain');

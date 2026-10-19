@@ -24,12 +24,13 @@ const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','st
 const TEXT_COLS = ['title', 'notes', 'waiting_on'];
 
 // Both helpers seal a copy (never the caller's task) and set task.enc_v to what is stored, so responses say how the row is held.
-export async function insertTask(env: Env, task: Task): Promise<void> {
+export async function insertTaskStmt(env: Env, task: Task): Promise<D1PreparedStatement> {
   const s = await seal(env, 'tasks', { ...task, enc_v: 0 });
   task.enc_v = s.enc_v;
-  await env.DB.prepare(`INSERT INTO tasks (${COLS.join(',')}) VALUES (${COLS.map((_, i) => `?${i + 1}`).join(',')})`)
-    .bind(...COLS.map((k) => (s as Record<string, unknown>)[k] ?? null)).run();
+  return env.DB.prepare(`INSERT INTO tasks (${COLS.join(',')}) VALUES (${COLS.map((_, i) => `?${i + 1}`).join(',')})`)
+    .bind(...COLS.map((k) => (s as Record<string, unknown>)[k] ?? null));
 }
+export async function insertTask(env: Env, task: Task): Promise<void> { await (await insertTaskStmt(env, task)).run(); }
 export async function loadTask(env: Env, id: string): Promise<Task | null> {
   const row = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?1 AND deleted_at IS NULL').bind(id).first<Task>();
   return row ? open(env, 'tasks', row) : null;
@@ -50,9 +51,10 @@ export async function addEvent(env: Env, task: Task, actor: TaskEvent['actor'], 
 }
 /**
  * A task made by a rule or from an inbox item (not typed by the user). Fills the defaults, follows the project's kind
- * (a project that is gone is dropped), puts it last in its column and inserts it. The caller writes the 'created' event.
+ * (a project that is gone is dropped) and puts it last in its column. build... returns it unsaved (to batch with other writes);
+ * create... also inserts it. The caller writes the 'created' event.
  */
-export async function createTaskFromSource(env: Env, f: Partial<Task> & { title: string }): Promise<Task> {
+export async function buildTaskFromSource(env: Env, f: Partial<Task> & { title: string }): Promise<Task> {
   const t = now();
   const status = f.status ?? 'new';
   let project_id = f.project_id ?? null;
@@ -65,6 +67,10 @@ export async function createTaskFromSource(env: Env, f: Partial<Task> & { title:
     tags: '[]', enc_v: 0, ...f, id: crypto.randomUUID(), project_id, kind, status, sort_in_column: positionBetween(last?.m ?? null, null),
     created_at: t, updated_at: t, deleted_at: null,
   };
+  return task;
+}
+export async function createTaskFromSource(env: Env, f: Partial<Task> & { title: string }): Promise<Task> {
+  const task = await buildTaskFromSource(env, f);
   await insertTask(env, task);
   return task;
 }

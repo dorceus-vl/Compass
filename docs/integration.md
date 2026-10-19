@@ -15,11 +15,11 @@ No cookie and no `Origin` header are needed (a server sends it). Every other `/a
 | Field | Type | Rule |
 |---|---|---|
 | `app` | string | `finance`, `health`, `home`, `nightowl`, `kelly`, `sonarflow`, `hollow`. Must be allowed for your secret (below). |
-| `kind` | string | `notification`, `meeting` or `email` |
+| `kind` | string | `notification`, `meeting` (sonarflow only) or `email` (kelly only) |
 | `title` | string | required, 1-120 characters, trimmed |
 | `body` | string | optional, at most 500 characters |
 | `url` | string | optional, `https:` only, at most 2048 characters |
-| `ref` | string | optional, at most 200 characters. The same `ref` means "the same thing again" (see Dedupe). Required for `meeting`. |
+| `ref` | string | optional, at most 200 characters. The same `ref` means "the same thing again" (see Dedupe). Required for `meeting`, which must be `sonarflow:recording:<id>`. |
 | `suggest` | string | optional, at most 40 characters, e.g. `pay_bill`, `review_budget`, `log_meds`; rules can match on it |
 | `payload` | any JSON | optional, at most 64 KB when serialised. Kept as data and never rendered as HTML. |
 
@@ -57,7 +57,7 @@ Conventions:
 
 - `kelly:<app>:<url>` for Kelly Cloud notifications, e.g. `kelly:finance:https://finance.knocturnlabs.com/subscriptions.html#watch-netflix`
 - `email:<provider>:<id>` for email
-- `sonarflow:recording:<id>` for a meeting (the id after the last colon is the recording)
+- `sonarflow:recording:<id>` for a meeting: the only ref a meeting may have, `<id>` is 1-100 characters with no colon or space and is the recording id. Only `sonarflow` may post `meeting`, and only `kelly` may post `email`.
 - `hollow:inbox`, `hollow:disk:<letter>` for Hollow
 
 ## Example

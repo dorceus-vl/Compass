@@ -34,6 +34,7 @@ export function isWorkAccount(account: unknown, domains: string[]): boolean {
   return !!host && domains.some((d) => { const w = d.trim().toLowerCase(); return !!w && (host === w || host.endsWith('.' + w)); });
 }
 
+const RECORDING_REF = /^sonarflow:recording:[^:\s]{1,100}$/;
 const isHttps = (v: string) => { try { return new URL(v).protocol === 'https:'; } catch { return false; } };
 const arr = (v: unknown) => Array.isArray(v);
 
@@ -49,10 +50,11 @@ export function parseInboxBody(input: unknown): InboxPost | string {
   if (b.ref != null && (typeof b.ref !== 'string' || b.ref.length > 200)) return 'ref must be at most 200 characters';
   if (b.suggest != null && (typeof b.suggest !== 'string' || b.suggest.length > 40)) return 'suggest is invalid';
   if (b.payload != null && JSON.stringify(b.payload).length > 65_536) return 'payload is too large';
+  if (b.kind === 'email' && b.app !== 'kelly') return 'only kelly may post email';
   if (b.kind === 'meeting') {
+    if (b.app !== 'sonarflow' || typeof b.ref !== 'string' || !RECORDING_REF.test(b.ref)) return 'meeting must come from sonarflow with ref sonarflow:recording:<id>';
     const p = b.payload as Partial<MeetingNotes> | undefined;
     if (!p || typeof p.title !== 'string' || !arr(p.decisions) || !arr(p.action_items) || !arr(p.important_notes) || !arr(p.open_questions)) return 'meeting payload is incomplete';
-    if (!b.ref) return 'meeting needs a ref';
   }
   return { app: b.app as InboxApp, kind: b.kind as InboxKind, title, body: (b.body as string | undefined)?.trim() || null, url: (b.url as string | undefined) ?? null,
     ref: (b.ref as string | undefined) ?? null, suggest: (b.suggest as string | undefined) ?? null, payload: b.payload ?? null };
