@@ -69,7 +69,7 @@ reports.post('/status', async (c) => {
     else {
       try {
         const settings = await getSettings(c.env);
-        const model = buildReportModel(input, { from: b.from, to: b.to }, localDate(settings.tz), now());
+        const model = buildReportModel(input, { from: b.from, to: b.to }, localDate(settings.tz), now(), settings.tz);
         const out = await runAi(c.env, 'status_report', {
           provider: settings.default_provider, system: SYSTEM, maxTokens: 600,
           messages: [{ role: 'user', content: 'Write the executive summary for this report.\n\n' + fence('report', reportText(model)) }],

@@ -19,8 +19,14 @@ function sec<R>(rows: R[], headers: string[], cells: (r: R) => (string | number)
 
 const RAG: Record<string, string> = { green: 'Green', amber: 'Amber', red: 'Red' };
 
-export function buildReportModel(input: ReportInput, range: { from: string; to: string }, today: string, now: string): ReportModel {
+/** A stored timestamp as a date in the user's zone; a plain date passes through. A task done at 21:00 Toronto is stored as the next UTC day. */
+const localDay = (tz: string) => (s: string | null | undefined) =>
+  !s ? '' : s.length <= 10 ? s : new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(s));
+
+/** tz is settings.tz; today and the range are already local dates. */
+export function buildReportModel(input: ReportInput, range: { from: string; to: string }, today: string, now: string, tz: string): ReportModel {
   const { from, to } = range;
+  const local = localDay(tz);
   const inRange = (d: string) => d >= from && d <= to;
   const p = input.project;
   const live = <T extends { deleted_at: string | null }>(xs: T[]) => xs.filter((x) => !x.deleted_at);
@@ -28,7 +34,7 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
   const tasks = live(input.tasks).filter((t) => !t.parent_id);
   const doneAll = tasks.filter((t) => t.status === 'done');
   const open = tasks.filter((t) => t.status !== 'done').sort(byDate((t) => day(t.due_at)));
-  const done = doneAll.filter((t) => inRange(day(t.done_at))).sort(byDate((t) => day(t.done_at)));
+  const done = doneAll.filter((t) => inRange(local(t.done_at))).sort(byDate((t) => local(t.done_at)));
   const overdue = open.filter((t) => t.due_at && day(t.due_at) < today).map((t) => ({ title: txt(t.title), due_at: day(t.due_at), days_late: daysBetween(day(t.due_at), today) }));
   const next = open.filter((t) => t.due_at && day(t.due_at) >= today && day(t.due_at) <= addDays(today, 14));
   const pct = tasks.length ? Math.round((100 * doneAll.length) / tasks.length) : 0;
@@ -36,7 +42,7 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
   const milestones = live(input.milestones).sort((a, b) => (day(a.due_at) || '9999').localeCompare(day(b.due_at) || '9999') || a.sort - b.sort).map((m) => {
     const due = day(m.due_at);
     const state = m.done_at ? 'Done' : due && due < today ? 'Late' : due && inRange(due) ? 'Due this period' : 'Upcoming';
-    return { name: txt(m.name), due_at: due, done_at: day(m.done_at), gate: m.gate ? 'Gate' : '', state } as const;
+    return { name: txt(m.name), due_at: due, done_at: local(m.done_at), gate: m.gate ? 'Gate' : '', state } as const;
   });
 
   const raid = live(input.raid).filter((r) => r.status === 'open');
@@ -49,11 +55,11 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
   const dependencies = raid.filter((r) => r.type === 'dependency').map((r) => ({ text: txt(r.text), owner: txt(r.owner) }));
 
   const crs = live(input.changes).sort((a, b) => a.created_at.localeCompare(b.created_at)); // oldest first: the newest pending change is the last pending row
-  const changes = crs.map((c) => ({ id: c.id, description: (c.description ?? '').trim(), title: txt(c.title), decision: c.decision, impact_scope: txt(c.impact_scope), impact_time: txt(c.impact_time), impact_cost: txt(c.impact_cost), approver: txt(c.approver), decided_at: day(c.decided_at) }));
-  const decisions = live(input.decisions).filter((d) => inRange(day(d.decided_at))).sort(byDate((d) => day(d.decided_at))).map((d) => ({ decided_at: day(d.decided_at), text: txt(d.text) }));
+  const changes = crs.map((c) => ({ id: c.id, description: (c.description ?? '').trim(), title: txt(c.title), decision: c.decision, impact_scope: txt(c.impact_scope), impact_time: txt(c.impact_time), impact_cost: txt(c.impact_cost), approver: txt(c.approver), decided_at: local(c.decided_at) }));
+  const decisions = live(input.decisions).filter((d) => inRange(local(d.decided_at))).sort(byDate((d) => local(d.decided_at))).map((d) => ({ decided_at: local(d.decided_at), text: txt(d.text) }));
   const needed = crs.filter((c) => c.decision === 'pending').map((c) => ({ title: txt(c.title) }));
   const lessons = live(input.lessons).map((l) => ({ text: txt(l.text), category: txt(l.category) }));
-  const meetings = input.meetings.filter((m) => inRange(day(m.received_at))).sort(byDate((m) => m.received_at)).map((m) => ({ title: txt(m.title), date: day(m.received_at), summary: txt(m.summary) }));
+  const meetings = input.meetings.filter((m) => inRange(local(m.received_at))).sort(byDate((m) => m.received_at)).map((m) => ({ title: txt(m.title), date: local(m.received_at), summary: txt(m.summary) }));
 
   const rag_label = RAG[p.rag] ?? 'Not set';
   const nextSteps = next.slice(0, 5).map((t) => txt(t.title)).join('; ');
@@ -68,7 +74,7 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
     },
     milestones: sec([...milestones], ['Milestone', 'Due', 'Gate', 'State'], (m) => [m.name, m.due_at, m.gate, m.state], (m) => `${m.name} (${m.due_at || 'no date'}, ${m.state})`),
     tasks: {
-      done: sec(done.map((t) => ({ title: txt(t.title), done_at: day(t.done_at) })), ['Task', 'Done'], (t) => [t.title, t.done_at], (t) => t.title),
+      done: sec(done.map((t) => ({ title: txt(t.title), done_at: local(t.done_at) })), ['Task', 'Done'], (t) => [t.title, t.done_at], (t) => t.title),
       open: sec(open.map((t) => ({ title: txt(t.title), status: t.status, due_at: day(t.due_at), waiting_on: txt(t.waiting_on) })), ['Task', 'Status', 'Due', 'Waiting on'], (t) => [t.title, t.status, t.due_at, t.waiting_on], (t) => t.title),
       overdue: sec(overdue, ['Task', 'Due', 'Days late'], (t) => [t.title, t.due_at, t.days_late], (t) => `${t.title} (${t.days_late} days late)`),
       next: sec(next.map((t) => ({ title: txt(t.title), due_at: day(t.due_at) })), ['Task', 'Due'], (t) => [t.title, t.due_at], (t) => `${t.title} (${day(t.due_at)})`),

@@ -9,7 +9,8 @@ import { fillTemplate } from '../web/src/docs/fill.ts';
 import { fixture } from './fixtures/report-input.ts';
 import type { MeetingReview } from '../shared/types.ts';
 
-const model = buildReportModel(fixture, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', '2026-10-19T12:00:00Z');
+const TZ = 'America/Toronto';
+const model = buildReportModel(fixture, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', '2026-10-19T12:00:00Z', TZ);
 const xml = (bytes: Uint8Array) => strFromU8(unzipSync(bytes)['word/document.xml']);
 const text = (bytes: Uint8Array) => xml(bytes).replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '').replaceAll('&amp;', '&');
 
@@ -46,14 +47,14 @@ const cr = BUILTINS.find((b) => b.id === 'change_request')!;
 const pick = (opts?: { changeId?: string }, m = model) => (cr.make(m, opts).sections[0].blocks[0] as { t: 'fields'; pairs: [string, string][] }).pairs.find(([k]) => k === 'Title')![1];
 assert.equal(pick(), 'Add six sites');
 assert.equal(pick({ changeId: 'c2' }), 'Move date');
-assert.equal(pick(undefined, buildReportModel({ ...fixture, changes: [] }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now')), '');
+assert.equal(pick(undefined, buildReportModel({ ...fixture, changes: [] }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ)), '');
 
 // WBS: open tasks under the first milestone dated on or after them; the rest in "Other work".
 const wbsOf = (m: typeof model) => BUILTINS.find((b) => b.id === 'wbs')!.make(m);
 const lines = (d: ReturnType<typeof wbsOf>) => d.sections.map((x) => [x.heading, ...x.blocks.map((k) => (k.t === 'p' ? k.text : k.t === 'list' ? k.items.join('/') : ''))]);
 assert.deepEqual(lines(wbsOf(model)), [['1. Design', 'No open tasks.'], ['2. Pilot', 'No open tasks.'], ['3. Wave 2', '3.1 Chase customs'], ['4. Wave 3', '4.1 Book window', '4.2 Await invoice']]);
 const loose = { ...fixture, tasks: [...fixture.tasks, { ...fixture.tasks[3], id: 'tx', title: 'Undated chore', due_at: null }] };
-assert.deepEqual(lines(wbsOf(buildReportModel(loose, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now'))).at(-1), ['Other work', 'Undated chore']);
+assert.deepEqual(lines(wbsOf(buildReportModel(loose, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ))).at(-1), ['Other work', 'Undated chore']);
 
 // Fill a user's own template.
 const tpl = new Uint8Array(await Packer.toArrayBuffer(new Document({ sections: [{ children: [
@@ -65,4 +66,7 @@ assert.ok(filled.includes('- Router shortage | single source (20)') && filled.in
 const broken = new Uint8Array(await Packer.toArrayBuffer(new Document({ sections: [{ children: [new Paragraph('{{#risks.rows}}never closed')] }] })));
 const log = console.log; console.log = () => {}; // docxtemplater prints the error it is about to throw
 try { assert.throws(() => fillTemplate(broken, model), /^Error: Template problem: Unclosed loop/); } finally { console.log = log; }
+// Tags reach own properties only (fix round 1): the prototype chain renders nothing.
+const proto = new Uint8Array(await Packer.toArrayBuffer(new Document({ sections: [{ children: [new Paragraph('[{{constructor.name}}][{{__proto__.constructor.name}}][{{toString}}][{{risks.rows.length}}]')] }] })));
+assert.ok(text(fillTemplate(proto, model)).includes('[][][][2]'), 'prototype properties are empty, own ones still work');
 console.log('docs: ok');

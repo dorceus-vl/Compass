@@ -4,8 +4,9 @@ import { fixture } from './fixtures/report-input.ts';
 import type { Project } from '../shared/types.ts';
 
 const project: Project = fixture.project;
+const TZ = 'America/Toronto';
 
-const m = buildReportModel(fixture, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', '2026-10-19T12:00:00Z');
+const m = buildReportModel(fixture, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', '2026-10-19T12:00:00Z', TZ);
 assert.equal(m.project.rag_label, 'Amber');
 assert.equal(m.project.budget_left, '60');
 assert.equal(m.project.pct_done, 50);
@@ -33,7 +34,7 @@ assert.equal(m.ai.summary, '');
 
 // An empty project: nothing set, nothing listed, honest defaults.
 const blank = buildReportModel({ project: { ...project, rag: 'none', rag_reason: null, budget_planned: 100, budget_spent: null }, milestones: [], tasks: [], raid: [], changes: [], decisions: [], lessons: [], meetings: [] },
-  { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now');
+  { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ);
 const sections = [blank.milestones, blank.tasks.done, blank.tasks.open, blank.tasks.overdue, blank.tasks.next, blank.risks, blank.issues, blank.assumptions, blank.dependencies, blank.changes, blank.decisions, blank.decisions_needed, blank.lessons, blank.meetings];
 for (const s of sections) assert.deepEqual([s.count, s.table, s.list], [0, '', '']);
 assert.equal(blank.project.rag_label, 'Not set');
@@ -42,3 +43,13 @@ assert.equal(blank.status.headline, 'Not set: no reason given');
 assert.equal(blank.status.progress, '0 tasks done this period; 0 of 0 overall (0%). 0 overdue.');
 assert.equal(blank.status.next_steps, 'Nothing due in the next two weeks.');
 console.log('report-model: ok');
+
+// A Friday-evening Toronto finish is stored as the next UTC day (fix round 1): it counts in the period ending that Friday, not the next one.
+const late = { ...fixture, tasks: [...fixture.tasks, { ...fixture.tasks[0], id: 'tz', title: 'Friday night', done_at: '2026-10-24T01:00:00Z' }],
+  meetings: [...fixture.meetings, { id: 'mtz', title: 'Friday call', received_at: '2026-10-24T01:30:00Z', summary: null }] };
+const fri = buildReportModel(late, { from: '2026-10-12', to: '2026-10-23' }, '2026-10-19', 'now', TZ);
+assert.ok(fri.tasks.done.rows.some((t) => t.title === 'Friday night' && t.done_at === '2026-10-23'), 'done 21:00 Toronto Friday is in the Friday-ending period');
+assert.ok(fri.meetings.rows.some((x) => x.title === 'Friday call' && x.date === '2026-10-23'));
+const next = buildReportModel(late, { from: '2026-10-24', to: '2026-10-30' }, '2026-10-25', 'now', TZ);
+assert.ok(!next.tasks.done.rows.some((t) => t.title === 'Friday night') && !next.meetings.rows.some((x) => x.title === 'Friday call'), 'and not in the next one');
+console.log('report-model tz: ok');

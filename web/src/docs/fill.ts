@@ -7,7 +7,7 @@ export function fillTemplate(bytes: Uint8Array, data: ReportModel): Uint8Array {
   try {
     const doc = new Docxtemplater(new PizZip(bytes), {
       delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '',
-      parser: (tag: string) => ({ get: (scope: unknown) => (tag === '.' ? scope : tag.split('.').reduce<unknown>((o, k) => (o == null ? undefined : (o as Record<string, unknown>)[k]), scope)) }),
+      parser: (tag: string) => ({ get: (scope: unknown) => (tag === '.' ? scope : tag.split('.').reduce<unknown>((o, k) => (o != null && Object.hasOwn(Object(o), k) ? (o as Record<string, unknown>)[k] : undefined), scope)) }),
     });
     doc.render(data);
     return doc.getZip().generate({ type: 'uint8array' });
