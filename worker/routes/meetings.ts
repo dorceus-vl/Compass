@@ -69,6 +69,8 @@ meetings.post('/:id/accept', async (c) => {
   if (!isObj(body)) return c.json({ error: 'body must be an object' }, 400);
   const { tasks: rawTasks = [], decisions: rawDecisions = [] } = body;
   if (!Array.isArray(rawTasks) || !Array.isArray(rawDecisions) || rawTasks.length > 50 || rawDecisions.length > 50) return c.json({ error: 'tasks and decisions must be lists of 50 at most' }, 400);
+  const rawRaid = body.raid ?? [];
+  if (!Array.isArray(rawRaid) || rawRaid.length > 50) return c.json({ error: 'raid must be a list of 50 at most' }, 400);
   const project_id = body.project_id ?? null;
   let pkind: Kind | null = null;
   if (project_id !== null) {
@@ -95,6 +97,17 @@ meetings.post('/:id/accept', async (c) => {
     if (d.at != null && !at) return c.json({ error: 'at must be 1-12 characters' }, 400);
     decs.push({ text, at });
   }
+
+  const raidItems: { type: 'risk' | 'issue'; text: string; at: string | null }[] = [];
+  for (const x of rawRaid) {
+    if (!isObj(x)) return c.json({ error: 'each raid item must be an object' }, 400);
+    const text = str(x.text, 2000), at = x.at == null ? null : str(x.at, 12);
+    if (x.type !== 'risk' && x.type !== 'issue') return c.json({ error: 'raid type must be risk or issue' }, 400);
+    if (!text) return c.json({ error: 'raid text must be 1-2000 characters' }, 400);
+    if (x.at != null && !at) return c.json({ error: 'at must be 1-12 characters' }, 400);
+    raidItems.push({ type: x.type, text, at });
+  }
+  if (raidItems.length && !pkind) return c.json({ error: 'raid items need a project' }, 400);
 
   const t = now();
   const decidedAt = localDate((await getSettings(c.env)).tz, new Date(meeting.received_at));
@@ -124,10 +137,19 @@ meetings.post('/:id/accept', async (c) => {
       .bind(s.id, s.project_id, s.text, s.decided_at, s.from_meeting_id, s.at_ref, t, s.enc_v));
     madeDecisions.push(dec);
   }
+  for (const x of raidItems) {
+    const row: Record<string, unknown> = {
+      id: crypto.randomUUID(), project_id, type: x.type, text: x.text, trigger: x.at ? `Meeting ${x.at}` : null, status: 'open', from_meeting_id: meeting.id,
+      created_at: t, updated_at: t, enc_v: 0,
+    };
+    const s = await seal(c.env, 'raid_items', row, pkind!);
+    writes.push(c.env.DB.prepare('INSERT INTO raid_items (id, project_id, type, text, trigger, status, from_meeting_id, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)')
+      .bind(s.id, s.project_id, s.type, s.text, s.trigger, s.status, s.from_meeting_id, t, t, s.enc_v));
+  }
   writes.push(inboxStmt(c.env, meeting.recording_id, 'kept', t), reviewStmt(c.env, meeting.id, project_id as string | null, t));
   if (!(await commit(c.env, meeting.id, writes))) return c.json({ error: 'Already reviewed' }, 409);
-  await audit(c.env, 'you', 'meeting.accept', meeting.id, { tasks: madeTasks.length, decisions: madeDecisions.length });
-  return c.json({ meeting: { ...meeting, state: 'reviewed', project_id, reviewed_at: t }, tasks: madeTasks, decisions: madeDecisions }, 201);
+  await audit(c.env, 'you', 'meeting.accept', meeting.id, { tasks: madeTasks.length, decisions: madeDecisions.length, raid: raidItems.length });
+  return c.json({ meeting: { ...meeting, state: 'reviewed', project_id, reviewed_at: t }, tasks: madeTasks, decisions: madeDecisions, raid: raidItems.length }, 201);
 });
 
 export default meetings;

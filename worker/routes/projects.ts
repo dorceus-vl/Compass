@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
-import type { Project, Milestone } from '../../shared/types.ts';
+import type { Project, Milestone, PortfolioRow } from '../../shared/types.ts';
 import { checkAll, text, oneOf, date, num, type Check } from '../lib/validate.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
+import { requireStepUp } from '../lib/step-up.ts';
 
 const projects = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -77,13 +78,15 @@ projects.patch('/:id', async (c) => {
   const r = checkAll(body, PROJECT_CHECKS);
   if ('error' in r) return c.json({ error: r.error }, 400);
   if ('name' in r.values && !r.values.name) return c.json({ error: 'name is required' }, 400);
-  if (r.values.data_boundary !== undefined && r.values.data_boundary !== project.data_boundary) return c.json({ error: 'Changing the data boundary arrives in Phase 3.' }, 403);
+  const boundaryChanged = r.values.data_boundary !== undefined && r.values.data_boundary !== project.data_boundary;
+  if (boundaryChanged) { const refused = await requireStepUp(c); if (refused) return refused; } // passkey, like Empty Trash
   const next = { ...project, ...r.values, updated_at: now() } as Project;
   const s = await seal(c.env, 'projects', { ...next });
   const cols = Object.keys(r.values).concat('updated_at', 'enc_v');
   await c.env.DB.prepare(`UPDATE projects SET ${cols.map((k, i) => `${k} = ?${i + 2}`).join(', ')} WHERE id = ?1`)
     .bind(project.id, ...cols.map((k) => (s as Record<string, unknown>)[k] ?? null)).run();
   await audit(c.env, 'you', 'project.edit', project.id, Object.keys(r.values));
+  if (boundaryChanged) await audit(c.env, 'you', 'project.boundary', project.id, { from: project.data_boundary, to: r.values.data_boundary });
   return c.json({ project: next });
 });
 
@@ -110,6 +113,31 @@ projects.post('/:id/milestones', async (c) => {
     .bind(s.id, s.project_id, s.name, s.due_at, s.done_at, s.gate, s.sort, s.enc_v, s.created_at, s.updated_at).run();
   await audit(c.env, 'you', 'milestone.create', row.id);
   return c.json({ milestone: row }, 201);
+});
+
+export const portfolio = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+type PortfolioRaw = Project & { open_tasks: number; done_tasks: number; ms_name: string | null; ms_due: string | null; ms_enc: number | null; open_risks: number; high_risks: number; pending_changes: number };
+portfolio.get('/', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.*,
+       (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done' AND t.deleted_at IS NULL) AS open_tasks,
+       (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done' AND t.deleted_at IS NULL) AS done_tasks,
+       (SELECT m.name FROM milestones m WHERE m.project_id = p.id AND m.done_at IS NULL AND m.deleted_at IS NULL AND m.due_at IS NOT NULL ORDER BY m.due_at LIMIT 1) AS ms_name,
+       (SELECT m.due_at FROM milestones m WHERE m.project_id = p.id AND m.done_at IS NULL AND m.deleted_at IS NULL AND m.due_at IS NOT NULL ORDER BY m.due_at LIMIT 1) AS ms_due,
+       (SELECT m.enc_v FROM milestones m WHERE m.project_id = p.id AND m.done_at IS NULL AND m.deleted_at IS NULL AND m.due_at IS NOT NULL ORDER BY m.due_at LIMIT 1) AS ms_enc,
+       (SELECT COUNT(*) FROM raid_items r WHERE r.project_id = p.id AND r.type = 'risk' AND r.status = 'open' AND r.deleted_at IS NULL) AS open_risks,
+       (SELECT COUNT(*) FROM raid_items r WHERE r.project_id = p.id AND r.type = 'risk' AND r.status = 'open' AND r.deleted_at IS NULL AND r.probability * r.impact >= 15) AS high_risks,
+       (SELECT COUNT(*) FROM change_requests q WHERE q.project_id = p.id AND q.decision = 'pending' AND q.deleted_at IS NULL) AS pending_changes
+     FROM projects p WHERE p.status IN ('active', 'on_hold') AND p.deleted_at IS NULL ORDER BY p.sort, p.created_at`,
+  ).all<PortfolioRaw>();
+  const rows: PortfolioRow[] = await Promise.all(results.map(async ({ ms_name, ms_due, ms_enc, ...raw }) => {
+    const p = await open(c.env, 'projects', raw);
+    const total = p.done_tasks + p.open_tasks;
+    const name = ms_due && ms_name ? (await open(c.env, 'milestones', { name: ms_name, enc_v: ms_enc ?? 0 })).name : null;
+    return { ...p, pct_done: total ? Math.round((100 * p.done_tasks) / total) : 0, next_milestone: name && ms_due ? { name, due_at: ms_due } : null };
+  }));
+  return c.json({ projects: rows });
 });
 
 export const milestones = new Hono<{ Bindings: Env; Variables: Variables }>();

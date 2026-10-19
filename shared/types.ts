@@ -11,6 +11,10 @@ export interface Project {
   data_boundary: 'cloud' | 'offline'; colour: string | null; sort: number; enc_v: number;
   created_at: string; updated_at: string; deleted_at: string | null;
 }
+export type PortfolioRow = Project & {
+  open_tasks: number; done_tasks: number; pct_done: number; next_milestone: { name: string; due_at: string } | null;
+  open_risks: number; high_risks: number; pending_changes: number;
+};
 export interface Milestone {
   id: string; project_id: string; name: string; due_at: string | null; done_at: string | null; gate: number; sort: number; enc_v: number;
   created_at: string; updated_at: string; deleted_at: string | null;
