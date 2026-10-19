@@ -64,6 +64,10 @@ assert.equal(run(at('2026-10-13', '07:15'), w()).length, 0);
 const wn = nudgeAt('2026-10-13', w({ kind: 'work', title: 'SECRET', waiting_on: 'SECRETNAME' }))[0];
 assert.deepEqual(wn.message, { title: 'Nudge for a work task', body: 'Waiting on someone', url: '/' });
 
+// timestamps are read in the user's zone: set waiting Oct 10 20:30 Toronto (= Oct 11 00:30Z), n=3 -> Oct 13, not Oct 14
+assert.equal(nudgeAt('2026-10-13', w({ waiting_since: '2026-10-11T00:30:00Z' })).length, 1);
+assert.equal(nudgeAt('2026-10-14', w({ waiting_since: '2026-10-11T00:30:00Z' })).length, 0);
+
 // milestone: exactly 7 days out, undone
 const ms = (o2 = {}) => [{ id: 'm1', name: 'Launch', due_at: '2026-10-26', done_at: null, ...o2 }];
 const mAt = (date: string, m = ms()) => run(at(date, '07:00'), [], m).filter((p) => p.type === 'milestone');
@@ -89,4 +93,6 @@ assert.equal(rv('2026-10-18', '17:00', 0, '2026-10-12T10:00:00.000Z').length, 1)
 assert.deepEqual(localNow('America/Toronto', new Date('2026-10-19T11:05:00Z')), { date: '2026-10-19', hhmm: '07:05', weekday: 1 });
 assert.deepEqual(localNow('America/Toronto', new Date('2026-10-19T04:00:00Z')), { date: '2026-10-19', hhmm: '00:00', weekday: 1 });
 assert.deepEqual(localNow('America/Toronto', new Date('2026-10-19T03:59:00Z')), { date: '2026-10-18', hhmm: '23:59', weekday: 0 });
+// reviewed Mon Oct 12 20:00 Toronto (= Oct 13 00:00Z): Sunday Oct 18 is 6 local days later, so the prompt fires
+assert.equal(rv('2026-10-18', '17:00', 0, '2026-10-13T00:00:00Z').length, 1);
 console.log('schedule ok');

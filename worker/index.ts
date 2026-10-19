@@ -45,7 +45,7 @@ app.onError((err, c) => { console.error(err); return c.json({ error: 'Internal e
 export default {
   fetch: app.fetch,
   email,
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(runCron(env));
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runCron(env, new Date(controller.scheduledTime)));
   },
 } satisfies ExportedHandler<Env>;

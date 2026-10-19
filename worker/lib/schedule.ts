@@ -20,7 +20,8 @@ export type DuePush = { type: PushType; key: string; message: PushMessage };
 
 const minutes = (hhmm: string) => +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
 const inSlot = (hhmm: string, slot: string) => minutes(hhmm) - minutes(slot) >= 0 && minutes(hhmm) - minutes(slot) < 15;
-const dayDiff = (a: string, b: string) => Math.round((Date.parse(a.slice(0, 10)) - Date.parse(b.slice(0, 10))) / 86_400_000); // ponytail: waiting_since / last_review_at compared by their UTC date, off by a day near midnight at worst
+/** Whole local days from timestamp `ts` (ISO, any zone) to local date `date`, both read in `tz`. */
+const dayDiff = (date: string, ts: string, tz: string) => Math.round((Date.parse(date) - Date.parse(localDate(tz, new Date(ts)))) / 86_400_000);
 /** Up to three personal titles, then a count of work tasks (never their titles: pushes carry no work content). */
 const titles = (ts: DueTask[]) => {
   const work = ts.filter((t) => t.kind === 'work').length;
@@ -39,7 +40,7 @@ export function duePushes({ now, settings, tasks, milestones }: { now: { date: s
   if (inSlot(hhmm, digestSlot)) {
     if (overdue.length + today.length) out.push({ type: 'digest', key: 'digest:' + date, message: { title: `Today: ${today.length} due · ${overdue.length} overdue`, body: titles([...overdue, ...today]), url: '/' } });
     for (const t of open) {
-      const n = t.nudge_every_days, since = t.waiting_since ? dayDiff(date, t.waiting_since) : 0;
+      const n = t.nudge_every_days, since = t.waiting_since ? dayDiff(date, t.waiting_since, settings.tz) : 0;
       if (t.status !== 'waiting' || !n || since <= 0 || since % n) continue;
       out.push({ type: 'nudge', key: `nudge:${t.id}:${date}`, message: t.kind === 'work' ? { title: 'Nudge for a work task', body: 'Waiting on someone', url: '/' } : { title: 'Nudge ' + (t.waiting_on ?? ''), body: t.title, url: '/' } });
     }
@@ -49,7 +50,7 @@ export function duePushes({ now, settings, tasks, milestones }: { now: { date: s
     }
   }
   if (inSlot(hhmm, '13:00') && overdue.length) out.push({ type: 'overdue', key: 'overdue:' + date, message: { title: `${overdue.length} overdue`, body: titles(overdue), url: '/list?q=due:overdue' } });
-  if (inSlot(hhmm, '17:00') && now.weekday === settings.weekly_review_day && (!settings.last_review_at || dayDiff(date, settings.last_review_at) >= 6))
+  if (inSlot(hhmm, '17:00') && now.weekday === settings.weekly_review_day && (!settings.last_review_at || dayDiff(date, settings.last_review_at, settings.tz) >= 6))
     out.push({ type: 'weekly_review', key: 'review:' + date, message: { title: 'Time for your weekly review', body: 'Open Compass to start', url: '/review' } });
   return out;
 }
