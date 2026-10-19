@@ -6,6 +6,9 @@ import auth from './routes/auth.ts';
 import projects, { milestones } from './routes/projects.ts';
 import tasks from './routes/tasks.ts';
 import views from './routes/views.ts';
+import trash, { purgeTrash, purgeAudit, purgeSessions } from './routes/trash.ts';
+import settings from './routes/settings.ts';
+import { stepUpChallenge } from './lib/step-up.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -22,13 +25,16 @@ app.route('/api/auth', auth);
 app.route('/api/projects', projects);
 app.route('/api/milestones', milestones);
 app.route('/api/tasks', tasks);
+app.route('/api/trash', trash);
+app.route('/api/settings', settings);
+app.post('/api/step-up/challenge', stepUpChallenge);
 app.route('/api', views);
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => { console.error(err); return c.json({ error: 'Internal error' }, 500); });
 
 export default {
   fetch: app.fetch,
-  async scheduled(_controller: ScheduledController, _env: Env, _ctx: ExecutionContext) {
-    // Task 5 adds the purges.
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(Promise.all([purgeTrash(env), purgeAudit(env), purgeSessions(env)]));
   },
 } satisfies ExportedHandler<Env>;
