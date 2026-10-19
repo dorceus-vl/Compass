@@ -11,6 +11,16 @@ export interface Env {
   COMPASS_DATA_KEY: string;
   /** "1" lets POST /api/auth/dev-login create a session on localhost without Knocturn ID (wrangler dev only). */
   DEV_LOGIN?: string;
+  /** Per-sender secrets for POST /api/inbox (Kelly, Knocturn ID, Hollow), compared in constant time. */
+  INBOX_SECRET_KELLY?: string;
+  INBOX_SECRET_ID?: string;
+  INBOX_SECRET_HOLLOW?: string;
+  /** Web Push VAPID keys, base64url (node scripts/gen-vapid.mjs), and the contact subject (mailto:). */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
+  /** Sender addresses allowed to forward email into the inbox, comma-separated. */
+  ALLOWED_FORWARDERS?: string;
 }
 
 export interface SessionRow {

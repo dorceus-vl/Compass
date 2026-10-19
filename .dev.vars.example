@@ -1,2 +1,12 @@
 COMPASS_DATA_KEY=run-npm-run-gen-secret
 DEV_LOGIN=1
+# Phase 2 sources: one inbox secret per sending app.
+INBOX_SECRET_KELLY=
+INBOX_SECRET_ID=
+INBOX_SECRET_HOLLOW=
+# node scripts/gen-vapid.mjs prints the two VAPID values.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:vladimir.bigvlad@gmail.com
+# Comma-separated sender addresses allowed to forward email into the inbox.
+ALLOWED_FORWARDERS=

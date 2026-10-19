@@ -7,6 +7,9 @@ export const ENC_COLS = {
   milestones: ['name'],
   tasks: ['title', 'notes', 'waiting_on'],
   task_events: ['data'],
+  inbox_items: ['title', 'body', 'payload'],
+  meeting_reviews: ['title', 'summary', 'decisions', 'action_items', 'open_questions', 'important_notes'],
+  decisions: ['text'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string }; // typed rows (Project, Milestone) have no index signature
