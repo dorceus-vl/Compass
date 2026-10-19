@@ -127,3 +127,23 @@ button.cb{cursor:pointer;background:transparent}
 .rv-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between}
 .rv-row .act{display:flex;gap:6px;flex-wrap:wrap}
 .rv-row .act button{padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}
+
+/* Phase 3: project tabs, governance logs, portfolio */
+.tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.tabs a{flex:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-dim);white-space:nowrap}
+.tabs a[aria-selected="true"]{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.chip.danger{color:var(--danger);border-color:rgba(255,77,94,.4)}
+.chip.warn{color:var(--warn);border-color:rgba(255,122,69,.4)}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.chip.on{background:var(--accent);color:var(--on-accent);border-color:transparent}
+button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
+.gov-row{display:grid;gap:8px}
+.gov-row .row>.field{width:auto;flex:1 1 120px}
+.heat{display:grid;grid-template-columns:auto repeat(5,minmax(34px,48px));gap:4px;align-items:center;font-size:11px;color:var(--text-faint);width:max-content;max-width:100%}
+.heat button{aspect-ratio:1;border-radius:8px;border:1px solid var(--field-border);background:var(--field);color:var(--text-faint);font:inherit;font-weight:700;cursor:pointer}
+.heat button.d{background:color-mix(in srgb,var(--danger) 22%,var(--field));color:var(--text)}
+.heat button.w{background:color-mix(in srgb,var(--warn) 18%,var(--field));color:var(--text)}
+.heat button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:1px}
+.scroll-x{overflow-x:auto}
+.card .prog{height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.card .prog i{display:block;height:100%;background:var(--accent);width:var(--w)}

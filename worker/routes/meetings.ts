@@ -41,8 +41,9 @@ async function commit(env: Env, id: string, writes: D1PreparedStatement[]): Prom
 }
 
 meetings.get('/', async (c) => {
+  const project = c.req.query('project'); // one project's meetings, whatever their state
   const all = c.req.query('state') === 'all';
-  const { results } = await c.env.DB.prepare(`SELECT * FROM meeting_reviews ${all ? '' : `WHERE state = 'new'`} ORDER BY received_at DESC LIMIT 200`).all<Row>();
+  const { results } = await c.env.DB.prepare(`SELECT * FROM meeting_reviews ${project ? 'WHERE project_id = ?1' : all ? '' : `WHERE state = 'new'`} ORDER BY received_at DESC LIMIT 200`).bind(...(project ? [project] : [])).all<Row>();
   return c.json({ meetings: (await openAll(c.env, 'meeting_reviews', results)).map((r) => asReview(r)) });
 });
 

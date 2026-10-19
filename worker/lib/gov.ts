@@ -49,4 +49,4 @@ export function govInput(spec: GovSpec, body: Record<string, unknown>, create: b
   return { values };
 }
 
-export const riskScore = (p: number | null, i: number | null) => (p && i ? p * i : 0);
+export { riskScore } from '../../shared/gov.ts';

@@ -26,6 +26,7 @@ export function MeetingView({ id }: { id: string }) {
   const [qs, setQs] = useState<Pick[]>([]);
   const [notes, setNotes] = useState<{ text: string; at: string }[]>([]);
   const [project, setProject] = useState('');
+  const [flags, setFlags] = useState<Record<string, 'risk' | 'issue'>>({}); // q<i> / n<i> → what to log in RAID
   const [busy, setBusy] = useState(false);
   const { projects } = useStore();
   useEffect(() => { // the flag follows the browser, so the buttons come back after reconnecting
@@ -64,6 +65,8 @@ export function MeetingView({ id }: { id: string }) {
   const sendQs = qs.filter((q) => q.on && q.text.trim());
   const sendDecs = decs.filter((d) => d.on && d.text.trim());
   const nTasks = sendActs.length + sendQs.length;
+  const raid = !project ? [] : [...qs.map((q, i) => ({ k: `q${i}`, text: q.text, at: q.at })), ...notes.map((n, i) => ({ k: `n${i}`, text: n.text, at: n.at }))]
+    .filter((x) => flags[x.k] && x.text.trim()).map((x) => ({ type: flags[x.k], text: x.text.trim().slice(0, 2000), at: atOf(x.at) }));
   const tooMany = sendActs.length + sendQs.length > 50 || sendDecs.length > 50;
   const link = safeUrl(m.url);
   const live = projects.filter((p) => !p.deleted_at && p.status !== 'closed');
@@ -76,7 +79,7 @@ export function MeetingView({ id }: { id: string }) {
     toast((e as Error).message); setBusy(false);
   };
   const accept = async () => {
-    if (busy || off || tooMany || !nTasks && !sendDecs.length) return;
+    if (busy || off || tooMany || !nTasks && !sendDecs.length && !raid.length) return;
     setBusy(true);
     try {
       await api(`/meetings/${m.id}/accept`, { method: 'POST', json: {
@@ -86,8 +89,9 @@ export function MeetingView({ id }: { id: string }) {
           ...sendQs.map((q) => ({ text: `Follow up: ${q.text.trim()}`.slice(0, 300), due: null, owner: null, at: atOf(q.at) })),
         ],
         decisions: sendDecs.map((d) => ({ text: d.text.trim().slice(0, 300), at: atOf(d.at) })),
+        raid,
       } });
-      const parts = [nTasks && `${nTasks} task${nTasks === 1 ? '' : 's'}`, sendDecs.length && `${sendDecs.length} decision${sendDecs.length === 1 ? '' : 's'}`].filter(Boolean);
+      const parts = [nTasks && `${nTasks} task${nTasks === 1 ? '' : 's'}`, sendDecs.length && `${sendDecs.length} decision${sendDecs.length === 1 ? '' : 's'}`, raid.length && `${raid.length} RAID item${raid.length === 1 ? '' : 's'}`].filter(Boolean);
       toast(`Added ${parts.join(' and ')}`);
       await pull().catch(() => {});
       void refreshInbox();
@@ -102,6 +106,11 @@ export function MeetingView({ id }: { id: string }) {
   };
   const check = (label: string, on: boolean, change: (b: boolean) => void) => !open ? null :
     <input type="checkbox" aria-label={label} checked={on} disabled={busy} onChange={(e) => change(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--accent)', flex: 'none' }} />;
+  const flag = (k: string) => !open ? null : (
+    <span className="seg" role="group" aria-label="Log in RAID" style={{ marginLeft: 'auto' }}>
+      {(['risk', 'issue'] as const).map((t) => <button type="button" key={t} className={flags[k] === t ? 'on' : ''} aria-pressed={flags[k] === t} disabled={busy || !project} title={project ? undefined : 'Pick a project to log risks and issues'}
+        onClick={(e) => { e.preventDefault(); setFlags((f) => { const { [k]: cur, ...rest } = f; return cur === t ? rest : { ...rest, [k]: t }; }); }}>{t === 'risk' ? 'Risk' : 'Issue'}</button>)}
+    </span>);
   const h2 = { fontSize: 16, margin: '22px 0 10px' } as const;
 
   return (
@@ -139,15 +148,17 @@ export function MeetingView({ id }: { id: string }) {
       <h2 style={h2}>Open questions</h2>
       {!qs.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>None.</p>}
       <div style={{ display: 'grid', gap: 8 }}>{qs.map((q, i) => (
-        <label key={i} className="card row" style={{ flexWrap: 'nowrap', padding: 12, cursor: open ? 'pointer' : 'default' }}>
+        <label key={i} className="card row" style={{ padding: 12, cursor: open ? 'pointer' : 'default' }}>
           {check(`Add follow-up task for question ${i + 1}`, q.on, (on) => patch(setQs, i, { on }))}
           <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{q.text}</span>{q.at && <span className="chip">{q.at}</span>}
+          {flag(`q${i}`)}
         </label>))}</div>
       {qs.length > 0 && open && <div className="sub">Checked questions become "Follow up" tasks.</div>}
+      {open && (qs.length > 0 || notes.length > 0) && !project && <div className="sub">Pick a project to log risks and issues</div>}
 
       {notes.length > 0 && <>
         <h2 style={h2}>Important notes</h2>
-        <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6 }}>{notes.map((x, i) => <li key={i} style={{ overflowWrap: 'anywhere' }}>{x.text}{x.at && <> <span className="chip">{x.at}</span></>}</li>)}</ul>
+        <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6 }}>{notes.map((x, i) => <li key={i} style={{ overflowWrap: 'anywhere' }}><span className="row" style={{ gap: 6 }}><span style={{ flex: '1 1 200px', minWidth: 0 }}>{x.text}{x.at && <> <span className="chip">{x.at}</span></>}</span>{flag(`n${i}`)}</span></li>)}</ul>
       </>}
 
       {open && (
@@ -159,8 +170,8 @@ export function MeetingView({ id }: { id: string }) {
             </select></label>
           <div className="row">
             <button type="button" className="btn" disabled={off || busy} title={tip} onClick={() => void dismiss()}>Dismiss</button>
-            <button type="button" className="btn primary" disabled={off || busy || tooMany || (!nTasks && !sendDecs.length)} title={tip} onClick={() => void accept()}>
-              Accept {nTasks} task{nTasks === 1 ? '' : 's'} and {sendDecs.length} decision{sendDecs.length === 1 ? '' : 's'}</button>
+            <button type="button" className="btn primary" disabled={off || busy || tooMany || (!nTasks && !sendDecs.length && !raid.length)} title={tip} onClick={() => void accept()}>
+              Accept {nTasks} task{nTasks === 1 ? '' : 's'} and {sendDecs.length} decision{sendDecs.length === 1 ? '' : 's'}{raid.length > 0 && ` and ${raid.length} RAID item${raid.length === 1 ? '' : 's'}`}</button>
           </div>
           {tooMany && <div className="sub" role="status" style={{ width: '100%', justifyContent: 'flex-end' }}>At most 50 at a time</div>}
         </div>

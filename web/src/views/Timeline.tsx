@@ -11,7 +11,7 @@ const label = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); r
 export function Timeline() {
   const { tasks, milestones, projects, ready } = useStore();
   const [zoom, setZoom] = useState<keyof typeof ZOOM>('week');
-  const [project, setProject] = useState('');
+  const [project, setProject] = useState(() => new URLSearchParams(location.search).get('project') ?? ''); // the project page's Timeline tab links here
   const [open, setOpen] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; dx: number; edge: boolean } | null>(null);
   const stopDrag = useRef<(() => void) | null>(null);

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { GOV, govInput, riskScore } from '../worker/lib/gov.ts';
+import { scoreTone } from '../shared/gov.ts';
 
 const today = '2026-10-19';
 const raid = GOV.raid_items, cr = GOV.change_requests, dec = GOV.decisions;
@@ -17,4 +18,5 @@ assert.ok('error' in govInput(dec, { text: 'x', decided_at: null }, true, today)
 assert.ok('error' in govInput(dec, { decided_at: '' }, false, today), 'decided_at is NOT NULL: emptied on patch');
 assert.equal((govInput(dec, { text: 'x' }, true, today) as { values: Record<string, unknown> }).values.decided_at, today, 'default still applies when absent');
 assert.equal(riskScore(4, 5), 20); assert.equal(riskScore(null, 5), 0);
+assert.deepEqual([scoreTone(15), scoreTone(14), scoreTone(8), scoreTone(7)], ['danger', 'warn', 'warn', ''], 'score tones: >=15 danger, 8-14 warn');
 console.log('gov: ok');

@@ -36,7 +36,7 @@ export function App() {
   if (auth === 'checking') return null;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
   const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, timeline: <Timeline />, projects: <Projects />,
-    project: <ProjectPage id={params.id} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
+    project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
   return (
     <>
       <Shell onPalette={() => setPalette(true)}>{view}</Shell>
