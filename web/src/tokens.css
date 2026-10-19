@@ -1,0 +1,13 @@
+:root{
+  --bg:#050507;--panel:#0B0B10;--field:#131319;--field-border:rgba(255,255,255,.09);--border-soft:rgba(255,255,255,.07);
+  --text:#F2F1F7;--text-dim:#A9A7B8;--text-faint:#8A8899;
+  --accent:#EDE3C9;--accent-bright:#FFF7E3;--accent-dim:#C9BB9A;--accent-rgb:237,227,201;--on-accent:#1A1608;
+  --ok:#3DDC84;--warn:#FF7A45;--danger:#FF4D5E;
+  --finance:#4A9EFF;--health:#46B87C;--hollow:#F5A524;--aura:#B8F03E;--kelly:#D6336F;--nightowl:#8B5CF6;--sonar:#3FD8C9;
+  --font:'Inter',system-ui,sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
+a{color:var(--accent-bright);text-decoration:none}
+.mono{font-family:var(--mono)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint)}
