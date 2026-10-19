@@ -216,6 +216,16 @@ TW=$(printf '%s' "$CW" | js 'd.thread.id'); [ "$(printf '%s' "$CW" | js 'd.threa
 [ "$(D1X "SELECT count(*) AS n FROM ai_threads WHERE id='$TW' AND enc_v=2 AND title NOT LIKE '%Smoke%'" | js 'd[0].results[0].n')" = 1 ] || fail "work thread title is not ciphertext"
 curl "${H[@]}" $B/api/ai/threads/$TW | grep -q 'Stub answer for: Smoke sealed question' || fail "sealed thread does not read back"
 echo "smoke: (p) work project switched to cloud -> chat 200, thread and messages stored as ciphertext (enc_v 2)"
+# Status report data (Phase 3 Task 10): W1 is a cloud work project here, so its rows are sealed and come back readable; the stub writes the summary.
+curl "${H[@]}" -X POST $B/api/projects/$W1/raid -d '{"type":"risk","text":"Smoke report risk","probability":4,"impact":5}' >/dev/null
+SR='{"project_id":"'$W1'","from":"2026-01-01","to":"2026-12-31","ai":true}'
+curl "${H[@]}" -X POST $B/api/reports/status -d "$SR" | js "d.input.project.id==='$W1'&&d.input.raid.some(r=>r.text==='Smoke report risk')&&/^Stub answer/.test(d.ai_summary)&&d.ai_refused===null" | grep -q true || fail "status report data / stub summary"
+curl "${H[@]}" -X PATCH $B/api/projects/$W1 -d '{"data_boundary":"offline"}' >/dev/null
+N1=$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')
+curl "${H[@]}" -X POST $B/api/reports/status -d "$SR" | js "d.ai_summary===null&&d.ai_refused==='offline_boundary'&&d.input.raid.length===1" | grep -q true || fail "offline project not refused for the summary"
+[ "$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')" = "$N1" ] || fail "an offline report made a model call"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/reports/status -d '{"project_id":"'$W1'","from":"2026-02-30","to":"2026-12-31"}')" = 400 ] || fail "bad date accepted"
+echo "smoke: (r) status report data readable for a work project; cloud -> stub summary; offline -> ai_refused offline_boundary, no model call"
 for x in $TH $TW; do curl "${H[@]}" -X DELETE $B/api/ai/threads/$x | grep -q '"ok":true' || fail "thread trash"; done
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/ai/threads/$TH)" = 404 ] || fail "trashed thread still served"
 curl "${H[@]}" -X DELETE $B/api/projects/$P1 >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$W1 >/dev/null

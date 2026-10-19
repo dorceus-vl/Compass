@@ -94,3 +94,26 @@ export interface AiMessage {
   id: string; thread_id: string; role: 'user' | 'assistant'; provider: Provider | null; content: string; citations: string[];
   proposals: Proposals | null; cost_micro: number; saved: number; created_at: string; enc_v: number;
 }
+
+export interface ReportInput {
+  project: Project; milestones: Milestone[]; tasks: Task[]; raid: RaidItem[]; changes: ChangeRequest[]; decisions: Decision[]; lessons: Lesson[];
+  meetings: { id: string; title: string; received_at: string; summary: string | null }[];
+}
+/** table: "A | B" lines with a header line; list: "• …" lines; both '' when empty. */
+export interface Section<R> { rows: R[]; count: number; table: string; list: string }
+export interface ReportModel {
+  generated_at: string; range: { from: string; to: string; label: string };
+  project: { name: string; kind: string; status: string; phase: string; rag: string; rag_label: string; rag_reason: string; sponsor: string; start_at: string; end_at: string;
+    objectives: string; scope_in: string; scope_out: string; success_criteria: string; budget_planned: string; budget_spent: string; budget_left: string; pct_done: number };
+  milestones: Section<{ name: string; due_at: string; done_at: string; gate: string; state: 'Done' | 'Late' | 'Due this period' | 'Upcoming' }>;
+  tasks: { done: Section<{ title: string; done_at: string }>; open: Section<{ title: string; status: string; due_at: string; waiting_on: string }>;
+    overdue: Section<{ title: string; due_at: string; days_late: number }>; next: Section<{ title: string; due_at: string }> };
+  risks: Section<{ text: string; probability: string; impact: string; score: number; owner: string; response: string; trigger: string }>;
+  issues: Section<{ text: string; impact: string; owner: string; response: string }>;
+  assumptions: Section<{ text: string }>; dependencies: Section<{ text: string; owner: string }>;
+  changes: Section<{ id: string; description: string; title: string; decision: string; impact_scope: string; impact_time: string; impact_cost: string; approver: string; decided_at: string }>;
+  decisions: Section<{ decided_at: string; text: string }>; decisions_needed: Section<{ title: string }>;
+  lessons: Section<{ text: string; category: string }>; meetings: Section<{ title: string; date: string; summary: string }>;
+  status: { headline: string; progress: string; next_steps: string };
+  ai: { summary: string };
+}
