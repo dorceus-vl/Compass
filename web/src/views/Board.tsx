@@ -1,1 +1,95 @@
-export function Board() { return <p>Board</p>; }
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import type { Status, Task } from '../../../shared/types.ts';
+import { useStore, moveTask } from '../store/useStore.ts';
+import { api } from '../api.ts';
+import { Card } from '../ui/Card.tsx';
+import { TaskSheet } from '../ui/TaskSheet.tsx';
+import { startOfWeek, today } from '../dates.ts';
+import { toast } from '../ui/dialogs.tsx';
+import { positionBetween } from '../../../shared/position.ts';
+
+const COLS: [Status, string, string][] = [['new', 'New', 'var(--text-faint)'], ['progress', 'In progress', 'var(--accent)'], ['hold', 'On hold', 'var(--warn)'], ['waiting', 'Waiting on', 'var(--nightowl)'], ['done', 'Done', 'var(--ok)']];
+
+export function Board() {
+  const { tasks, projects, ready } = useStore();
+  const [open, setOpen] = useState<string | null>(null);
+  const [kind, setKind] = useState<'all' | 'personal' | 'work'>(() => (localStorage.getItem('compass.board.kind') as 'all') || 'all');
+  const [project, setProject] = useState('');
+  const [lanes, setLanes] = useState(false);
+  const [wip, setWip] = useState<Record<string, number | null>>({});
+  const drag = useRef<{ id: string; moved: boolean; el: HTMLElement | null } | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const lastDrag = useRef(0); // a drag released over its own card still fires click; ignore it
+  useEffect(() => { api<{ wip_limits: Record<string, number | null> }>('/settings').then((s) => setWip(s.wip_limits)).catch(() => {}); }, []);
+  useEffect(() => localStorage.setItem('compass.board.kind', kind), [kind]);
+  if (!ready) return null;
+
+  const wk = startOfWeek(today());
+  const live = tasks.filter((t) => !t.deleted_at && !t.parent_id && (kind === 'all' || t.kind === kind) && (!project || t.project_id === project) && (t.status !== 'done' || (t.done_at ?? '') >= wk));
+  const byCol = (s: Status, pid?: string | null) => live.filter((t) => t.status === s && (pid === undefined || t.project_id === pid)).sort((a, b) => a.sort_in_column - b.sort_in_column);
+  const subs = (id: string) => tasks.filter((t) => t.parent_id === id && !t.deleted_at);
+
+  // Pointer drag: a card follows the pointer; the column and the card under it on release decide the drop.
+  function onPointerDown(e: ReactPointerEvent, id: string) {
+    if (e.button !== 0) return;
+    drag.current = { id, moved: false, el: null };
+    const start = { x: e.clientX, y: e.clientY };
+    const onMove = (ev: PointerEvent) => {
+      const d = drag.current; if (!d) return;
+      if (!d.moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+      if (!d.moved) { d.moved = true; setDragId(id); d.el = (ev.target as HTMLElement).closest('.kc')?.cloneNode(true) as HTMLElement; if (d.el) { d.el.style.cssText = 'position:fixed;pointer-events:none;width:240px;z-index:60;opacity:.9'; document.body.appendChild(d.el); } }
+      if (d.el) { d.el.style.left = `${ev.clientX - 120}px`; d.el.style.top = `${ev.clientY - 20}px`; }
+    };
+    const onUp = async (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
+      const d = drag.current; drag.current = null; d?.el?.remove(); setDragId(null);
+      if (!d?.moved) return;
+      lastDrag.current = Date.now();
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      const col = under?.closest<HTMLElement>('[data-col]'); if (!col) return;
+      const status = col.dataset.col as Status;
+      const cardEl = under?.closest<HTMLElement>('[data-task]');
+      const column = byCol(status).filter((t) => t.id !== id);
+      let beforeId: string | null = null;
+      if (cardEl && cardEl.dataset.task !== id) {
+        const r = cardEl.getBoundingClientRect();
+        const i = column.findIndex((t) => t.id === cardEl.dataset.task);
+        beforeId = ev.clientY < r.top + r.height / 2 ? column[i]?.id ?? null : column[i + 1]?.id ?? null;
+      }
+      const limit = wip[status];
+      if (limit && status !== 'done' && byCol(status).filter((t) => t.id !== id).length >= limit) toast(`${COLS.find((c) => c[0] === status)![1]} is at its limit of ${limit}`);
+      const bi = beforeId ? column.findIndex((t) => t.id === beforeId) : column.length;
+      await moveTask(id, status, beforeId, positionBetween(column[bi - 1]?.sort_in_column ?? null, column[bi]?.sort_in_column ?? null));
+    };
+    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+  }
+
+  const column = (s: Status, label: string, colour: string, pid?: string | null) => {
+    const xs = byCol(s, pid);
+    const limit = wip[s];
+    return (
+      <div className="col" data-col={s} key={`${s}-${pid ?? ''}`} style={{ ['--c' as string]: colour }}>
+        <div className="ch"><i /><b>{label}</b><small style={limit && xs.length > limit ? { color: 'var(--danger)' } : undefined}>{xs.length}{limit ? ` / ${limit}` : ''}</small></div>
+        {xs.map((t) => <Card key={t.id} task={t} project={projects.find((p) => p.id === t.project_id)} subtasks={subs(t.id)} onOpen={(i) => Date.now() - lastDrag.current > 300 && setOpen(i)} dragging={dragId === t.id} onPointerDown={onPointerDown} />)}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div><div className="eyebrow">Board</div><h1 style={{ marginTop: 6 }}>Work <b>in motion</b></h1><div className="sub">{live.filter((t) => t.status !== 'done').length} open · {live.filter((t) => t.status === 'hold').length} on hold</div></div>
+        <div className="row">
+          <div className="seg">{(['all', 'personal', 'work'] as const).map((k) => <button type="button" key={k} className={kind === k ? 'on' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
+          <div className="seg"><button type="button" className={!lanes ? 'on' : ''} aria-pressed={!lanes} onClick={() => setLanes(false)}>Columns</button><button type="button" className={lanes ? 'on' : ''} aria-pressed={lanes} onClick={() => setLanes(true)}>Swimlanes</button></div>
+          <select className="field" style={{ width: 'auto' }} value={project} onChange={(e) => setProject(e.target.value)}><option value="">All projects</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        </div>
+      </div>
+      {!lanes && <div className="board">{COLS.map(([s, l, c]) => column(s, l, c))}</div>}
+      {lanes && [...projects.map((p) => ({ id: p.id as string | null, name: p.name })), { id: null, name: 'No project' }].map((lane) => (
+        <section key={lane.id ?? 'none'}><div className="eyebrow" style={{ margin: '14px 0 8px' }}>{lane.name}</div><div className="board">{COLS.map(([s, l, c]) => column(s, l, c, lane.id))}</div></section>
+      ))}
+      {open && <TaskSheet taskId={open} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
