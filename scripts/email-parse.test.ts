@@ -17,3 +17,31 @@ assert.equal(senderAllowed('Jane.Doe@Bell.ca', 'jane.doe@bell.ca, me@gmail.com')
 assert.equal(senderAllowed('evil@bell.ca', 'jane.doe@bell.ca'), false);
 assert.equal(senderAllowed('me@gmail.com', ''), false, 'empty list allows nobody');
 console.log('email-parse: ok');
+
+// ---- authenticated(): fail closed ----
+import { authenticated } from '../worker/email.ts';
+const ar = (s: string) => `mx.cloudflare.net; ${s}`;
+assert.equal(authenticated(ar('dmarc=pass header.from=gmail.com'), 'me@gmail.com', 'me@gmail.com'), true, 'dmarc pass');
+assert.equal(authenticated(ar('dkim=pass header.d=gmail.com header.i=@gmail.com'), 'me@gmail.com', 'ME@gmail.com'), true, 'dkim aligned, case-insensitive');
+assert.equal(authenticated(ar('dkim=pass header.d=gmail.com'), 'me@mail.gmail.com', 'me@mail.gmail.com'), true, 'dkim d= a parent of the sender domain');
+assert.equal(authenticated(ar('spf=pass smtp.mailfrom=me@gmail.com'), 'me@gmail.com', 'me@gmail.com'), true, 'spf aligned');
+assert.equal(authenticated(ar('spf=pass (ok) smtp.mailfrom="bounce.gmail.com"'), 'me@gmail.com', 'me@gmail.com'), false, 'spf for a different domain');
+assert.equal(authenticated(ar('dkim=pass header.d=evil.com'), 'me@gmail.com', 'me@gmail.com'), false, 'dkim signed by another domain');
+assert.equal(authenticated(ar('dkim=pass header.d=gmail.com.evil.com'), 'me@gmail.com', 'me@gmail.com'), false, 'look-alike domain');
+assert.equal(authenticated(ar('dkim=pass header.d=mail.gmail.com'), 'me@gmail.com', 'me@gmail.com'), false, 'a child domain is not the sender');
+assert.equal(authenticated(ar('dmarc=fail header.from=gmail.com; spf=fail smtp.mailfrom=me@gmail.com; dkim=none'), 'me@gmail.com', 'me@gmail.com'), false, 'no pass');
+assert.equal(authenticated(null, 'me@gmail.com', 'me@gmail.com'), false, 'missing header');
+assert.equal(authenticated('', 'me@gmail.com', 'me@gmail.com'), false, 'empty header');
+assert.equal(authenticated(ar('dmarc=pass'), 'me@gmail.com', 'other@gmail.com'), false, 'header From differs from envelope');
+assert.equal(authenticated(ar('dmarc=pass'), 'me@gmail.com', undefined), false, 'no header From');
+assert.equal(authenticated(`mx.cloudflare.net; dmarc=fail, forged.example; dmarc=pass`, 'me@gmail.com', 'me@gmail.com'), false, 'only the topmost header counts');
+
+// ---- post details ----
+const b = emailToPost({ subject: 'a\r\nb\t\u0007c', html: '<style>p{}</style><p>Hello&nbsp;<b>there</b></p><script>x()</script>', messageId: '<abc@x>', from: { address: 'ME@Bell.CA' } }, { work_email_domains: ['BELL.ca'] });
+assert.equal(b.post.title, 'a b c', 'whitespace and control characters collapse');
+assert.equal(b.post.body, 'Hello there', 'html-only mail becomes text');
+assert.equal(b.post.ref, 'email:<abc@x>');
+assert.equal(b.work, true, 'both sides lowercased');
+assert.equal(emailToPost({ subject: 's', messageId: 'x'.repeat(500) }, settings).post.ref!.length, 200);
+assert.equal(emailToPost({ subject: 's' }, settings).post.ref, null);
+console.log('email-auth: ok');

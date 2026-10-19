@@ -37,3 +37,15 @@ export async function open<T extends Row>(env: Env, table: EncTable, row: T): Pr
 }
 
 export const openAll = <T extends Row>(env: Env, table: EncTable, rows: T[]) => Promise.all(rows.map((r) => open(env, table, r)));
+
+/** Raw bytes (a stored .eml) as one ciphertext string: base64, then the same AAD cipher as a column. Always sealed, work or not. */
+export async function sealBytes(env: Env, bytes: ArrayBuffer | Uint8Array, context: string): Promise<string> {
+  const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let bin = '';
+  for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
+  return encryptString(btoa(bin), env.COMPASS_DATA_KEY, context);
+}
+export async function openBytes(env: Env, sealedText: string, context: string): Promise<Uint8Array> {
+  const bin = atob(await decryptString(sealedText, env.COMPASS_DATA_KEY, context));
+  return Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+}

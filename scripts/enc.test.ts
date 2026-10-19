@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/enc.test.ts
 import assert from 'node:assert/strict';
-import { seal, open, ENC_COLS } from '../worker/lib/enc.ts';
+import { seal, open, sealBytes, openBytes, ENC_COLS } from '../worker/lib/enc.ts';
 
 const env = { COMPASS_DATA_KEY: 'k' } as any;
 const work = { id: 't1', kind: 'work', title: 'Cutover plan', notes: null, waiting_on: 'Acme', enc_v: 0 };
@@ -21,4 +21,11 @@ const m = await seal(env, 'milestones', { id: 'm1', name: 'Go / no-go', enc_v: 0
 assert.equal(m.enc_v, 2);
 assert.equal((await open(env, 'milestones', { ...m })).name, 'Go / no-go');
 assert.deepEqual(ENC_COLS.projects, ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria']);
+
+// Raw bytes (every byte value, bigger than one base64 chunk) round-trip; the context binds them.
+const bytes = Uint8Array.from({ length: 70_000 }, (_, i) => i % 256);
+const box = await sealBytes(env, bytes, 'email.eml');
+assert.ok(box.startsWith('v2:a:'));
+assert.deepEqual(await openBytes(env, box, 'email.eml'), bytes);
+await assert.rejects(openBytes(env, box, 'tasks.notes'), 'wrong context fails');
 console.log('enc: ok');

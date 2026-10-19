@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
 import type { Task, TaskEvent, Status } from '../../shared/types.ts';
 import { checkAll, text, httpsUrl, oneOf, date, num, type Check } from '../lib/validate.ts';
-import { seal, open, openAll } from '../lib/enc.ts';
+import { seal, open, openAll, openBytes } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
 import { projectKind } from './projects.ts';
@@ -158,7 +158,8 @@ tasks.get('/:id/email', async (c) => {
   const live = await c.env.DB.prepare('SELECT 1 AS x FROM tasks WHERE id = ?1 AND deleted_at IS NULL').bind(id).first();
   const obj = live ? await c.env.FILES.get(`email/${id}.eml`) : null;
   if (!obj) return c.json({ error: 'Not found' }, 404);
-  return new Response(obj.body, { headers: { 'Content-Type': 'message/rfc822', 'Content-Disposition': 'attachment; filename="email.eml"', 'Cache-Control': 'private, no-store' } });
+  const bytes = await openBytes(c.env, await obj.text(), 'email.eml'); // stored sealed, always
+  return new Response(bytes, { headers: { 'Content-Type': 'message/rfc822', 'Content-Disposition': 'attachment; filename="email.eml"', 'Cache-Control': 'private, no-store' } });
 });
 
 tasks.patch('/:id', async (c) => {

@@ -108,6 +108,10 @@ export async function ingest(env: Env, post: InboxPost, opts: { work: boolean; f
   const done = (item: InboxItem, m: string, extra: { task?: Task } = {}) =>
     audit(env, 'rule', 'inbox.ingest', item.id, { app: post.app, mode: m, rule_id: rule?.id ?? null }).then(() => ({ item, ...extra, created: false }));
 
+  if (post.app === 'email' && post.ref) { // a redelivered email (same Message-ID) never makes a second task, whatever the rule's dedupe
+    const same = await env.DB.prepare(`SELECT * FROM inbox_items WHERE app = 'email' AND ref = ?1 LIMIT 1`).bind(post.ref).first<InboxItem>();
+    if (same) return done(await open(env, 'inbox_items', same), 'skip');
+  }
   if (post.ref && dedupe !== 'always') {
     const prev = await env.DB.prepare(
       `SELECT i.* FROM inbox_items i LEFT JOIN tasks t ON t.id = i.task_id

@@ -51,15 +51,18 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const goneTasks = 'SELECT id FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
   const goneProjects = 'SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
+  const ids = (await q(goneTasks).all<{ id: string }>()).results.map((r) => r.id); // for their kept emails in R2
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [events, , tasks, milestones, , projects] = await env.DB.batch([
+  const [events, , , tasks, milestones, , projects] = await env.DB.batch([
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
+    q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
     q(`DELETE FROM milestones WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`),
     q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
     q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
   ]);
+  await Promise.all(ids.map((id) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email')))); // best effort, only after the rows are gone
   return { task_events: events.meta.changes, tasks: tasks.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes };
 }
 export async function purgeAudit(env: Env): Promise<void> {
