@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "compass",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  // The built app (dist/) is static and holds no data; only /api/* runs the Worker. Any other path is the app.
+  "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "compass-db", "database_id": "REPLACED_BY_SETUP_SCRIPT", "migrations_dir": "worker/migrations" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "compass-files" }],
+  "services": [{ "binding": "ID", "service": "knocturn-id" }],
+  "vars": {
+    "COMPASS_USERS": "7cad1bd5-760b-4423-9b02-406c74d5a6e4,ab39fa67-0a88-40b6-824b-9718500e5f47",
+    "ID_URL": "https://id.knocturnlabs.com",
+    "DEV_LOGIN": "0"
+  },
+  // Every 15 minutes: Trash purge (30 days), audit purge (90 days). Later phases add pushes here.
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "routes": [{ "pattern": "compass.knocturnlabs.com", "custom_domain": true }]
+  // Secrets (wrangler secret put): COMPASS_DATA_KEY.
+}
