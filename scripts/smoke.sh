@@ -79,6 +79,8 @@ INSERT INTO documents (id,name,kind,size,content_type,r2_key,project_id,created_
 INSERT INTO library_pages (id,slug,section,title,body,import_doc_id,created_at,updated_at) VALUES ('smk-lib','smoke-lib','Smoke','Smoke page','x','smk-doc','$TS','$TS');
 INSERT INTO ai_threads (id,project_id,title,provider,created_at,updated_at) VALUES ('smk-thr','$P3','Smoke thread','claude','$TS','$TS');
 INSERT INTO ai_messages (id,thread_id,role,content,created_at) VALUES ('smk-msg','smk-thr','user','hi','$TS');" >/dev/null
+SEEDED=$(D1X "SELECT (SELECT count(*) FROM raid_items WHERE id='smk-raid')+(SELECT count(*) FROM change_requests WHERE id='smk-chg')+(SELECT count(*) FROM lessons WHERE id='smk-les')+(SELECT count(*) FROM decisions WHERE id='smk-dec')+(SELECT count(*) FROM documents WHERE id='smk-doc')+(SELECT count(*) FROM library_pages WHERE id='smk-lib')+(SELECT count(*) FROM ai_threads WHERE id='smk-thr')+(SELECT count(*) FROM ai_messages WHERE id='smk-msg') AS n" | node -pe 'JSON.parse(require("fs").readFileSync(0))[0].results[0].n')
+[ "$SEEDED" = 8 ] || fail "PM seed inserts did not land ($SEEDED of 8)"
 curl "${H[@]}" -X DELETE $B/api/projects/$P3 | grep -q '"ok":true' || fail "pm project trash"
 EMPTY=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)
 [ "$(printf '%s' "$EMPTY" | tail -1)" = 200 ] || fail "empty with PM rows ($(printf '%s' "$EMPTY" | tail -1))"
