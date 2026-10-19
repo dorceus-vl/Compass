@@ -8,35 +8,35 @@ The groups are not phases. They describe kinds of management activity, and they 
 
 ## Initiating
 
-Defines a new project or phase and gets permission to start.
+The question here: should this piece of work exist, and who answers for it? Nothing is spent on design or delivery until a sponsor has said yes and someone is named to lead.
 
 - Main outputs: the project charter (charte de projet), which names the sponsor, authorises the PM and states objectives at a high level; the stakeholder register.
 - Telecom example: the sales team has signed a multi-site enterprise network deal; the charter confirms scope, sponsor and target in-service window before any engineering starts.
 
 ## Planning
 
-Sets the scope, refines objectives and defines how the work will be done.
+The question here: what exactly are we building, and what route gets us there? This is where a rough promise turns into baselines you can be held to, and it is revisited every time something material changes.
 
 - Main outputs: the project management plan with its scope, schedule and cost baselines; the work breakdown structure; subsidiary plans for quality, resources, communications, risk, procurement and stakeholder engagement; project documents such as the risk register and requirements.
 - Telecom example: site surveys feed a schedule that sequences fibre builds, equipment orders and installation windows.
 
 ## Executing
 
-Does the work defined in the plan and coordinates the people and resources doing it.
+The question here: is the planned work actually happening? Most of the budget and the team's hours are spent in this group, so the PM's job is to keep people, vendors and equipment moving in step.
 
 - Main outputs: deliverables, work performance data, change requests, issue log updates, selected sellers.
 - Telecom example: field crews install equipment, provisioning configures services, the vendor ships routers.
 
 ## Monitoring and Controlling
 
-Tracks and reviews progress, finds variances, and manages changes.
+The question here: are we where the plan says we should be, and if not, what do we do about it? It compares actual results with the baselines and decides which changes are allowed in.
 
 - Main outputs: work performance reports, approved or rejected change requests, verified deliverables (quality control), accepted deliverables (scope validation with the customer), forecasts.
 - Telecom example: weekly variance against the installation baseline, a change advisory review of a late design change, the customer's acceptance test on each site.
 
 ## Closing
 
-Formally finishes the project or phase.
+The question here: is it really over, and has everyone agreed that it is? A project that just fades out leaves contracts open, operations unsure and lessons lost.
 
 - Main outputs: the final product or service handed over, a final report, closed contracts, archived records and lessons learned (leçons apprises).
 - Telecom example: handover to operations with as-built documents, billing confirmed, vendor purchase orders closed.

@@ -50,17 +50,17 @@ On a telecom project, gate 3 is often the expensive one, because it releases lon
 
 ## How Compass's milestone gates work
 
-In Compass, gates are milestones with a go / no-go flag.
+In Compass, a gate is a milestone marked as a gate. The marker only says "a go / no-go decision happens here"; it does not record which way the decision went.
 
-- Each project has a list of milestones, each with a name, a due date and a done date. A milestone flagged as a gate shows a ◆ before its name on the project page.
+- Each project has a list of milestones, each with a name, a due date and a done date. A milestone marked as a gate shows a ◆ before its name on the project page.
 - Ticking a milestone done records the date it was met. Untick it if the gate was reopened.
 - Milestones appear in the project's timeline, in the portfolio as the next milestone, and in the status report, where each is labelled Done, Late, Due this period or Upcoming.
-- Record the gate's outcome and any conditions in the project's Decisions log, so the "why" sits next to the date. Conditions become tasks with due dates; risks raised at the gate go in the RAID log.
+- The outcome (go, conditional go, hold or no-go) belongs in the project's Decisions log, with its conditions and who decided, so the "why" sits next to the date. Conditions become tasks with due dates; risks raised at the gate go in the RAID log.
 - A no-go is a decision too: log it, then update the project's status and RAG reason.
 
 ## In practice
 
-- List the gates left on your project and add each as a milestone with its date.
+- List the gates left on your project, add each as a milestone with its date and mark it as a gate.
 - For the next gate, write the evidence list and share it with the team today.
 - Check the decision body for that gate: who attends, who decides, and whether they have the authority.
 - After the next gate, log the outcome in Decisions within 24 hours.

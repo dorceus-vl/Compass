@@ -32,7 +32,7 @@ The twelve principles fall naturally into six themes.
 ### People and collaboration
 
 - The people who know the business and the people building the solution stay in daily contact, not only at hand-off points.
-- Put motivated people at the centre, clear what blocks them and let them do the job without micromanagement.
+- Results depend more on whether the team cares about the outcome than on how closely it is supervised; the manager's work is mostly removing obstacles.
 - When information has to move inside a team, talking directly beats documents and long email chains.
 
 ### Sustainable pace
