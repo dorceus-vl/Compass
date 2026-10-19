@@ -10,3 +10,5 @@ VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=mailto:vladimir.bigvlad@gmail.com
 # Comma-separated sender addresses allowed to forward email into the inbox.
 ALLOWED_FORWARDERS=
+# Secret forward-to address; only mail sent to it is accepted.
+EMAIL_INBOX_ADDRESS=compass-xxxxxxxxxxxxxxxx@knocturnlabs.com

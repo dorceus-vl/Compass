@@ -34,6 +34,7 @@ app.route('/api/inbox', inbox);
 app.route('/api/rules', rules);
 app.route('/api/meetings', meetings);
 app.post('/api/step-up/challenge', stepUpChallenge);
+app.get('/api/email/address', (c) => c.json({ address: c.env.EMAIL_INBOX_ADDRESS || null }, 200, { 'Cache-Control': 'private, no-store' }));
 app.route('/api', views);
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => { console.error(err); return c.json({ error: 'Internal error' }, 500); });

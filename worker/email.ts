@@ -1,7 +1,7 @@
 import PostalMime from 'postal-mime';
 import type { Env } from './types.ts';
 import type { Settings } from '../shared/types.ts';
-import type { InboxPost } from './lib/inbox-parse.ts';
+import { safeEqual, type InboxPost } from './lib/inbox-parse.ts';
 import { ingest } from './routes/inbox.ts';
 import { getSettings, audit } from './lib/db.ts';
 import { sealBytes } from './lib/enc.ts';
@@ -12,43 +12,10 @@ export const senderAllowed = (from: string, list: string | undefined) =>
   !!from && (list ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).includes(from.trim().toLowerCase());
 
 const MAX_RAW = 2 * 1024 * 1024, MAX_PER_HOUR = 30;
-const domainOf = (a: string) => a.trim().toLowerCase().split('@')[1] ?? '';
-const kv = (seg: string) => Object.fromEntries([...seg.replace(/\([^)]*\)/g, ' ').matchAll(/([\w.-]+)=("[^"]*"|\S+)/g)].map((m) => [m[1].toLowerCase(), m[2].replace(/^"|"$/g, '').toLowerCase()]));
 
-/** Splits what headers.get() returns for repeated Authentication-Results headers (joined with ", "): each one starts with its authserv-id and ';'. */
-export const authResults = (headerValue: string | null | undefined): string[] => (headerValue ?? '').split(/,\s*(?=[\w.-]+\s*;)/).map((h) => h.trim()).filter(Boolean);
-
-/**
- * Why the joined Authentication-Results value can't be trusted to split correctly, or null. We don't parse RFC 8601 comments or quotes (a forger can hide
- * a header boundary or a ';' in them), so any of ( ) " is refused; and our authserv-id must appear exactly once as a whole token, at the start of a header.
- */
-export function arProblem(headerValue: string | null | undefined, authservId: string): 'ar-unparseable' | 'ar-ambiguous' | null {
-  const v = headerValue ?? '';
-  if (/[()"]/.test(v)) return 'ar-unparseable';
-  const id = authservId.trim().toLowerCase();
-  const token = new RegExp(`(?<![^,\\s;])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![^,\\s;])`, 'gi');
-  const starts = authResults(v).filter((h) => h.split(';')[0].trim().toLowerCase() === id).length;
-  return (v.match(token) ?? []).length === 1 && starts === 1 ? null : 'ar-ambiguous';
-}
-
-/**
- * True when exactly one Authentication-Results header carries our authserv-id (the one our edge added; none, or a forged second copy, fails)
- * and it vouches for the sender: dmarc=pass for the sender's domain, or dkim=pass signed by the sender's domain (or a parent of it), or spf=pass
- * for the envelope sender's domain. The header From must also equal the envelope sender.
- */
-export function authenticated(headerValue: string | null | undefined, envelopeFrom: string, headerFrom: string | undefined, authservId = 'mx.cloudflare.net'): boolean {
-  const env = envelopeFrom.trim().toLowerCase(), dom = domainOf(env);
-  if (!env || !dom || (headerFrom ?? '').trim().toLowerCase() !== env || arProblem(headerValue, authservId)) return false;
-  const mine = authResults(headerValue).filter((h) => h.split(';')[0].trim().toLowerCase() === authservId.trim().toLowerCase());
-  if (mine.length !== 1) return false;
-  return mine[0].split(';').slice(1).some((seg) => {
-    const f = kv(seg);
-    if (f.dmarc === 'pass') return f['header.from'] === dom;
-    if (f.dkim === 'pass' && f['header.d']) return dom === f['header.d'] || dom.endsWith('.' + f['header.d']);
-    if (f.spf === 'pass' && f['smtp.mailfrom']) return domainOf(f['smtp.mailfrom'].includes('@') ? f['smtp.mailfrom'] : '@' + f['smtp.mailfrom']) === dom;
-    return false;
-  });
-}
+/** The envelope recipient must be the secret inbox address (EMAIL_INBOX_ADDRESS); unset means nothing gets in. Constant time, case-insensitive. */
+export const recipientOk = async (to: string | undefined, configured: string | undefined) =>
+  !!configured?.trim() && !!to?.trim() && safeEqual(to.trim().toLowerCase(), configured.trim().toLowerCase());
 
 const htmlToText = (h: string) => h.replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li)>/gi, '\n').replace(/<[^>]*>/g, ' ')
   .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n');
@@ -64,10 +31,13 @@ export function emailToPost(parsed: { subject?: string; text?: string; html?: st
   return { post, work, from: parsed.from?.name || address || null };
 }
 
-/** Cloudflare Email Routing → this Worker. Only an allowed sender whose mail is authenticated gets in; anything else is dropped with a reason code (never addresses or content). */
+/**
+ * Cloudflare Email Routing → this Worker. Only mail sent to the secret address, from an allowed sender, whose header From matches the envelope
+ * sender gets in; anything else is dropped with a reason code (never addresses or content).
+ */
 export async function email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
-  const ar = message.headers.get('authentication-results');
-  const drop = (reason: string) => console.warn(`[email] dropped: ${reason} (authentication-results headers: ${authResults(ar).length})`);
+  const drop = (reason: string) => console.warn(`[email] dropped: ${reason}`);
+  if (!(await recipientOk(message.to, env.EMAIL_INBOX_ADDRESS))) return drop('wrong-recipient');
   if (!senderAllowed(message.from, env.ALLOWED_FORWARDERS)) return drop('sender-not-allowed');
   if (message.rawSize > MAX_RAW) return drop('too-large');
   let item, task;
@@ -77,10 +47,7 @@ export async function email(message: ForwardableEmailMessage, env: Env, _ctx: Ex
     const raw = await new Response(message.raw).arrayBuffer();
     if (raw.byteLength > MAX_RAW) return drop('too-large');
     const parsed = await PostalMime.parse(raw);
-    const id = env.EMAIL_AUTHSERV_ID || 'mx.cloudflare.net';
-    const bad = arProblem(ar, id);
-    if (bad) return drop(bad);
-    if (!authenticated(ar, message.from, parsed.from?.address, id)) return drop('not-authenticated');
+    if ((parsed.from?.address ?? '').trim().toLowerCase() !== message.from.trim().toLowerCase()) return drop('from-mismatch');
     const { post, work, from } = emailToPost(parsed, await getSettings(env));
     ({ item, task } = await ingest(env, post, { work, from }));
     if (task) {
