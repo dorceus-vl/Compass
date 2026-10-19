@@ -10,8 +10,7 @@ import { localDate } from '../lib/dates.ts';
 import { runAi, aiUsage, AiRefused, type AiTurn } from '../lib/ai.ts';
 import { buildSystem, trimHistory } from '../lib/prompt.ts';
 import { retrieve, modelPage } from '../lib/library.ts';
-import { boundaryOf, projectContext } from '../lib/project-context.ts';
-import { projectKind } from './projects.ts';
+import { projectAccess, projectContext } from '../lib/project-context.ts';
 
 const ai = new Hono<{ Bindings: Env; Variables: Variables }>();
 type MsgRow = Omit<AiMessage, 'citations' | 'proposals'> & { citations: string; proposals: string | null };
@@ -50,9 +49,10 @@ ai.post('/chat', async (c) => {
   const projectId = thread ? thread.project_id : ((b.project_id as string | undefined) ?? null);
 
   try {
-    // 3. Boundary, before anything is stored or sent.
-    const boundary = await boundaryOf(env, projectId);
-    if (!boundary) return c.json({ error: 'Not found' }, 404);
+    // 3. Boundary and kind in one read, before anything is stored or sent. The kind sealed with is this one, never a later read.
+    const access = await projectAccess(env, projectId);
+    if (!access) return c.json({ error: 'Not found' }, 404);
+    const { boundary, kind } = access;
     if (boundary === 'offline') throw new AiRefused('offline_boundary', 'This project is Offline only. Library search, templates and saved answers still work.');
 
     // 4. History (and, for a rerun, the question).
@@ -82,7 +82,6 @@ ai.post('/chat', async (c) => {
     if (!answer.content) throw new AiRefused('provider_error', `${provider === 'claude' ? 'Claude' : 'Gemini'} returned an empty answer.`);
 
     // 9. One batch, every row sealed with the project's kind.
-    const kind = (projectId ? await projectKind(env, projectId) : null) ?? 'personal';
     const t = now();
     const th: AiThread = thread ? { ...(await open(env, 'ai_threads', { ...thread })), updated_at: t }
       : { id: crypto.randomUUID(), project_id: projectId, title: message.slice(0, 60), provider, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };

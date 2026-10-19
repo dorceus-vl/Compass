@@ -1,15 +1,18 @@
 import type { Env } from '../types.ts';
-import type { Project, Milestone, Task, RaidItem, ChangeRequest, Decision, Lesson } from '../../shared/types.ts';
+import type { Kind, Project, Milestone, Task, RaidItem, ChangeRequest, Decision, Lesson } from '../../shared/types.ts';
 import { open, openAll } from './enc.ts';
 
 type Review = { title: string; summary: string | null; received_at: string; enc_v: number };
 
-/** Where a project's data may go: null project → cloud; unknown or trashed project → null. */
-export async function boundaryOf(env: Env, projectId: string | null): Promise<'cloud' | 'offline' | null> {
-  if (!projectId) return 'cloud';
-  const r = await env.DB.prepare('SELECT data_boundary FROM projects WHERE id = ?1 AND deleted_at IS NULL').bind(projectId).first<{ data_boundary: 'cloud' | 'offline' }>();
-  return r?.data_boundary ?? null;
+/** A project's boundary and kind in one read: no project → cloud/personal; unknown or trashed → null. The kind sealing uses comes from here, never a later read. */
+export async function projectAccess(env: Env, projectId: string | null): Promise<{ boundary: 'cloud' | 'offline'; kind: Kind } | null> {
+  if (!projectId) return { boundary: 'cloud', kind: 'personal' };
+  const r = await env.DB.prepare('SELECT data_boundary, kind FROM projects WHERE id = ?1 AND deleted_at IS NULL').bind(projectId).first<{ data_boundary: 'cloud' | 'offline'; kind: Kind }>();
+  return r ? { boundary: r.data_boundary, kind: r.kind } : null;
 }
+
+/** Where a project's data may go: null project → cloud; unknown or trashed project → null. */
+export const boundaryOf = async (env: Env, projectId: string | null) => (await projectAccess(env, projectId))?.boundary ?? null;
 
 const one = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 const day = (s: string | null | undefined) => (s ? s.slice(0, 10) : '');

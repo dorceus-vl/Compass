@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { projectContext, boundaryOf } from '../worker/lib/project-context.ts';
+import { projectContext, boundaryOf, projectAccess } from '../worker/lib/project-context.ts';
 
 // A stub D1 answering the eight context queries in order; plain (enc_v 0) rows, so no key is needed.
 const project = { id: 'p1', name: 'Fibre  rollout', kind: 'personal', status: 'active', phase: 'Execution', rag: 'amber', rag_reason: 'Vendor late', sponsor: 'Ann',
@@ -23,4 +23,8 @@ assert.ok(!/Pending change requests|Last lessons|Scope in|owner/.test(ctx), 'emp
 assert.equal(await boundaryOf(env(null), null), 'cloud', 'no project → cloud');
 assert.equal(await boundaryOf(env(null), 'gone'), null, 'unknown or trashed → null');
 assert.equal(await boundaryOf(env({ data_boundary: 'offline' }), 'w1'), 'offline');
+// The copilot seals with the kind from this one read (fix round 1): a work project stays work, a vanished one is null (404), never personal.
+assert.deepEqual(await projectAccess(env({ data_boundary: 'cloud', kind: 'work' }), 'w2'), { boundary: 'cloud', kind: 'work' });
+assert.deepEqual(await projectAccess(env(null), null), { boundary: 'cloud', kind: 'personal' }, 'no project → personal');
+assert.equal(await projectAccess(env(null), 'gone'), null, 'trashed → null, not personal');
 console.log('project-context: ok');
