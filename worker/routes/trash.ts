@@ -44,7 +44,7 @@ trash.post('/empty', async (c) => {
 
 /**
  * Cron: rows in Trash for 30 days are deleted (all = everything in Trash, for Empty Trash).
- * Order respects the foreign keys: events, then task parents, tasks, milestones, project links, projects.
+ * Order respects the foreign keys: events, then task parents, tasks, milestones, project links (tasks, decisions, meeting reviews), projects.
  */
 export async function purgeTrash(env: Env, all = false): Promise<Record<string, number>> {
   const cutoff = all ? '9999' : daysAgo(TRASH_DAYS);
@@ -52,25 +52,31 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const goneProjects = 'SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [events, , , tasks, milestones, , projects] = await env.DB.batch([
+  const [events, , , tasks, milestones, , decisions, , projects] = await env.DB.batch([
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING id`),
     q(`DELETE FROM milestones WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`),
     q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
+    q(`DELETE FROM decisions WHERE project_id IN (${goneProjects})`), // a project's decisions go with it (FK)
+    q(`UPDATE meeting_reviews SET project_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK)
     q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
   ]);
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email')))); // best effort, only after the rows are gone
-  return { task_events: events.meta.changes, tasks: tasks.results.length, milestones: milestones.meta.changes, projects: projects.meta.changes };
+  return { task_events: events.meta.changes, tasks: tasks.results.length, milestones: milestones.meta.changes, decisions: decisions.meta.changes, projects: projects.meta.changes };
 }
 export async function purgeAudit(env: Env): Promise<void> {
   await env.DB.prepare('DELETE FROM audit_log WHERE at < ?1').bind(daysAgo(AUDIT_DAYS)).run();
   await env.DB.prepare('DELETE FROM push_log WHERE sent_at < ?1').bind(daysAgo(30)).run(); // push dedupe keys outlive nothing useful past 30 days
 }
-/** Inbox rows that were dealt with (dismissed, kept, added) over 30 days ago can still hold email text, so they go. New and snoozed rows stay. */
+/**
+ * Inbox rows that were dealt with (dismissed, kept, added) over 30 days ago can still hold email text, so they go. New and snoozed rows stay,
+ * and so does a row whose task is still open (not done, not trashed): it is that task's dedupe anchor.
+ */
 export async function purgeInbox(env: Env): Promise<void> {
-  await env.DB.prepare(`DELETE FROM inbox_items WHERE state IN ('dismissed','kept','added') AND updated_at < ?1`).bind(daysAgo(30)).run();
+  await env.DB.prepare(`DELETE FROM inbox_items WHERE state IN ('dismissed','kept','added') AND updated_at < ?1
+    AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = inbox_items.task_id AND t.deleted_at IS NULL AND t.status != 'done')`).bind(daysAgo(30)).run();
 }
 /** Sessions that expired (or were revoked and last seen) over 30 days ago. */
 export async function purgeSessions(env: Env): Promise<void> {

@@ -23,23 +23,23 @@ const htmlToText = (h: string) => h.replace(/<(style|script)[\s\S]*?<\/\1>/gi, '
 
 export function emailToPost(parsed: { subject?: string; text?: string; html?: string; messageId?: string; from?: { address?: string; name?: string } }, settings: Pick<Settings, 'work_email_domains'>) {
   const title = ((parsed.subject ?? '').replace(/[\u0000-\u001f\u007f\s]+/g, ' ').replace(PREFIX, '').trim() || '(no subject)').slice(0, 120);
-  const address = (parsed.from?.address ?? '').toLowerCase();
+  const address = (parsed.from?.address ?? '').trim().toLowerCase();
   const domain = address.split('@')[1] ?? '';
   const work = settings.work_email_domains.some((d) => domain === d.toLowerCase() || domain.endsWith('.' + d.toLowerCase()));
   const text = (parsed.text || (parsed.html ? htmlToText(parsed.html) : '')).trim();
   const id = (parsed.messageId ?? '').trim();
   const post: InboxPost = { app: 'email', kind: 'email', title, body: text.slice(0, 500) || null, url: null, ref: id ? ('email:' + id).slice(0, 200) : null, suggest: null, payload: { from: address, text: text.slice(0, 20_000) } };
-  return { post, work, from: parsed.from?.name || address || null };
+  return { post, work, sender: address, from: parsed.from?.name || address || null };
 }
 
 /**
- * Cloudflare Email Routing → this Worker. Only mail sent to the secret address, from an allowed sender, whose header From matches the envelope
- * sender gets in; anything else is dropped with a reason code (never addresses or content).
+ * Cloudflare Email Routing → this Worker. Only mail sent to the secret address (the real gate, Q7) whose header From is an allowed sender gets in
+ * (Q11: the envelope sender is not compared — Bell's gateway may rewrite it, BATV/SRS); anything else is dropped with a reason code (never
+ * addresses or content).
  */
 export async function email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
   const drop = (reason: string) => console.warn(`[email] dropped: ${reason}`);
   if (!(await recipientOk(message.to, env.EMAIL_INBOX_ADDRESS))) return drop('wrong-recipient');
-  if (!senderAllowed(message.from, env.ALLOWED_FORWARDERS)) return drop('sender-not-allowed');
   if (message.rawSize > MAX_RAW) return drop('too-large');
   let item, task;
   try {
@@ -48,8 +48,8 @@ export async function email(message: ForwardableEmailMessage, env: Env, _ctx: Ex
     const raw = await new Response(message.raw).arrayBuffer();
     if (raw.byteLength > MAX_RAW) return drop('too-large');
     const parsed = await PostalMime.parse(raw);
-    if ((parsed.from?.address ?? '').trim().toLowerCase() !== message.from.trim().toLowerCase()) return drop('from-mismatch');
-    const { post, work, from } = emailToPost(parsed, await getSettings(env));
+    const { post, work, sender, from } = emailToPost(parsed, await getSettings(env));
+    if (!senderAllowed(sender, env.ALLOWED_FORWARDERS)) return drop('sender-not-allowed');
     const result = await ingest(env, post, { work, from });
     ({ item, task } = result);
     if (task) {

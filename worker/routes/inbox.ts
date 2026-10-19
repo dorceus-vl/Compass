@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
 import type { InboxItem, InboxApp, MeetingReview, MeetingNotes, Rule, Task, SourceApp } from '../../shared/types.ts';
 import { appsForSecret, parseInboxBody, isWorkAccount, INBOX_APPS, type InboxPost } from '../lib/inbox-parse.ts';
-import { parseRule, matchRule, taskFromRule, safeRegex } from '../lib/rules.ts';
+import { parseRule, matchRule, taskFromRule, safeRegex, dedupeChanges } from '../lib/rules.ts';
 import { seal, openAll, open } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
@@ -44,10 +44,13 @@ export const asReview = (r: Record<string, unknown>): MeetingReview => ({ ...(r 
   action_items: parseArr(r.action_items) as MeetingReview['action_items'], open_questions: parseArr(r.open_questions) as MeetingReview['open_questions'],
   important_notes: parseArr(r.important_notes) as MeetingReview['important_notes'] });
 
-/** A source_ref is unique among live tasks: a finished or trashed task gives its ref up to the new occurrence (so restoring it stays possible); an open one keeps it (the new task goes without). */
-export async function claimRef(env: Env, ref: string | null): Promise<string | null> {
+/**
+ * A source_ref is unique among live tasks: a finished or trashed task of the same app gives its ref up to the new occurrence (so restoring it
+ * stays possible); an open one, or another app's, keeps it (the new task goes without).
+ */
+export async function claimRef(env: Env, ref: string | null, app: string): Promise<string | null> {
   if (!ref) return null;
-  await env.DB.prepare(`UPDATE tasks SET source_ref = NULL WHERE source_ref = ?1 AND (status = 'done' OR deleted_at IS NOT NULL)`).bind(ref).run();
+  await env.DB.prepare(`UPDATE tasks SET source_ref = NULL WHERE source_ref = ?1 AND source_app = ?2 AND (status = 'done' OR deleted_at IS NOT NULL)`).bind(ref, app).run();
   const held = await env.DB.prepare('SELECT 1 AS x FROM tasks WHERE source_ref = ?1 AND deleted_at IS NULL').bind(ref).first();
   return held ? null : ref;
 }
@@ -109,15 +112,17 @@ export async function ingest(env: Env, post: InboxPost, opts: { work: boolean; f
   const done = (item: InboxItem, m: string, extra: { task?: Task } = {}) =>
     audit(env, 'rule', 'inbox.ingest', item.id, { app: post.app, mode: m, rule_id: rule?.id ?? null }).then(() => ({ item, ...extra, created: false }));
 
-  if (post.app === 'email' && post.ref) { // a redelivered email (same Message-ID) never makes a second task, whatever the rule's dedupe
-    const same = await env.DB.prepare(`SELECT * FROM inbox_items WHERE app = 'email' AND ref = ?1 LIMIT 1`).bind(post.ref).first<InboxItem>();
+  // An email makes at most one task per ref, whatever the rule's dedupe and whatever became of the task: a redelivered forward (same Message-ID),
+  // or Kelly reposting a needs-reply email every hour for two days, must not bring back or rewrite a task Vlad finished, trashed or edited.
+  if (post.kind === 'email' && post.ref) {
+    const same = await env.DB.prepare(`SELECT * FROM inbox_items WHERE app = ?2 AND kind = 'email' AND ref = ?1 LIMIT 1`).bind(post.ref, post.app).first<InboxItem>();
     if (same) return done(await open(env, 'inbox_items', same), 'skip');
   }
   if (post.ref && dedupe !== 'always') {
     const prev = await env.DB.prepare(
       `SELECT i.* FROM inbox_items i LEFT JOIN tasks t ON t.id = i.task_id
-       WHERE i.ref = ?1 AND i.kind != 'meeting' AND (i.state IN ('new','snoozed') OR (t.id IS NOT NULL AND t.status != 'done' AND t.deleted_at IS NULL))
-       ORDER BY i.received_at DESC LIMIT 1`).bind(post.ref).first<InboxItem>();
+       WHERE i.ref = ?1 AND i.app = ?2 AND i.kind != 'meeting' AND (i.state IN ('new','snoozed') OR (t.id IS NOT NULL AND t.status != 'done' AND t.deleted_at IS NULL))
+       ORDER BY i.received_at DESC LIMIT 1`).bind(post.ref, post.app).first<InboxItem>(); // same app only: one sender's secret never reaches another's task
     if (prev) {
       const item = await open(env, 'inbox_items', prev);
       if (dedupe === 'skip') { await env.DB.prepare('UPDATE inbox_items SET updated_at = ?2 WHERE id = ?1').bind(item.id, t).run(); item.updated_at = t; return done(item, 'skip'); }
@@ -125,11 +130,14 @@ export async function ingest(env: Env, post: InboxPost, opts: { work: boolean; f
       await saveItemStmt(env, item, ['url']).then((st) => st.run());
       const task = item.task_id ? await loadTask(env, item.task_id) : null;
       if (!task || task.status === 'done') return done(item, 'update');
-      const fields = ['title', 'notes', 'source_url'];
-      Object.assign(task, { title: post.title, notes: noteFor(post.app, post.body, post.payload), source_url: post.url, updated_at: t });
-      if (set?.due_at) { task.due_at = set.due_at; fields.push('due_at'); }
-      await updateTask(env, task, fields);
-      await addEvent(env, task, 'rule', 'edited', fields);
+      const edited = await env.DB.prepare(`SELECT 1 AS x FROM task_events WHERE task_id = ?1 AND actor = 'you' AND type = 'edited' LIMIT 1`).bind(task.id).first();
+      const changes = dedupeChanges(task, { title: post.title, notes: noteFor(post.app, post.body, post.payload), source_url: post.url, due_at: set?.due_at ?? null }, !!edited);
+      const fields = Object.keys(changes);
+      if (fields.length) {
+        Object.assign(task, changes, { updated_at: t });
+        await updateTask(env, task, fields);
+        await addEvent(env, task, 'rule', 'edited', fields);
+      }
       return done(item, 'update', { task });
     }
   }
@@ -140,8 +148,9 @@ export async function ingest(env: Env, post: InboxPost, opts: { work: boolean; f
   let task: Task | undefined;
   if (mode === 'task' && set) {
     task = await buildTaskFromSource(env, { ...set, title: post.title, notes: noteFor(post.app, post.body, post.payload), source_app: post.app as SourceApp, source_kind: post.kind,
-      source_ref: await claimRef(env, post.ref), source_url: post.url });
+      source_ref: await claimRef(env, post.ref, post.app), source_url: post.url });
     item.task_id = task.id;
+    item.work = task.kind === 'work' ? 1 : 0; // the row is sealed like its task (a rule's work project or kind makes both work)
   }
   // The task and its inbox row go in together, so a failure can't leave an orphan task.
   await env.DB.batch([...(task ? [await insertTaskStmt(env, task)] : []), await insertItemStmt(env, item)]);
@@ -203,9 +212,9 @@ inbox.post('/:id/keep', async (c) => {
     let payload: unknown = null;
     try { payload = item.payload ? JSON.parse(item.payload) : null; } catch { /* not JSON: no extra text */ }
     const fresh = await buildTaskFromSource(c.env, { ...set, title: item.title, notes: noteFor(item.app, item.body, payload), source_app: item.app as SourceApp, source_kind: item.kind,
-      source_ref: await claimRef(c.env, item.ref), source_url: item.url });
-    item.updated_at = now();
-    await c.env.DB.batch([await insertTaskStmt(c.env, fresh), c.env.DB.prepare(`UPDATE inbox_items SET state = 'kept', task_id = ?2, updated_at = ?3 WHERE id = ?1`).bind(item.id, fresh.id, item.updated_at)]);
+      source_ref: await claimRef(c.env, item.ref, item.app), source_url: item.url });
+    Object.assign(item, { state: 'kept', task_id: fresh.id, work: fresh.kind === 'work' ? 1 : 0, updated_at: now() }); // re-sealed like its task
+    await c.env.DB.batch([await insertTaskStmt(c.env, fresh), await saveItemStmt(c.env, item, ['state', 'task_id', 'work'])]);
     await addEvent(c.env, fresh, 'you', 'created', { inbox_id: item.id });
     task = fresh;
   } else {

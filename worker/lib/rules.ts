@@ -58,3 +58,13 @@ export function taskFromRule(rule: Rule, item: { app: InboxApp; kind: InboxKind;
   if (out.status === 'waiting' && item.kind === 'email' && item.from) out.waiting_on = item.from;
   return out;
 }
+
+/**
+ * What a deduped repost may change on its open task (ruling Q12): the due date only moves earlier (or appears), and title, notes and
+ * link refresh only while nobody but the rule has edited the task. Returns just the fields whose value actually changes.
+ */
+export function dedupeChanges(task: Pick<Task, 'title' | 'notes' | 'source_url' | 'due_at'>, next: Pick<Task, 'title' | 'notes' | 'source_url' | 'due_at'>, userEdited: boolean): Partial<Task> {
+  const out: Partial<Task> = userEdited ? {} : { title: next.title, notes: next.notes, source_url: next.source_url };
+  if (next.due_at && (!task.due_at || next.due_at.slice(0, 10) < task.due_at.slice(0, 10))) out.due_at = next.due_at;
+  return Object.fromEntries(Object.entries(out).filter(([k, v]) => task[k as keyof typeof task] !== v));
+}

@@ -8,7 +8,7 @@ D=.secrets; F=$D/compass-inbox.env; t=
 trap 'rm -f "$t"' EXIT
 mkdir -p "$D"; chmod 700 "$D"; touch "$F"; chmod 600 "$F"
 val() { sed -n "s/^$1=//p" "$F" | tail -1; }
-drop() { t=$(mktemp "$D/.tmp.XXXXXX"); grep -v "^$1=" "$F" > "$t" || true; mv "$t" "$F"; t=; chmod 600 "$F"; }
+drop() { t=$(mktemp "$D/.tmp.XXXXXX"); grep -v "^$1=" "$F" > "$t" || [ $? -eq 1 ]; mv "$t" "$F"; t=; chmod 600 "$F"; } # grep 1 = no lines left; 2 = read error → abort
 add() {
   [ -n "$2" ] || { echo "setup-phase2: no value generated for $1" >&2; exit 1; }
   drop "$1"
@@ -28,7 +28,7 @@ fi
 if [ -z "$(val EMAIL_INBOX_ADDRESS)" ]; then
   # 10 random bytes = exactly 16 base32 characters (a-z, 2-7).
   s=$(node -e 'const b=require("crypto").randomBytes(10);let n=0n;for(const x of b)n=n<<8n|BigInt(x);let s="";for(let i=0;i<16;i++){s=("abcdefghijklmnopqrstuvwxyz234567"[Number(n&31n)])+s;n>>=5n}process.stdout.write(s)')
-  [ -n "$s" ] && add EMAIL_INBOX_ADDRESS "compass-$s@knocturnlabs.com" || add EMAIL_INBOX_ADDRESS ""
+  if [ -n "$s" ]; then add EMAIL_INBOX_ADDRESS "compass-$s@knocturnlabs.com"; else add EMAIL_INBOX_ADDRESS ""; fi # never left of && (errexit off there)
 fi
 if ! grep -q '^ALLOWED_FORWARDERS=' "$F"; then # empty: nobody may forward until Vlad's addresses go here
   [ ! -s "$F" ] || [ -z "$(tail -c1 "$F")" ] || echo >> "$F"

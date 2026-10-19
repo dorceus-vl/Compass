@@ -51,7 +51,7 @@ Secrets are compared in constant time. A secret that is not set never matches.
 
 ## Refs and dedupe
 
-A `ref` ties repeated posts about one thing together. When a rule says `update` (the usual), a post with a `ref` that already has an open task updates that task's title, notes and link instead of making another; `skip` only notes that it was seen again; `always` makes a new task each time. A finished task gives its `ref` up, so the next occurrence makes a fresh task.
+A `ref` ties repeated posts about one thing together, within the posting app only (another app's `ref` is never matched). When a rule says `update` (the usual), a post with a `ref` that already has an open task updates that task instead of making another: the due date only ever moves earlier, and the title, notes and link refresh only while you haven't edited the task yourself; `skip` only notes that it was seen again; `always` makes a new task each time. A finished task gives its `ref` up, so the next occurrence makes a fresh task. Email is the exception: an `email` post makes at most one task per `ref`, ever, so a needs-reply email reposted every hour doesn't bring back a task you finished or trashed, or rewrite it while it's open.
 
 Conventions:
 

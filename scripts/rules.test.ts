@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/rules.test.ts
 import assert from 'node:assert/strict';
-import { matchRule, taskFromRule, parseRule, safeRegex } from '../worker/lib/rules.ts';
+import { matchRule, taskFromRule, parseRule, safeRegex, dedupeChanges } from '../worker/lib/rules.ts';
 import type { Rule } from '../shared/types.ts';
 
 const r = (o: Record<string, unknown>) => parseRule({ id: String(o.id), name: 'x', app: o.app ?? '*', match: JSON.stringify(o.match ?? {}), then_set: JSON.stringify(o.then_set ?? {}), mode: o.mode ?? 'task', dedupe: 'update', enabled: o.enabled ?? 1, sort: o.sort ?? 0 });
@@ -66,4 +66,14 @@ const tieB = r({ id: 'b', app: 'finance', sort: 3 });
 const hit = it({ app: 'finance', title: 'zzz' });
 assert.equal(matchRule([tieB, tieA], hit)?.id, 'a', 'sort ties break on id (order A)');
 assert.equal(matchRule([tieA, tieB], hit)?.id, 'a', 'sort ties break on id (order B)');
+
+// ---- dedupeChanges (Q12): due only earlier, text only while the user hasn't edited ----
+const cur = { title: 'Pay Hydro', notes: 'n', source_url: 'https://a', due_at: '2026-10-21' };
+assert.deepEqual(dedupeChanges(cur, { ...cur, due_at: '2026-10-25' }, false), {}, 'a later due never postpones; nothing else changed → no write');
+assert.deepEqual(dedupeChanges(cur, { ...cur, due_at: '2026-10-20' }, false), { due_at: '2026-10-20' }, 'an earlier due moves it');
+assert.deepEqual(dedupeChanges({ ...cur, due_at: null }, { ...cur, due_at: '2026-10-30' }, false), { due_at: '2026-10-30' }, 'no due yet → takes one');
+assert.deepEqual(dedupeChanges(cur, { ...cur, due_at: null }, false), {}, 'a repost without a due keeps the task\'s');
+assert.deepEqual(dedupeChanges({ ...cur, due_at: '2026-10-21T15:00:00.000Z' }, { ...cur, due_at: '2026-10-21' }, false), {}, 'same day is not earlier');
+assert.deepEqual(dedupeChanges(cur, { ...cur, title: 'Pay Hydro now', notes: 'm', source_url: 'https://b' }, false), { title: 'Pay Hydro now', notes: 'm', source_url: 'https://b' }, 'rule-only task refreshes its text');
+assert.deepEqual(dedupeChanges(cur, { title: 'Pay Hydro now', notes: 'm', source_url: 'https://b', due_at: '2026-10-19' }, true), { due_at: '2026-10-19' }, 'user-edited task keeps its text, still moves earlier');
 console.log('rules: ok');

@@ -38,3 +38,20 @@ assert.equal(b.work, true, 'both sides lowercased');
 assert.equal(emailToPost({ subject: 's', messageId: 'x'.repeat(500) }, settings).post.ref!.length, 200);
 assert.equal(emailToPost({ subject: 's' }, settings).post.ref, null);
 console.log('email-recipient: ok');
+
+// ---- email(): the allowlist reads the normalised header From (Q11); the envelope sender is never compared ----
+import { email } from '../worker/email.ts';
+assert.equal(emailToPost({ subject: 's', from: { address: ' Jane.Doe@Bell.CA ' } }, settings).sender, 'jane.doe@bell.ca', 'header From normalised');
+const deliver = async (envelope: string, headerFrom: string) => {
+  const raw = `From: ${headerFrom}\r\nTo: ${inbox}\r\nSubject: Hi\r\nMessage-ID: <m@x>\r\n\r\nBody\r\n`;
+  const stmt = { bind: () => stmt, first: async () => null, all: async () => { throw new Error('stub: stop at ingest'); } };
+  const env = { EMAIL_INBOX_ADDRESS: inbox, ALLOWED_FORWARDERS: 'jane.doe@bell.ca', DB: { prepare: () => stmt } };
+  const logs: string[] = [], w = console.warn, e = console.error;
+  console.warn = console.error = (m: string) => { logs.push(m); };
+  try { await email({ to: inbox, from: envelope, raw, rawSize: raw.length } as never, env as never, {} as never); } finally { console.warn = w; console.error = e; }
+  return logs;
+};
+assert.deepEqual(await deliver('prvs=0123abcd=jane.doe@bell.ca', 'Jane Doe <Jane.Doe@Bell.ca>'), ['[email] failed'], 'rewritten envelope + allowed header From passes the gate (the stub DB stops it at ingest)');
+assert.deepEqual(await deliver('jane.doe@bell.ca', 'evil@example.com'), ['[email] dropped: sender-not-allowed'], 'allowed envelope + foreign header From is dropped');
+assert.deepEqual(await deliver('jane.doe@bell.ca', 'nobody'), ['[email] dropped: sender-not-allowed'], 'no usable header From is dropped');
+console.log('email-sender: ok');
