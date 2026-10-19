@@ -24,7 +24,7 @@ The A must also have the authority to match. Making a junior engineer accountabl
 | Deliverable | Sponsor | PM | Solution architect | Install vendor | Customer IT | Operations |
 |---|---|---|---|---|---|---|
 | High-level design | I | C | A/R | C | C | C |
-| Site survey reports | | I | C | R | C | |
+| Site survey reports | | I | A | R | C | |
 | Cutover plan per wave | I | A | C | R | C | C |
 | Go-live decision | A | R | C | I | C | C |
 | Handover to operations | I | R | C | | I | A |
