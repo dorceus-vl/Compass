@@ -15,13 +15,15 @@ export async function deliver(env: Env, message: PushMessage): Promise<number> {
   if (!results.length) return 0; // D1 refuses an empty batch
   const keys = { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, VAPID_SUBJECT: sub };
   const outcomes = await Promise.all(results.map((s) => sendPush(keys, s, message)));
-  // Subscriptions are device configuration, not user content, so a dead one is hard-deleted.
-  await env.DB.batch(results.map((s, i) => outcomes[i] === 'sent'
-    ? env.DB.prepare('UPDATE push_subscriptions SET failed_count = 0, last_ok_at = ?2 WHERE id = ?1').bind(s.id, now())
+  // Subscriptions are device configuration, not user content, so a dead one is hard-deleted. 'local' (we couldn't sign or encrypt) touches nothing.
+  const writes = results.flatMap((s, i) => outcomes[i] === 'sent'
+    ? [env.DB.prepare('UPDATE push_subscriptions SET failed_count = 0, last_ok_at = ?2 WHERE id = ?1').bind(s.id, now())]
     : outcomes[i] === 'gone'
-      ? env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(s.id)
-      : env.DB.prepare(`UPDATE push_subscriptions SET failed_count = failed_count + 1 WHERE id = ?1`).bind(s.id)));
-  await env.DB.prepare('DELETE FROM push_subscriptions WHERE failed_count >= ?1').bind(MAX_FAILS).run();
+      ? [env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(s.id)]
+      : outcomes[i] === 'failed'
+        ? [env.DB.prepare('UPDATE push_subscriptions SET failed_count = failed_count + 1 WHERE id = ?1').bind(s.id)]
+        : []);
+  if (writes.length) await env.DB.batch([...writes, env.DB.prepare('DELETE FROM push_subscriptions WHERE failed_count >= ?1').bind(MAX_FAILS)]);
   return outcomes.filter((o) => o === 'sent').length;
 }
 
@@ -45,12 +47,25 @@ export async function pushAll(env: Env, type: PushType, key: string, message: Pu
 const APP_NAMES: Record<string, string> = { finance: 'Finance', health: 'Health', home: 'Home', nightowl: 'Night Owl', kelly: 'Kelly', sonarflow: 'Sonarflow', hollow: 'Hollow', email: 'email' };
 export const appName = (app: string) => APP_NAMES[app] ?? app;
 
-/** After `ingest`: a new task from a rule, or a new meeting review, pushes once. Updates and dedupes never do. Never throws. */
-export async function notifyIngest(env: Env, result: { item: InboxItem; task?: Task; review?: MeetingReview; created: boolean }, app: string): Promise<void> {
+type Ingested = { item: InboxItem; task?: Task; review?: MeetingReview; created: boolean };
+
+/** What to push for a fresh ingest, or null. Work content never goes in a push (Q8): work tasks and meetings get generic text. */
+export function ingestMessage(result: Ingested, app: string): { type: PushType; key: string; message: PushMessage } | null {
+  if (!result.created) return null; // updates and dedupes never push
+  const { task, review } = result;
+  if (task) {
+    const work = task.kind === 'work' || !!result.item.work;
+    return { type: 'app_task', key: 'task:' + task.id, message: { title: work ? 'New work task' : task.title, body: 'Added by ' + appName(app), url: '/' } };
+  }
+  if (review) return { type: 'meeting', key: 'meeting:' + review.id, message: { title: 'Meeting notes ready', body: 'Open Compass to read', url: '/meetings/' + review.id } };
+  return null;
+}
+
+/** After `ingest`: a new task from a rule, or a new meeting review, pushes once. Never throws. */
+export async function notifyIngest(env: Env, result: Ingested, app: string): Promise<void> {
   try {
-    if (!result.created) return;
-    if (result.task) await pushAll(env, 'app_task', 'task:' + result.task.id, { title: result.task.title, body: 'Added by ' + appName(app), url: '/' });
-    else if (result.review) await pushAll(env, 'meeting', 'meeting:' + result.review.id, { title: 'Meeting notes ready', body: result.review.title, url: '/meetings/' + result.review.id });
+    const m = ingestMessage(result, app);
+    if (m) await pushAll(env, m.type, m.key, m.message);
   } catch (e) {
     console.error(`[push] notifyIngest failed: ${(e as Error).name}`); // a push problem never fails the ingest
   }

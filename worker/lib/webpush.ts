@@ -4,7 +4,7 @@
 export type VapidEnv = { VAPID_PUBLIC_KEY: string; VAPID_PRIVATE_KEY: string; VAPID_SUBJECT: string };
 export type PushMessage = { title: string; body: string; url: string; tag?: string };
 export type PushSub = { endpoint: string; p256dh: string; auth: string };
-type Sent = 'sent' | 'gone' | 'failed';
+type Sent = 'sent' | 'gone' | 'failed' | 'local'; // local: we could not sign or encrypt (server misconfiguration), the push service was never asked
 
 const te = new TextEncoder();
 export const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -50,21 +50,24 @@ export async function vapid(env: VapidEnv, endpoint: string) {
   return `vapid t=${body}.${b64u(sig)}, k=${env.VAPID_PUBLIC_KEY}`;
 }
 
-/** One device. 201/202 sent; 404/410 the browser unsubscribed or the endpoint expired (gone); anything else, including a network error, failed. */
+/** One device. 201/202 sent; 404/410 the browser unsubscribed or the endpoint expired (gone); a push-service error or network failure is failed; a local signing/encryption error is local (not the device's fault). */
 export async function sendPush(env: VapidEnv, sub: PushSub, message: PushMessage): Promise<Sent> {
+  let headers: Record<string, string>, body: Uint8Array<ArrayBuffer>;
   try {
-    const r = await fetch(sub.endpoint, {
-      method: 'POST',
-      headers: {
-        authorization: await vapid(env, sub.endpoint),
-        'content-encoding': 'aes128gcm',
-        'content-type': 'application/octet-stream',
-        ttl: '86400', // a phone that's off gets it within a day, or not at all
-        urgency: 'normal',
-      },
-      body: await encrypt(te.encode(JSON.stringify(message)), sub.p256dh, sub.auth),
-      signal: AbortSignal.timeout(10_000),
-    });
+    headers = {
+      authorization: await vapid(env, sub.endpoint),
+      'content-encoding': 'aes128gcm',
+      'content-type': 'application/octet-stream',
+      ttl: '86400', // a phone that's off gets it within a day, or not at all
+      urgency: 'normal',
+    };
+    body = await encrypt(te.encode(JSON.stringify(message)), sub.p256dh, sub.auth);
+  } catch {
+    console.error('[push] cannot sign or encrypt');
+    return 'local';
+  }
+  try {
+    const r = await fetch(sub.endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
     if (r.status === 201 || r.status === 202) return 'sent';
     if (r.status === 404 || r.status === 410) return 'gone';
     console.error(`[push] ${new URL(sub.endpoint).origin} answered ${r.status}`); // never the endpoint path, it identifies the device
