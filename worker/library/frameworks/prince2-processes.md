@@ -49,4 +49,5 @@ Inside tolerance, each level gets on with the work and reports routinely. When a
 - [[prince2-principles]]
 - [[prince2-themes]]
 - [[project-lifecycle]]
-- [[hybrid-delivery]]
+- [[exception-reports]]
+- [[project-closing]]

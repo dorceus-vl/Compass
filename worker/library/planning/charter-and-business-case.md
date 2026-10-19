@@ -77,5 +77,6 @@ The project record holds the core of a charter: objectives, in scope, out of sco
 
 - [[project-lifecycle]]
 - [[prince2-themes]]
-- [[pmbok6-process-groups]]
-- [[pmbok7-principles]]
+- [[template-charter]]
+- [[raid-log]]
+- [[change-control]]

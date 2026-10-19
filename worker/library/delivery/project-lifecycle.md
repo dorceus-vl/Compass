@@ -70,5 +70,6 @@ In Compass, a gate is a milestone marked as a gate. The marker only says "a go /
 
 - [[hybrid-delivery]]
 - [[prince2-processes]]
-- [[pmbok6-process-groups]]
 - [[charter-and-business-case]]
+- [[raid-log]]
+- [[project-closing]]

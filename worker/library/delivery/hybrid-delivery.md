@@ -60,5 +60,5 @@ Keep the physical and the digital workstreams on one timeline, so the dependency
 - [[project-lifecycle]]
 - [[scrum-essentials]]
 - [[agile-values-principles]]
-- [[prince2-processes]]
-- [[pmbok7-performance-domains]]
+- [[change-control]]
+- [[status-reporting]]

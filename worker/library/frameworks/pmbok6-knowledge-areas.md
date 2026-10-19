@@ -59,6 +59,7 @@ The sixth edition is process-based: it tells you which processes exist, with inp
 ## Related
 
 - [[pmbok6-process-groups]]
-- [[pmbok7-principles]]
 - [[pmbok7-performance-domains]]
-- [[charter-and-business-case]]
+- [[wbs-and-scheduling]]
+- [[earned-value]]
+- [[risk-management]]

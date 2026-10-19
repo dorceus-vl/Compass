@@ -63,6 +63,7 @@ A network migration might cycle through all five groups once per wave of sites, 
 ## Related
 
 - [[pmbok6-knowledge-areas]]
-- [[pmbok7-performance-domains]]
 - [[project-lifecycle]]
 - [[charter-and-business-case]]
+- [[change-control]]
+- [[project-closing]]

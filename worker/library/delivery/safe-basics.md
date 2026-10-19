@@ -63,3 +63,4 @@ Lighter alternatives include a simple Scrum of Scrums, a shared roadmap with a m
 - [[kanban-method]]
 - [[hybrid-delivery]]
 - [[agile-values-principles]]
+- [[raid-log]]

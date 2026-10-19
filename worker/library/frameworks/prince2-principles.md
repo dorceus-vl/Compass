@@ -63,4 +63,5 @@ Stages give the board decision points; business justification tells them what to
 - [[prince2-themes]]
 - [[prince2-processes]]
 - [[charter-and-business-case]]
-- [[project-lifecycle]]
+- [[exception-reports]]
+- [[lessons-learned]]

@@ -58,3 +58,4 @@ On a hybrid telecom project the PM often sits outside the Scrum team: managing t
 - [[kanban-method]]
 - [[safe-basics]]
 - [[hybrid-delivery]]
+- [[quality-management]]

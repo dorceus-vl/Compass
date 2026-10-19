@@ -73,3 +73,4 @@ Agile thinking works best where the result can be built, shown and changed in sm
 - [[kanban-method]]
 - [[hybrid-delivery]]
 - [[pmbok7-principles]]
+- [[procurement-and-contracts]]

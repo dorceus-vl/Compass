@@ -62,7 +62,8 @@ A change request (Change) is assessed against the business case (Business case),
 
 ## Related
 
-- [[prince2-principles]]
 - [[prince2-processes]]
 - [[charter-and-business-case]]
-- [[pmbok6-knowledge-areas]]
+- [[risk-management]]
+- [[change-control]]
+- [[quality-management]]

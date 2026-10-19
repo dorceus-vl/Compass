@@ -43,3 +43,5 @@ The seventh edition of PMI's PMBOK Guide (2021) moved away from a catalogue of p
 - [[pmbok7-performance-domains]]
 - [[pmbok6-knowledge-areas]]
 - [[agile-values-principles]]
+- [[stakeholder-management]]
+- [[vendor-management]]

@@ -76,5 +76,6 @@ A weak domain drags the others down. Poor stakeholder engagement shows up as lat
 
 - [[pmbok7-principles]]
 - [[pmbok6-process-groups]]
-- [[hybrid-delivery]]
-- [[project-lifecycle]]
+- [[stakeholder-management]]
+- [[raid-log]]
+- [[status-reporting]]
