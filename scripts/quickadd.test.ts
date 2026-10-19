@@ -1,0 +1,32 @@
+// node --experimental-strip-types scripts/quickadd.test.ts
+import assert from 'node:assert/strict';
+import { parseQuickAdd } from '../web/src/quickadd.ts';
+const P = [{ id: 'p1', name: 'ERP migration', kind: 'work' }, { id: 'p2', name: 'Home', kind: 'personal' }] as any;
+const T = '2026-10-19'; // a Monday
+const q = (s: string) => parseQuickAdd(s, P, T);
+assert.deepEqual(q('Book dentist'), { title: 'Book dentist', project_id: null, kind: 'personal', priority: 0, due_at: null, recur: null, tags: [] });
+assert.equal(q('nudge Acme wed #erp @work').due_at, '2026-10-21');
+assert.equal(q('nudge Acme wed #erp @work').project_id, 'p1');
+assert.equal(q('nudge Acme wed #erp').kind, 'work', 'kind follows the project');
+assert.equal(q('nudge Acme wed #erp @work').title, 'nudge Acme');
+assert.equal(q('pay rent tomorrow !3').priority, 3);
+assert.equal(q('pay rent tomorrow !3').due_at, '2026-10-20');
+assert.equal(q('status report every week').recur, '{"freq":"weekly","interval":1}');
+assert.equal(q('status report every week').title, 'status report');
+assert.equal(q('call mom in 3 days').due_at, '2026-10-22');
+assert.equal(q('taxes oct 24').due_at, '2026-10-24');
+assert.equal(q('taxes 24/10').due_at, '2026-10-24');
+assert.equal(q('taxes next week').due_at, '2026-10-26');
+assert.deepEqual(q('x +home +urgent').tags, ['home', 'urgent']);
+assert.equal(q('mon standup').due_at, '2026-10-26', 'a weekday already past this week means next week');
+// ruling R10: whole-word weekday/month names only; explicit past dates roll to next year
+assert.deepEqual([q('sunny day').due_at, q('sunny day').title], [null, 'sunny day']);
+assert.deepEqual([q('mark 12 items').due_at, q('mark 12 items').title], [null, 'mark 12 items']);
+assert.equal(q('money talk').due_at, null);
+assert.equal(q('saturated fat').due_at, null);
+assert.equal(q('jan 5 renew passport').due_at, '2027-01-05');
+assert.equal(q('jan 5 renew passport').title, 'renew passport');
+assert.equal(q('tues standup').due_at, '2026-10-20');
+assert.equal(q('taxes 5/1').due_at, '2027-01-05');
+assert.equal(q('taxes 31/2').due_at, null, 'impossible dates are left in the title');
+console.log('quickadd: ok');
