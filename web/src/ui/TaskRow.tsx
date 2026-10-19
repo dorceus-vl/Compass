@@ -10,7 +10,7 @@ export function TaskRow({ task, onOpen }: { task: Task; onOpen: (id: string) => 
     <div className="task" style={task.source_app !== 'manual' ? { ['--src' as string]: SRC[task.source_app] } : undefined}>
       <button className={`cb ${done ? 'done' : ''}`} aria-label={done ? 'Mark not done' : 'Mark done'} onClick={() => (done ? updateTask(task.id, { status: 'new' }) : completeTask(task.id))} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <button className={`tt ${done ? 'done' : ''}`} style={{ all: 'unset', cursor: 'pointer', display: 'block' }} onClick={() => onOpen(task.id)}>{task.title}</button>
+        <button className={`tt ${done ? 'done' : ''}`} onClick={() => onOpen(task.id)}>{task.title}</button>
         <div className="meta">
           {task.source_app !== 'manual' && <span className="chip src">{task.source_app}</span>}
           {task.kind === 'work' && <span className="chip work">Work</span>}

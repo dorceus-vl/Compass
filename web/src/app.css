@@ -22,8 +22,8 @@
 .head h1 b{font-weight:800}
 .head .sub{color:var(--text-dim);font-size:13.5px;margin-top:6px}
 .seg{display:inline-flex;background:var(--field);border:1px solid var(--field-border);border-radius:999px;padding:3px}
-.seg span{padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:var(--text-dim)}
-.seg span.on{background:var(--accent);color:var(--on-accent)}
+.seg button{padding:7px 14px;border-radius:999px;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--text-dim);cursor:pointer}
+.seg button.on{background:var(--accent);color:var(--on-accent)}
 .search{flex:1;min-width:220px;max-width:380px;background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:11px 14px;color:var(--text-faint);font-size:13.5px;display:flex;gap:8px;align-items:center}
 .kbd{font-family:var(--mono);font-size:10.5px;border:1px solid var(--field-border);border-radius:6px;padding:1px 6px;margin-left:auto}
 .inbox{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:16px}
@@ -38,6 +38,7 @@
 .task{background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:flex-start}
 .task .cb{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--text-faint);flex:none;margin-top:1px}
 .task .cb.done{background:var(--accent);border-color:var(--accent)}
+button.tt{background:none;border:0;padding:0;margin:0;text-align:left;cursor:pointer;color:inherit;font:inherit;display:block}
 .task .tt{font-size:13.5px;font-weight:500;line-height:1.3}
 .task .tt.done{text-decoration:line-through;color:var(--text-faint)}
 .task .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}

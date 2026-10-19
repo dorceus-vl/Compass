@@ -35,7 +35,7 @@ export function Today() {
           <h1 style={{ marginTop: 6 }}>Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, <b>Vlad</b></h1>
           <div className="sub">{openTasks.filter((x) => x.due_at && x.due_at <= t).length} due today · <span style={{ color: overdue.length ? 'var(--danger)' : undefined }}>{overdue.length} overdue</span> · {doneWeek} done this week</div>
         </div>
-        <div className="seg">{(['all', 'personal', 'work'] as const).map((k) => <span key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)} role="button" tabIndex={0}>{k[0].toUpperCase() + k.slice(1)}</span>)}</div>
+        <div className="seg">{(['all', 'personal', 'work'] as const).map((k) => <button type="button" key={k} className={kind === k ? 'on' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
       </div>
       {overdue.length > 0 && <div className="inbox" style={{ borderColor: 'rgba(255,77,94,.35)' }}><div className="top"><h2>Overdue <small>{overdue.length}</small></h2></div>{overdue.map((x) => <TaskRow key={x.id} task={x} onOpen={setOpen} />)}</div>}
       <div className="horizons">{col('short', 'Short · this week')}{col('medium', 'Medium · this quarter')}{col('long', 'Long · this year and beyond')}</div>
