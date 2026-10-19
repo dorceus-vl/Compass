@@ -130,5 +130,40 @@ MODEL=$(D1X "SELECT count(*) AS n FROM lessons l JOIN projects p ON p.id = l.pro
 curl "${H[@]}" -X DELETE $B/api/projects/$PO >/dev/null
 curl "${H[@]}" -X DELETE $B/api/projects/$PL >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PW >/dev/null
 echo "smoke: (l) library search, tree, imports (personal lesson in, work lesson out), 404"
+# Copilot (Phase 3 Task 7), on the local stub (AI_STUB=1 with DEV_LOGIN=1 in .dev.vars; no key, no provider call).
+AT0=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+P1=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke copilot personal","kind":"personal"}' | js d.project.id)
+CH1=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$P1\",\"message\":\"How do I log a risk?\"}")
+TH=$(printf '%s' "$CH1" | js 'd.thread.id'); AM=$(printf '%s' "$CH1" | js 'd.messages[1].id')
+printf '%s' "$CH1" | js 'd.messages.length===2&&d.messages[1].content.startsWith("Stub answer for:")&&d.messages[1].citations.length===1&&d.messages[1].proposals.tasks.length===1' | grep -q true || fail "copilot chat: $CH1"
+[ "$(curl "${H[@]}" $B/api/ai/threads/$TH | js 'd.messages.length')" = 2 ] || fail "copilot thread should hold 2 messages"
+[ "$(curl "${H[@]}" $B/api/ai/usage | js 'd.month_cost_micro>0')" = true ] || fail "copilot usage not counted"
+curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"thread_id\":\"$TH\",\"rerun\":true,\"provider\":\"gemini\"}" | js 'd.messages.length===1&&d.messages[0].role==="assistant"&&d.messages[0].provider==="gemini"' | grep -q true || fail "copilot rerun"
+echo "smoke: (m) copilot chat -> stub answer, 1 citation, 1 proposed task; rerun on gemini -> one assistant message"
+NMSG() { D1X "SELECT (SELECT count(*) FROM ai_messages)*1000+(SELECT count(*) FROM ai_threads) AS n" | js 'd[0].results[0].n'; }
+W1=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke copilot work","kind":"work"}' | js d.project.id)
+N0=$(NMSG); OFF=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/ai/chat -d "{\"project_id\":\"$W1\",\"message\":\"x\"}")
+[ "$(printf '%s' "$OFF" | tail -1)" = 409 ] && printf '%s' "$OFF" | grep -q '"error":"offline_boundary"' || fail "offline project not refused: $OFF"
+curl "${H[@]}" -X PATCH $B/api/projects/$P1 -d '{"data_boundary":"offline"}' >/dev/null # the thread's project (not the body's) decides, rerun included
+RR="{\"thread_id\":\"$TH\",\"project_id\":\"$W1\",\"rerun\":true}" # a variable: bash 3.2 brace-expands {a,b} inside "$(...)"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/ai/chat -d "$RR")" = 409 ] || fail "rerun on an offline thread not refused"
+[ "$(NMSG)" = "$N0" ] || fail "an offline refusal stored rows"
+echo "smoke: (n) offline work project -> 409 offline_boundary; thread switched offline -> rerun 409; nothing stored"
+[ "$(curl "${H[@]}" -X PATCH $B/api/ai/messages/$AM -d '{"saved":1}' | js 'd.message.saved')" = 1 ] || fail "save answer"
+curl "${H[@]}" $B/api/ai/saved | js "d.messages.some(m=>m.id==='$AM'&&m.thread_title==='How do I log a risk?'&&m.project_id==='$P1')" | grep -q true || fail "saved answer not listed"
+UM=$(curl "${H[@]}" $B/api/ai/threads/$TH | js 'd.messages[0].id')
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/ai/messages/$UM -d '{"saved":1}')" = 400 ] || fail "a question could be saved"
+echo "smoke: (o) saved answer listed (still readable on an offline project); a question cannot be saved"
+curl "${H[@]}" -X PATCH $B/api/projects/$W1 -d '{"data_boundary":"cloud"}' | grep -q '"data_boundary":"cloud"' || fail "work boundary to cloud"
+CW=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$W1\",\"message\":\"Smoke sealed question\"}")
+TW=$(printf '%s' "$CW" | js 'd.thread.id'); [ "$(printf '%s' "$CW" | js 'd.thread.title')" = "Smoke sealed question" ] || fail "work chat: $CW"
+[ "$(D1X "SELECT count(*) AS n FROM ai_messages WHERE thread_id='$TW' AND enc_v=2 AND content NOT LIKE '%Smoke%'" | js 'd[0].results[0].n')" = 2 ] || fail "work copilot messages are not ciphertext"
+[ "$(D1X "SELECT count(*) AS n FROM ai_threads WHERE id='$TW' AND enc_v=2 AND title NOT LIKE '%Smoke%'" | js 'd[0].results[0].n')" = 1 ] || fail "work thread title is not ciphertext"
+curl "${H[@]}" $B/api/ai/threads/$TW | grep -q 'Stub answer for: Smoke sealed question' || fail "sealed thread does not read back"
+echo "smoke: (p) work project switched to cloud -> chat 200, thread and messages stored as ciphertext (enc_v 2)"
+for x in $TH $TW; do curl "${H[@]}" -X DELETE $B/api/ai/threads/$x | grep -q '"ok":true' || fail "thread trash"; done
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/ai/threads/$TH)" = 404 ] || fail "trashed thread still served"
+curl "${H[@]}" -X DELETE $B/api/projects/$P1 >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$W1 >/dev/null
+D1X "DELETE FROM ai_usage WHERE at >= '$AT0'" >/dev/null # local DB only: repeated runs must not hit the 30-an-hour limit
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

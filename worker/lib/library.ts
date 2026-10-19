@@ -42,3 +42,5 @@ async function rank(env: Env, q: string, k: number, forModel: boolean): Promise<
 export const searchPages = (env: Env, q: string, k = 20) => rank(env, q, k, false);
 /** Model-facing retrieval (Task 7's copilot): lessons of offline-boundary projects are left out. */
 export const retrieve = (env: Env, q: string, k = 6) => rank(env, q, k, true);
+/** Model-facing lookup by slug (the copilot's "ask about this page"): a lesson of an offline-boundary project is not found. */
+export const modelPage = async (env: Env, slug: string) => [...BUNDLED, ...(await extraPages(env, true))].find((p) => p.slug === slug) ?? null;
