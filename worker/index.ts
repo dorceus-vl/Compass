@@ -4,6 +4,8 @@ import type { Env, Variables } from './types.ts';
 import { authGuard } from './middleware/auth-guard.ts';
 import auth from './routes/auth.ts';
 import projects, { milestones } from './routes/projects.ts';
+import tasks from './routes/tasks.ts';
+import views from './routes/views.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -19,6 +21,8 @@ app.use('/api/*', authGuard);
 app.route('/api/auth', auth);
 app.route('/api/projects', projects);
 app.route('/api/milestones', milestones);
+app.route('/api/tasks', tasks);
+app.route('/api', views);
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => { console.error(err); return c.json({ error: 'Internal error' }, 500); });
 
