@@ -120,3 +120,10 @@ button.cb{cursor:pointer;background:transparent}
 .ai.active{outline:2px solid var(--accent);outline-offset:1px}
 .inbox-list:focus-visible{outline:none}
 .rail .badge,.ptab .badge{margin-left:4px;min-width:16px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;line-height:16px;text-align:center}
+
+.steps{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap}
+.steps li{font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-faint)}
+.steps li[aria-current="step"]{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.rv-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.rv-row .act{display:flex;gap:6px;flex-wrap:wrap}
+.rv-row .act button{padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}

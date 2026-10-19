@@ -4,7 +4,7 @@ import { InboxCard } from '../ui/AddedStrip.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { navigate } from '../router.ts';
 
-export function InboxView() {
+export function InboxView({ embedded = false }: { embedded?: boolean } = {}) {
   const inbox = useInbox();
   const { items, loading, offline, known } = inbox;
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -33,8 +33,8 @@ export function InboxView() {
   };
   return (
     <>
-      <div className="head"><div><div className="eyebrow">Inbox</div><h1 style={{ marginTop: 6 }}>Added by <b>your apps</b></h1>
-        <div className="sub">{offline ? 'Offline: showing the last list. Actions need a connection.' : 'j/k move · Enter keep · s snooze · d dismiss · o open source'}</div></div></div>
+      {!embedded && <div className="head"><div><div className="eyebrow">Inbox</div><h1 style={{ marginTop: 6 }}>Added by <b>your apps</b></h1>
+        <div className="sub">{offline ? 'Offline: showing the last list. Actions need a connection.' : 'j/k move · Enter keep · s snooze · d dismiss · o open source'}</div></div></div>}
       {items.length === 0 && (known || offline) && <div className="card"><p style={{ margin: 0 }}>{known ? 'Inbox zero.' : "Can't reach the inbox right now."}</p></div>}
       {items.length > 0 && (
         <div className="auto inbox-list" role="listbox" tabIndex={0} aria-label="Inbox" aria-activedescendant={`inbox-${item.id}`} onKeyDown={onKey}>
