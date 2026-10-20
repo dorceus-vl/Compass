@@ -67,7 +67,7 @@ export function Timeline() {
           {rows.map((r) => { const task = live.find((x) => x.id === r.id)!, tc = taskColor(task, projects); const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === r.id ? d : 0), px); return (
             <g key={r.id} className={`tl-row${drag?.id === r.id ? ' lifted' : ''}`} style={{ ['--tc' as string]: tc }} transform={`translate(0, ${r.y + 24})`}>
               <circle cx={12} cy={ROW / 2} r={4} fill={pcolor(task.project_id)} />
-              <text x={24} y={ROW / 2 + 4} fill="var(--text)" style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)}>{r.title.length > 28 ? `${r.title.slice(0, 27)}…` : r.title}</text>
+              <text x={24} y={ROW / 2 + 4} fill="var(--text)" style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)}><title>{r.title}</title>{r.title.length > 28 ? `${r.title.slice(0, 27)}…` : r.title}</text>
               {r.due ? <path className="tl-fill" d={`M${x + px / 2} 8 l8 9 l-8 9 l-8 -9 z`} style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
                 : <><rect className="tl-fill" x={x} y={8} width={w} height={18} rx={6} style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
                   <path className="tl-cap" d={`M${x + 6} 8 a6 6 0 0 0 -6 6 v6 a6 6 0 0 0 6 6 z`} pointerEvents="none" />

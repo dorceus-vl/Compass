@@ -8,7 +8,7 @@ import { startOfWeek, today } from '../dates.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { positionBetween } from '../../../shared/position.ts';
 
-const COLS: [Status, string, string][] = [['new', 'New', 'var(--text-faint)'], ['progress', 'In progress', 'var(--accent)'], ['hold', 'On hold', 'var(--warn)'], ['waiting', 'Waiting on', 'var(--nightowl)'], ['done', 'Done', 'var(--ok)']];
+const COLS: [Status, string, string][] = [['new', 'New', 'var(--text-faint)'], ['progress', 'In progress', 'var(--accent)'], ['hold', 'On hold', 'var(--warn)'], ['waiting', 'Waiting on', 'var(--h-long)'], ['done', 'Done', 'var(--ok)']];
 
 export function Board() {
   const { tasks, projects, ready } = useStore();
@@ -24,7 +24,8 @@ export function Board() {
   const lastDrag = useRef(0); // a drag released over its own card still fires click; ignore it
   useEffect(() => { api<{ wip_limits: Record<string, number | null> }>('/settings').then((s) => setWip(s.wip_limits)).catch(() => {}); }, []);
   useEffect(() => localStorage.setItem('compass.board.kind', kind), [kind]);
-  useEffect(() => () => stopDrag.current?.(), []); // unmount mid-drag: drop the clone and listeners
+  const landTimers = useRef<number[]>([]);
+  useEffect(() => () => { stopDrag.current?.(); landTimers.current.forEach(clearTimeout); }, []); // unmount mid-drag: drop the clone and listeners, and the settle timers
   if (!ready) return null;
 
   const wk = startOfWeek(today());
@@ -101,7 +102,7 @@ export function Board() {
       if (tasks.find((t) => t.id === id)?.status === status && byCol(status).findIndex((t) => t.id === id) === bi) return; // same place
       const limit = wip[status];
       if (limit && status !== 'done' && column.length >= limit) toast(`${COLS.find((c) => c[0] === status)![1]} is at its limit of ${limit}`);
-      setLanded(id); setTimeout(() => setLanded(null), 600);
+      setLanded(id); landTimers.current.push(window.setTimeout(() => setLanded((l) => (l === id ? null : l)), 600)); // only clears its own card
       await moveTask(id, status, beforeId, positionBetween(column[bi - 1]?.sort_in_column ?? null, column[bi]?.sort_in_column ?? null));
     };
     window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('pointercancel', onCancel);
@@ -114,7 +115,7 @@ export function Board() {
     return (
       <div className="col" data-col={s} data-wip={state} key={`${s}-${pid ?? ''}`} style={{ ['--c' as string]: colour }}>
         <div className="ch"><i /><b>{label}</b><small>{xs.length}{limit ? ` / ${limit}` : ''}</small></div>
-        {limit && s !== 'done' ? <div className="wip" role="img" aria-label={`${xs.length} of ${limit}`} style={{ ['--w' as string]: Math.min(1, xs.length / limit) }}><i /></div> : null}
+        {limit && s !== 'done' ? <div className="wip" aria-hidden="true" style={{ ['--w' as string]: Math.min(1, xs.length / limit) }}><i /></div> : null}
         {xs.map((t) => <Card key={t.id} task={t} project={projects.find((p) => p.id === t.project_id)} projects={projects} landed={landed === t.id} subtasks={subs(t.id)} onOpen={(i) => Date.now() - lastDrag.current > 300 && setOpen(i)} dragging={dragId === t.id} onPointerDown={onPointerDown} />)}
       </div>
     );
