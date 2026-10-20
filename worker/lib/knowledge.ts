@@ -16,5 +16,10 @@ export function compatible(scope: Scope, d: DocSide): boolean {
   return !work && (d.projectKind === 'personal' || d.projectKind === null);
 }
 
+/** A work collection becoming Cloud AI (created as Cloud AI, or switched from Locked) needs the passkey: its passages become readable by a model. `from` is null on create. */
+export function needsStepUp(scope: Scope, from: 'cloud' | 'locked' | null, to: 'cloud' | 'locked'): boolean {
+  return scope === 'work' && to === 'cloud' && from !== 'cloud';
+}
+
 /** Task 1 replaces this body: delete these passages' vectors from the index (Trash purge, Cloud AI → Locked). Until then there is no index, so nothing to delete. */
 export async function purgeVectors(_env: Env, _chunkIds: string[]): Promise<void> {}

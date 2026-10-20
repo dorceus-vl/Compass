@@ -16,9 +16,9 @@ assert.throws(() => docxText(new Uint8Array([1, 2, 3])), 'not a zip');
 assert.match(await pdfText(readFileSync('scripts/fixtures/hello.pdf')), /Hello Compass/);
 // Knowledge: a PDF page by page (the fixture has one), and Word headings as Markdown (English and French style ids) only when asked.
 assert.deepEqual((await pdfPages(readFileSync('scripts/fixtures/hello.pdf'))).map((p) => /Hello Compass/.test(p)), [true]);
-const hd = zipSync({ 'word/document.xml': strToU8(w('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Titre"/></w:pPr><w:r><w:t>Plan</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1Char"/></w:pPr><w:r><w:t>Not</w:t></w:r></w:p>')) });
-assert.equal(docxText(hd, true), '## Risks\n\nBody\n\n# Plan\n\nNot');
-assert.equal(docxText(hd), 'Risks\n\nBody\n\nPlan\n\nNot', 'headings are off by default');
+const hd = zipSync({ 'word/document.xml': strToU8(w('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Titre"/></w:pPr><w:r><w:t>Plan</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Main</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1Char"/></w:pPr><w:r><w:t>Not</w:t></w:r></w:p>')) });
+assert.equal(docxText(hd, true), '## Risks\n\nBody\n\n# Plan\n\n# Main\n\nNot');
+assert.equal(docxText(hd), 'Risks\n\nBody\n\nPlan\n\nMain\n\nNot', 'headings are off by default');
 assert.equal(await docText('md', strToU8('# Hi ✓')), '# Hi ✓');
 assert.equal(await docText('txt', strToU8('plain')), 'plain');
 assert.equal(await docText('xlsx', strToU8('PK')), '');

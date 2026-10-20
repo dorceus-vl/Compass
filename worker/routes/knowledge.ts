@@ -1,13 +1,13 @@
 // Phase 6 Knowledge: collections, items and ingest (Task 0; embeddings come in Task 1). Work collections are sealed at rest like other work rows (rule 5).
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
-import type { KnowledgeCollection, KnowledgeItem, KnowledgeSource } from '../../shared/types.ts';
+import type { DocKind, KnowledgeCollection, KnowledgeItem, KnowledgeSource } from '../../shared/types.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
 import { chunk, type Passage } from '../lib/chunk.ts';
-import { compatible, purgeVectors } from '../lib/knowledge.ts';
+import { compatible, needsStepUp, purgeVectors } from '../lib/knowledge.ts';
 import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
 
@@ -20,7 +20,7 @@ const loadCollection = async (env: Env, id: string): Promise<KnowledgeCollection
 
 /**
  * Stores one item and its passages (sealed when the collection is work). A Locked collection's item is `ready` at once; any other is `indexing` with
- * `embedded = 0` until Task 1's embedder runs. `error` stores a failed item (no passages). Task 3 and 4 call this for text that is not a document.
+ * `embedded = 0` until Task 1's embedder runs. `error` stores a failed item (no passages); it is stored plain, so it must be a fixed message, never document content. Task 3 and 4 call this for text that is not a document.
  */
 export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: KnowledgeSource; title: string; document_id: string | null; passages: Passage[]; error?: string }): Promise<KnowledgeItem> {
   const id = crypto.randomUUID(), t = now(), failed = !!a.error || a.passages.length === 0;
@@ -37,6 +37,7 @@ export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: 
       await env.DB.batch([...(i === 0 ? [insItem] : []), ...sealed.map((s) => env.DB.prepare(
         'INSERT INTO knowledge_chunks (id, item_id, collection_id, ord, locator, text, embedded, created_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,0,?7,?8)').bind(s.id, id, coll.id, s.ord, s.locator, s.text, t, s.enc_v))]);
     }
+    if (state === 'ready') await env.DB.prepare("UPDATE knowledge_items SET state = 'ready' WHERE id = ?1").bind(id).run(); // a Locked item is readable only once it is whole
   } catch (e) {
     await env.DB.batch([env.DB.prepare('DELETE FROM knowledge_chunks WHERE item_id = ?1').bind(id), env.DB.prepare('DELETE FROM knowledge_items WHERE id = ?1').bind(id)]).catch(() => {});
     throw e;
@@ -46,7 +47,7 @@ export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: 
 }
 
 /** The passages of a stored document: its text extracted with the existing readers (a PDF per page, a Word file with its headings), then chunked. */
-async function passagesOf(kind: NonNullable<Awaited<ReturnType<typeof loadDoc>>>['kind'], bytes: Uint8Array): Promise<Passage[]> {
+async function passagesOf(kind: DocKind, bytes: Uint8Array): Promise<Passage[]> {
   const t = kind === 'pdf' ? await pdfPages(bytes) : kind === 'docx' ? docxText(bytes, true) : kind === 'pptx' ? pptxText(bytes) : kind === 'xlsx' ? xlsxText(bytes).text
     : kind === 'png' || kind === 'jpg' ? '' : new TextDecoder().decode(bytes);
   return chunk(t, kind);
@@ -70,6 +71,7 @@ knowledge.post('/collections', async (c) => {
   // A work collection is Locked unless it is made Cloud AI on purpose; a personal one is always Cloud AI.
   const boundary = b.scope === 'personal' ? 'cloud' : (r.values.boundary as string | undefined) ?? 'locked';
   if (b.scope === 'personal' && r.values.boundary === 'locked') return c.json({ error: 'Personal collections are always Cloud AI.' }, 400);
+  if (needsStepUp(b.scope, null, boundary as 'cloud' | 'locked')) { const refused = await requireStepUp(c); if (refused) return refused; } // a work collection made Cloud AI, like Locked -> Cloud AI
   const t = now();
   const row = { id: crypto.randomUUID(), name: r.values.name as string, scope: b.scope, boundary, system: 0, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 } as KnowledgeCollection;
   const s = await seal(c.env, 'knowledge_collections', { ...row }, row.scope);
@@ -88,7 +90,7 @@ knowledge.patch('/collections/:id', async (c) => {
   if (coll.scope === 'personal' && boundary === 'locked') return c.json({ error: 'Personal collections are always Cloud AI.' }, 400);
   const toCloud = coll.boundary === 'locked' && boundary === 'cloud', toLocked = coll.boundary === 'cloud' && boundary === 'locked';
   if (toCloud) {
-    const refused = await requireStepUp(c); // passkey: Locked passages become readable by a model
+    const refused = needsStepUp(coll.scope, coll.boundary, boundary) ? await requireStepUp(c) : null; // passkey: Locked passages become readable by a model
     if (refused) return refused;
     // An Offline-only project's file may sit in a Locked collection; it never becomes Cloud AI.
     const off = await c.env.DB.prepare(`SELECT 1 FROM knowledge_items i JOIN documents d ON d.id = i.document_id JOIN projects p ON p.id = d.project_id

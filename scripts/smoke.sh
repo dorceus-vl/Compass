@@ -725,6 +725,8 @@ KWC=$(kbody "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke zebraf
 KW=$(printf '%s' "$KWC" | js d.collection.id)
 KPC=$(kbody "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke personal","scope":"personal"}')"); KP=$(printf '%s' "$KPC" | js d.collection.id)
 [ "$(printf '%s' "$KPC" | js d.collection.boundary)" = cloud ] || fail "a personal collection is not Cloud AI"
+KWCC=$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke work cloud","scope":"work","boundary":"cloud"}'); [ "$(kst "$KWCC")" = 201 ] && [ "$(kbody "$KWCC" | js d.collection.boundary)" = cloud ] || fail "a work collection created as Cloud AI (dev session passes the step-up; scripts/knowledge.test.ts covers the decision): $KWCC"
+curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$(kbody "$KWCC" | js d.collection.id) >/dev/null
 [ "$(kst "$(kj -X POST $B/api/knowledge/collections -d '{"name":"x","scope":"personal","boundary":"locked"}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/collections -d '{"name":"x","scope":"nope"}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/collections -d '{"scope":"work"}')")" = 400 ] || fail "collection validation"
 [ "$(D1X "SELECT count(*) AS n FROM knowledge_collections WHERE id='$KW' AND enc_v=2 AND name NOT LIKE '%zebrafish%'" | js 'd[0].results[0].n')" = 1 ] || fail "a work collection name is not ciphertext"
 [ "$(curl "${H[@]}" $B/api/knowledge/collections | js 'd.collections.filter(c=>c.id==="'$KW'"&&c.name==="Smoke zebrafish work").length')" = 1 ] || fail "collections list did not open the name"
@@ -782,7 +784,7 @@ curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$KW >/dev/null; curl "${H[
 for x in $KD $KDW $KDP $KDU; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
 for x in $KPW $KPP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
 KE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$KE")" = 200 ] || fail "Empty Trash with knowledge rows: $KE"
-[ "$(kbody "$KE" | js 'd.purged.knowledge_collections+","+(d.purged.knowledge_items>=3)+","+(d.purged.knowledge_chunks>=4)')" = "2,true,true" ] || fail "purge counts: $KE"
+[ "$(kbody "$KE" | js '(d.purged.knowledge_collections>=3)+","+(d.purged.knowledge_items>=3)+","+(d.purged.knowledge_chunks>=4)')" = "true,true,true" ] || fail "purge counts: $KE"
 [ "$(D1X "SELECT (SELECT count(*) FROM knowledge_collections WHERE id IN ('$KW','$KP'))+(SELECT count(*) FROM knowledge_items WHERE collection_id IN ('$KW','$KP'))+(SELECT count(*) FROM knowledge_chunks WHERE collection_id IN ('$KW','$KP')) AS n" | js 'd[0].results[0].n')" = 0 ] || fail "knowledge rows survived Empty Trash"
 rm -rf $KS
 echo "smoke: (k0) export opens work passages; Trash lists and restores items and collections; Empty Trash purges chunks, items, collections, then the documents"

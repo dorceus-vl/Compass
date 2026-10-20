@@ -36,8 +36,8 @@ function paragraphs(xml: string, headings = false): string[] {
     for (const m of chunk.matchAll(/<w:p[ >]/g)) start = m.index!;
     if (start < 0) continue;
     const text = decode(chunk.slice(start).replace(/<[^<>]*>/g, ''));
-    // Knowledge wants the section names: a Heading/Titre style (Word's built-in style ids, English and French) becomes a Markdown heading.
-    const style = headings ? chunk.slice(start).match(/<w:pStyle\b[^<>]*w:val="(?:Heading|Titre)(\d?)"/i) : null;
+    // Knowledge wants the section names: a Heading/Title/Titre style (Word's built-in style ids, English and French) becomes a Markdown heading.
+    const style = headings ? chunk.slice(start).match(/<w:pStyle\b[^<>]*w:val="(?:Heading|Titre|Title)(\d?)"/i) : null;
     const level = style ? style[1] || '1' : null;
     if (text.trim()) out.push(level ? `${'#'.repeat(Math.min(6, Number(level)))} ${text.trim()}` : text);
   }
