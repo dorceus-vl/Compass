@@ -41,7 +41,7 @@ export interface Settings {
 /** One of Athena's avatar loops (Settings → Athena). The file is served by GET /api/athena/media/:id. */
 export type AthenaClipState = 'idle' | 'listening' | 'thinking' | 'speaking';
 export interface AthenaClip { id: string; state: AthenaClipState; name: string; bytes: number; created_at: string }
-export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass:read.projects';
+export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass:read.projects' | 'compass:read.knowledge';
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
   wip_limits: { new: null, progress: 5, hold: null, waiting: null, done: null }, saved_views: [], tz: 'America/Toronto',

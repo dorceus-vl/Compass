@@ -3,10 +3,11 @@ import type { AgentScope } from './types.ts';
 // Words for Kelly's calls, the documents given to her and changes to her access: used by Settings and the activity log, and by scripts/kelly.test.ts. Plain text only.
 export const SCOPE_LABEL: Record<AgentScope, string> = {
   'compass:read.tasks': 'See your shared tasks', 'compass:write.tasks': 'Add and complete tasks', 'compass:read.projects': 'See your shared projects',
+  'compass:read.knowledge': 'Search your personal knowledge',
 };
 
 const ACTION: Record<string, string> = {
-  'agent.today': "Listed today's tasks", 'agent.tasks.list': 'Listed tasks', 'agent.tasks.get': 'Looked up a task', 'agent.tasks.create': 'Added a task', 'agent.tasks.done': 'Completed a task', 'agent.projects': 'Listed shared projects',
+  'agent.today': "Listed today's tasks", 'agent.tasks.list': 'Listed tasks', 'agent.tasks.get': 'Looked up a task', 'agent.tasks.create': 'Added a task', 'agent.tasks.done': 'Completed a task', 'agent.projects': 'Listed shared projects', 'agent.knowledge.search': 'Searched your knowledge',
 };
 const REFUSED: Record<string, string> = {
   kelly_disabled: 'Kelly is switched off', scope_not_granted: 'no permission', not_found: 'not found', rate_limited: 'too many calls', write_limit: 'too many changes', invalid: 'bad request', error: 'something went wrong',

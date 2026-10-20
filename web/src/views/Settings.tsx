@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, Fragment, type ReactElement } from 'react';
 import { strToU8, zipSync } from 'fflate';
 import type { AgentScope, ExportBundle, Provider, Settings, Status, PushType } from '../../../shared/types.ts';
 import { api, logout, online } from '../api.ts';
@@ -243,7 +243,10 @@ function KellyCard() {
       {k === undefined ? null : k === null ? <p className="hint">Needs a connection.</p> : <>
         {sw('Kelly may use Compass', k.enabled, (v) => void put({ enabled: v }), busy)}
         <div className="kelly-perms" data-off={k.enabled ? undefined : ''}>
-          {SCOPES.map((sc) => sw(SCOPE_LABEL[sc], k.scopes.includes(sc), (v) => void put({ scopes: v ? [...k.scopes, sc] : k.scopes.filter((x) => x !== sc) }), busy || !k.enabled))}
+          {SCOPES.map((sc) => <Fragment key={sc}>
+            {sw(SCOPE_LABEL[sc], k.scopes.includes(sc), (v) => void put({ scopes: v ? [...k.scopes, sc] : k.scopes.filter((x) => x !== sc) }), busy || !k.enabled)}
+            {sc === 'compass:read.knowledge' && <p className="kelly-note">Only personal collections; never work.</p>}
+          </Fragment>)}
         </div>
         <p className="kelly-note">“Shared” means personal tasks, and projects whose data may go to the cloud. Offline-only projects and their tasks stay private; Kelly never sees them, and she can't delete or edit anything.</p>
         <div className="kelly-row"><span>Last call</span><span>{k.last_call_at ? new Date(k.last_call_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'None yet'}</span></div>

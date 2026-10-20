@@ -1,7 +1,7 @@
 import type { AgentScope, Horizon, Project, Settings, Task } from '../../shared/types.ts';
 
 // Pure rules for the agent API (Kelly). No Worker imports, so scripts/agent.test.ts runs them directly.
-export const AGENT_SCOPES = ['compass:read.tasks', 'compass:write.tasks', 'compass:read.projects'] as const satisfies readonly AgentScope[];
+export const AGENT_SCOPES = ['compass:read.tasks', 'compass:write.tasks', 'compass:read.projects', 'compass:read.knowledge'] as const satisfies readonly AgentScope[];
 export const MAX_CALLS_PER_MINUTE = 60;
 export const MAX_WRITES_PER_HOUR = 30;
 

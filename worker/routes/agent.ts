@@ -9,6 +9,8 @@ import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
 import { createTaskFromSource, loadTask, addEvent, completeTask } from './tasks.ts';
 import { portfolioRows } from './projects.ts';
+import { hybridSearch } from '../lib/vectors.ts';
+import { AiRefused } from '../lib/ai.ts';
 
 // Kelly's agent API. Server to server, no cookie: the guard lets /api/agent/* through and the bearer secret is checked here.
 // Everything returned or touched is "shared" (worker/lib/agent.ts): personal with no project, or a live cloud project. Anything else is a 404 and only ever a count.
@@ -18,7 +20,7 @@ type AgentTask = { id: string; title: string; due_at: string | null; horizon: Ta
 type Projects = Map<string, Project>;
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 type Refusal = 'kelly_disabled' | 'scope_not_granted' | 'not_found' | 'rate_limited' | 'write_limit' | 'invalid' | 'error';
-type Outcome = { body: unknown; status?: ContentfulStatusCode; target?: string | null; refused?: Refusal };
+type Outcome = { body: unknown; detail?: Record<string, number>; status?: ContentfulStatusCode; target?: string | null; refused?: Refusal };
 
 agent.use('*', async (c, next) => {
   const m = /^Bearer (.+)$/.exec(c.req.header('authorization') ?? '');
@@ -35,8 +37,8 @@ const count = async (env: Env, where: string, since: string, ...args: string[]) 
 async function call(c: Ctx, action: string, scope: AgentScope, fn: () => Promise<Outcome>): Promise<Response> {
   const env = c.env;
   const isWrite = scope === 'compass:write.tasks';
-  const done = async (status: ContentfulStatusCode, body: unknown, refused?: Refusal, target: string | null = null) => {
-    await audit(env, 'kelly', action, target, refused ? { refused } : { ok: true });
+  const done = async (status: ContentfulStatusCode, body: unknown, refused?: Refusal, target: string | null = null, detail?: Outcome['detail']) => {
+    await audit(env, 'kelly', action, target, refused ? { refused } : { ok: true, ...detail });
     return c.json(body, status);
   };
   const t = Date.now();
@@ -49,7 +51,7 @@ async function call(c: Ctx, action: string, scope: AgentScope, fn: () => Promise
   if (!allowed(kelly, scope)) return done(403, { error: 'scope_not_granted', scope }, 'scope_not_granted');
   let out: Outcome;
   try { out = await fn(); } catch (e) { console.error(e); return done(500, { error: 'internal' }, 'error'); } // still one audit row for the call
-  return done(out.status ?? 200, out.body, out.refused, out.target ?? null);
+  return done(out.status ?? 200, out.body, out.refused, out.target ?? null, out.detail);
 }
 
 async function liveProjects(env: Env): Promise<Projects> {
@@ -135,6 +137,24 @@ agent.post('/tasks/:id/done', (c) => call(c, 'agent.tasks.done', 'compass:write.
 agent.get('/projects', (c) => call(c, 'agent.projects', 'compass:read.projects', async () => {
   const rows = (await portfolioRows(c.env)).filter((p) => shared({ project_id: p.id, kind: p.kind }, p));
   return { body: { projects: rows.map((p) => ({ id: p.id, name: p.name, rag: p.rag, rag_reason: p.rag_reason, pct_done: p.pct_done, next_milestone: p.next_milestone, open_risks: p.open_risks })) } };
+}));
+
+/**
+ * KN8: Kelly's knowledge search. The collection ids come from the DB here and nowhere else: live, Cloud AI, personal, not the system ("From my apps")
+ * collection. A work collection is never queried, whatever the scope says; the result is filtered again on the way out. The audit row carries counts only.
+ */
+agent.get('/knowledge/search', (c) => call(c, 'agent.knowledge.search', 'compass:read.knowledge', async () => {
+  const q = (c.req.query('q') ?? '').trim(), raw = c.req.query('limit'), n = raw === undefined ? 5 : Number(raw);
+  if (q.length < 2 || q.length > 300 || !Number.isInteger(n) || n < 1 || n > 8) return { status: 400, refused: 'invalid', body: { error: 'q must be 2 to 300 characters; limit a whole number from 1 to 8' } };
+  const { results } = await c.env.DB.prepare("SELECT id FROM knowledge_collections WHERE scope = 'personal' AND boundary = 'cloud' AND system = 0 AND deleted_at IS NULL").all<{ id: string }>();
+  const ids = results.map((r) => r.id);
+  try {
+    const found = (await hybridSearch(c.env, q, ids, n)).filter((p) => p.collection.scope === 'personal' && ids.includes(p.collection.id));
+    return { detail: { passages: found.length, collections: ids.length }, body: { passages: found.map((p) => ({ text: p.text, document: p.item_title, locator: p.locator, collection: p.collection.name })) } };
+  } catch (e) {
+    if (!(e instanceof AiRefused)) throw e;
+    return { status: e.status as ContentfulStatusCode, refused: e.code === 'rate_limited' ? 'rate_limited' : 'error', body: { error: e.code } };
+  }
 }));
 
 export default agent;
