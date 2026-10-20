@@ -3,7 +3,7 @@
 // the KN6 boundary transition and which passages may hold a vector (the pure rule and its SQL twin agree).
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { rerank, embed, embedMetered, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices, sealTurnedWork } from '../worker/lib/vectors.ts';
+import { rerank, embed, embedMetered, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices, sealTurnedWork, unembedStale } from '../worker/lib/vectors.ts';
 import { boundaryChange, vectorWanted, HOME, HOME_COLS, LIVE, type PassageHome } from '../worker/lib/knowledge.ts';
 import { open } from '../worker/lib/enc.ts';
 import { meter, AiRefused } from '../worker/lib/ai.ts';
@@ -81,7 +81,7 @@ assert.deepEqual(boundaryChange('locked', 'cloud'), { purge: false, state: { fro
 
 // which passages may hold a vector
 const h = (o: Partial<PassageHome> = {}): PassageHome => ({ boundary: 'cloud', scope: 'personal', k_del: null, i_del: null, document_id: 'd', d_id: 'd', d_del: null,
-  source: 'upload', source_id: null, s_id: null, s_work: null, project_id: 'p', p_id: 'p', p_del: null, p_boundary: 'cloud', ...o });
+  source: 'upload', source_id: null, s_id: null, s_work: null, project_id: 'p', p_id: 'p', p_del: null, p_boundary: 'cloud', p_kind: 'personal', ...o });
 const T = 'x';
 const text = { document_id: null, d_id: null };
 const meeting = (o: Partial<PassageHome> = {}): Partial<PassageHome> => ({ ...text, scope: 'work', source: 'meeting', source_id: 'm', s_id: 'm', ...o });
@@ -112,12 +112,14 @@ const cases: [Partial<PassageHome>, boolean, string][] = [
   [email({ s_work: 1, ...none }), false, 'email turned work, in a personal collection'],
   [email({ scope: 'work', s_work: 1, ...none }), true, 'work email in a work collection'],
   [email({ s_id: null, ...none }), false, 'email gone'],
+  [email({ p_kind: 'work' }), false, "email whose task sits in a work project, in a personal collection"],
+  [email({ scope: 'work', p_kind: 'work' }), true, "email whose task sits in a work project, in a work collection"],
 ];
 for (const [o, want, why] of cases) assert.equal(vectorWanted(h(o)), want, why);
 // the SQL twin (LIVE) says the same for every case
 const db = new DatabaseSync(':memory:');
 db.exec(`CREATE TABLE knowledge_collections (id TEXT, boundary TEXT, scope TEXT, deleted_at TEXT); CREATE TABLE knowledge_items (id TEXT, document_id TEXT, deleted_at TEXT, source TEXT, source_id TEXT);
-  CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, collection_id TEXT); CREATE TABLE documents (id TEXT, project_id TEXT, deleted_at TEXT); CREATE TABLE projects (id TEXT, data_boundary TEXT, deleted_at TEXT);
+  CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, collection_id TEXT); CREATE TABLE documents (id TEXT, project_id TEXT, deleted_at TEXT); CREATE TABLE projects (id TEXT, data_boundary TEXT, deleted_at TEXT, kind TEXT);
   CREATE TABLE meeting_reviews (id TEXT, project_id TEXT); CREATE TABLE inbox_items (id TEXT, task_id TEXT, work INTEGER); CREATE TABLE tasks (id TEXT, project_id TEXT)`);
 cases.forEach(([o], n) => {
   const r = h(o), id = String(n), pid = r.project_id && r.project_id + id;
@@ -127,7 +129,7 @@ cases.forEach(([o], n) => {
   if (r.d_id) db.prepare('INSERT INTO documents VALUES (?, ?, ?)').run(r.d_id + id, pid, r.d_del);
   if (r.s_id && r.source === 'meeting') db.prepare('INSERT INTO meeting_reviews VALUES (?, ?)').run(r.s_id + id, pid);
   if (r.s_id && r.source === 'email') { db.prepare('INSERT INTO inbox_items VALUES (?, ?, ?)').run(r.s_id + id, 't' + id, r.s_work); db.prepare('INSERT INTO tasks VALUES (?, ?)').run('t' + id, pid); }
-  if (r.p_id) db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run(r.p_id + id, r.p_boundary, r.p_del);
+  if (r.p_id) db.prepare('INSERT INTO projects VALUES (?, ?, ?, ?)').run(r.p_id + id, r.p_boundary, r.p_del, r.p_kind);
 });
 const live = new Set((db.prepare(`SELECT c.id FROM ${HOME} WHERE ${LIVE}`).all() as { id: string }[]).map((r) => r.id));
 cases.forEach(([, want, why], n) => assert.equal(live.has(String(n)), want, 'SQL: ' + why));
@@ -137,18 +139,19 @@ for (const r of homes) assert.equal(vectorWanted(r), live.has(r.id), 'HOME_COLS 
 // Rule 5: an email that turned work while saved in a personal collection is sealed in place by the sweep (title and passages); nothing else is touched.
 {
   const w = new DatabaseSync(':memory:');
-  w.exec(`CREATE TABLE knowledge_collections (id TEXT, scope TEXT); CREATE TABLE inbox_items (id TEXT, work INTEGER);
+  w.exec(`CREATE TABLE knowledge_collections (id TEXT, scope TEXT); CREATE TABLE inbox_items (id TEXT, work INTEGER, task_id TEXT); CREATE TABLE tasks (id TEXT, project_id TEXT); CREATE TABLE projects (id TEXT, kind TEXT);
     CREATE TABLE knowledge_items (id TEXT, collection_id TEXT, source TEXT, source_id TEXT, title TEXT, enc_v INTEGER); CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, text TEXT, locator TEXT, enc_v INTEGER)`);
-  w.exec(`INSERT INTO knowledge_collections VALUES ('kp','personal'),('kw','work'); INSERT INTO inbox_items VALUES ('e1',1),('e0',0);
-    INSERT INTO knowledge_items VALUES ('turned','kp','email','e1','Wombat budget',0),('still','kp','email','e0','Picnic',0),('meet','kp','meeting','e1','Notes',0);
-    INSERT INTO knowledge_chunks VALUES ('c1','turned','The wombat budget is 9k.','part 1',0),('c2','turned','Second part.','part 2',0),('c3','still','Picnic on Sunday.','part 1',0),('c4','meet','Meeting text.','§ Summary',0)`);
+  w.exec(`INSERT INTO knowledge_collections VALUES ('kp','personal'),('kw','work'); INSERT INTO inbox_items VALUES ('e1',1,NULL),('e0',0,NULL),('ep',0,'t1'); INSERT INTO tasks VALUES ('t1','pw'); INSERT INTO projects VALUES ('pw','work');
+    INSERT INTO knowledge_items VALUES ('turned','kp','email','e1','Wombat budget',0),('still','kp','email','e0','Picnic',0),('meet','kp','meeting','e1','Notes',0),('viaproj','kp','email','ep','Vendor call',0);
+    INSERT INTO knowledge_chunks VALUES ('c1','turned','The wombat budget is 9k.','part 1',0),('c2','turned','Second part.','part 2',0),('c3','still','Picnic on Sunday.','part 1',0),('c4','meet','Meeting text.','§ Summary',0),('c5','viaproj','Vendor call notes.','part 1',0)`);
   const wd1 = { prepare(q: string) {
     const st = (a: unknown[]) => ({ first: async () => w.prepare(q).get(...(a as never[])) ?? null, run: async () => ({ meta: { changes: Number(w.prepare(q).run(...(a as never[])).changes) } }),
       all: async () => ({ results: w.prepare(q).all(...(a as never[])) }) });
     return { ...st([]), bind: (...a: unknown[]) => st(a) };
   } };
   const wenv = { DB: wd1, COMPASS_DATA_KEY: 'k' } as never;
-  assert.equal(await sealTurnedWork(wenv), 1, 'one item turned work');
+  assert.equal(await sealTurnedWork(wenv), 2, 'two items turned work: by its row, and by its task sitting in a work project');
+  assert.equal((w.prepare("SELECT count(*) AS n FROM knowledge_chunks WHERE item_id = 'viaproj' AND enc_v = 2 AND text NOT LIKE '%Vendor%'").get() as { n: number }).n, 1, 'work by its task project: sealed');
   const item = w.prepare("SELECT title, enc_v FROM knowledge_items WHERE id = 'turned'").get() as { title: string; enc_v: number };
   const rows = w.prepare("SELECT text, locator, enc_v FROM knowledge_chunks WHERE item_id = 'turned' ORDER BY id").all() as { text: string; locator: string; enc_v: number }[];
   assert.ok(item.enc_v === 2 && !item.title.includes('Wombat'), 'title sealed');
@@ -157,6 +160,32 @@ for (const r of homes) assert.equal(vectorWanted(r), live.has(r.id), 'HOME_COLS 
   assert.deepEqual(await Promise.all(rows.map(async (r) => (await open(wenv, 'knowledge_chunks', r)).text)), ['The wombat budget is 9k.', 'Second part.']);
   assert.equal((w.prepare("SELECT count(*) AS n FROM knowledge_chunks WHERE enc_v = 0 AND item_id IN ('still','meet')").get() as { n: number }).n, 2, 'a personal email and a meeting stay as they are');
   assert.equal(await sealTurnedWork(wenv), 0, 'idempotent');
+}
+// The sweep removes vectors first; a sealing failure (here: D1 refuses the sealing query) is logged and never keeps a vector.
+{
+  const x = new DatabaseSync(':memory:');
+  x.exec(`CREATE TABLE knowledge_collections (id TEXT, boundary TEXT, scope TEXT, deleted_at TEXT); CREATE TABLE documents (id TEXT, project_id TEXT, deleted_at TEXT);
+    CREATE TABLE knowledge_items (id TEXT, collection_id TEXT, document_id TEXT, deleted_at TEXT, source TEXT, source_id TEXT, title TEXT, enc_v INTEGER);
+    CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, collection_id TEXT, text TEXT, locator TEXT, embedded INTEGER, enc_v INTEGER);
+    CREATE TABLE meeting_reviews (id TEXT, project_id TEXT); CREATE TABLE inbox_items (id TEXT, task_id TEXT, work INTEGER); CREATE TABLE tasks (id TEXT, project_id TEXT);
+    CREATE TABLE projects (id TEXT, data_boundary TEXT, deleted_at TEXT, kind TEXT);
+    INSERT INTO knowledge_collections VALUES ('kp','cloud','personal',NULL); INSERT INTO inbox_items VALUES ('e1',NULL,1);
+    INSERT INTO knowledge_items VALUES ('it','kp',NULL,NULL,'email','e1','Wombat',0); INSERT INTO knowledge_chunks VALUES ('cx','it','kp','Wombat text.','part 1',1,0)`);
+  const xd1 = { prepare(q: string) {
+    if (q.includes("k.scope = 'personal'")) throw new Error('D1 is down'); // only sealTurnedWork's query
+    const st = (a: unknown[]) => ({ first: async () => x.prepare(q).get(...(a as never[])) ?? null, run: async () => ({ meta: { changes: Number(x.prepare(q).run(...(a as never[])).changes) } }),
+      all: async () => ({ results: x.prepare(q).all(...(a as never[])) }) });
+    return { ...st([]), bind: (...a: unknown[]) => st(a) };
+  } };
+  const xenv = { DB: xd1, AI_STUB: '1', DEV_LOGIN: '1', COMPASS_DATA_KEY: 'k' } as never;
+  await assert.rejects(sealTurnedWork(xenv), /D1 is down/, 'sealing throws here');
+  const vec = hashVector('Wombat text.');
+  await upsert(xenv, [{ id: 'cx', values: vec, collection_id: 'kp' }]);
+  assert.ok((await query(xenv, vec, ['kp'], 5)).some((m) => m.id === 'cx'), 'the vector is there');
+  const err = console.error; console.error = () => {};
+  try { assert.equal(await unembedStale(xenv), 1, 'the stale passage is removed'); } finally { console.error = err; }
+  assert.ok(!(await query(xenv, vec, ['kp'], 5)).some((m) => m.id === 'cx'), 'its vector is gone although sealing failed');
+  assert.equal((x.prepare("SELECT embedded FROM knowledge_chunks WHERE id = 'cx'").get() as { embedded: number }).embedded, 0);
 }
 
 // meter, on real SQL (node:sqlite): query embeds have their own bucket of 120 an hour, outside the 30 model calls; background ingest batches

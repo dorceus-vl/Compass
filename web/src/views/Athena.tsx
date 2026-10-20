@@ -323,7 +323,8 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
   const kind: Kind = project?.kind ?? (thread ? thread.kind ?? 'personal' : !projectId && sel === WORK ? 'work' : 'personal');
   const newKind = !thread && !projectId && sel === WORK ? 'work' as const : undefined;
   // Collections Athena may read here: personal ones always, Cloud AI work ones in a work conversation; Locked never.
-  const allowed = (colls ?? []).filter((c) => c.boundary === 'cloud' && (c.scope === 'personal' || kind === 'work'));
+  const allowedFor = (k: Kind) => (colls ?? []).filter((c) => c.boundary === 'cloud' && (c.scope === 'personal' || k === 'work'));
+  const allowed = allowedFor(kind);
   const knowledge = kn === null ? undefined : { collections: kn }; // as picked: a pick that isn't allowed here gets the server's 409, never a silent drop
   const seeded = useRef(seed?.knowledge);
   useEffect(() => { // a work collection handed over by the Knowledge screen needs a work conversation
@@ -332,6 +333,8 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
     seeded.current = undefined;
     if (c?.scope === 'work' && !projectId && !cur.current) setSel(WORK);
   }, [colls, projectId]);
+  /** A new project or kind keeps the picked collections still allowed there; none left turns knowledge off (never widens to "all"). */
+  const keepAllowed = (k: Kind) => setKn((x) => { if (!Array.isArray(x)) return x; const keep = x.filter((id) => allowedFor(k).some((c) => c.id === id)); return keep.length ? keep : null; });
   const toggle = (cid: string) => setKn((k) => { const list = k === 'all' || !k ? [] : k; const next = list.includes(cid) ? list.filter((x) => x !== cid) : [...list, cid]; return next.length ? next : null; }); // the last one off turns knowledge off
   const projSelRef = useRef(projSel); projSelRef.current = projSel;
   const prov = providerReady(usage, provider) ? provider : OTHER[provider];
@@ -435,7 +438,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
                 <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? (kind === 'work' ? 'No project (work)' : 'None (personal)')}</b>
                 <small>{thread ? 'stays with this conversation' : 'this project'}</small></div>
             : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={sel} disabled={up}
-                onChange={(e) => { setSel(e.target.value); if (Array.isArray(kn)) setKn('all'); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
+                onChange={(e) => { const v = e.target.value; setSel(v); keepAllowed(v === WORK ? 'work' : projects.find((p) => p.id === v)?.kind ?? 'personal'); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
                 <option value="">None (personal)</option><option value={WORK}>No project (work)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
           <button type="button" className={`chip ath-more ath-kn${kn ? ' on' : ''}`} aria-pressed={!!kn} aria-expanded={!!kn} aria-controls="ath-kn"
             disabled={project?.data_boundary === 'offline'} onClick={() => setKn(kn ? null : 'all')}><Icon name="knowledge" />Use knowledge</button>

@@ -946,6 +946,11 @@ for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHE
 [ "$(curl "${H[@]}" $B/api/knowledge/collections/$K3C/items | js "d.items.find(i=>i.id==='$SMI').search")" = excluded ] || fail "item list: the filed meeting is not marked excluded"
 kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3C\"}" | grep -q '"error":"offline_boundary"' || fail "an Offline-only meeting into Cloud AI"
 SML=$(kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3L\"}"); [ "$(kst "$SML")" = 201 ] && [ "$(kbody "$SML" | js d.item.state)" = ready ] || fail "an Offline-only meeting into Locked: $SML"
+# Locked search keeps Offline-only notes, but not once their project is in Trash
+SMLI=$(kid "$SML" item); klock() { curl "${H[@]}" $B/api/knowledge/locked/$K3L/passages | js "d.passages.some(p=>p.item_id==='$SMLI')"; }
+[ "$(klock)" = true ] || fail "the Locked meeting notes are not in the Locked passages"
+curl "${H[@]}" -X DELETE $B/api/projects/$K3WP | grep -q '"ok":true' || fail "k3 work project trash"
+[ "$(klock)" = false ] || fail "a Locked meeting whose project is in Trash is still in the Locked passages"
 E3="{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke k3 email $R\",\"ref\":\"smoke:k3mail:$R\",\"body\":\"The platypus dinner moves to Friday.\",\"payload\":{\"from\":\"Ann\",\"account\":\"me@gmail.com\"}}"
 E3ID=$(post "$KELLY" "$E3" | js d.id)
 kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d "{\"collection_id\":\"$K3C\"}" | grep -q '"error":"knowledge_boundary"' || fail "a personal email into a work collection"
@@ -963,12 +968,22 @@ D1X "UPDATE inbox_items SET work = 1 WHERE id='$E3ID'" >/dev/null; cron
 for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SEI' AND enc_v=0")" = 0 ] && break; sleep 0.25; done
 [ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE id='$SEI' AND enc_v=2 AND title NOT LIKE '%Smoke k3 email%'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SEI' AND enc_v=2 AND text NOT LIKE '%platypus%'")" -ge 1 ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SEI' AND enc_v=0")" = 0 ] || fail "an email that turned work still sits plain in the personal collection"
 [ "$(curl "${H[@]}" $B/api/knowledge/collections/$K3P/items | js "d.items.find(i=>i.id==='$SEI').title")" = "Smoke k3 email $R" ] || fail "the sealed email item did not open"
+# a saved email keeps its inbox row through the 30-day inbox purge (an unsaved one goes), so it stays searchable; two saves at once make one item
+E4ID=$(post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke k3 capybara $R\",\"ref\":\"smoke:k3cap:$R\",\"body\":\"The capybara spa opens in May.\",\"payload\":{\"from\":\"Spa\",\"account\":\"me@gmail.com\"}}" | js d.id)
+E5ID=$(post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke k3 unsaved $R\",\"ref\":\"smoke:k3uns:$R\",\"body\":\"Nothing to keep.\",\"payload\":{\"from\":\"X\",\"account\":\"me@gmail.com\"}}" | js d.id)
+E6ID=$(post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke k3 twice $R\",\"ref\":\"smoke:k3two:$R\",\"body\":\"Saved twice at once.\",\"payload\":{\"from\":\"Y\",\"account\":\"me@gmail.com\"}}" | js d.id)
+S4I=$(kid "$(kj -X POST $B/api/knowledge/items/from-inbox/$E4ID -d "{\"collection_id\":\"$K3P\"}")" item); kwait $K3P $S4I ready || fail "the capybara email did not become ready"
+D1X "UPDATE inbox_items SET state = 'dismissed', task_id = NULL, updated_at = '2000-01-01T00:00:00.000Z' WHERE id IN ('$E4ID','$E5ID')" >/dev/null; cron
+[ "$(kn "SELECT count(*) AS n FROM inbox_items WHERE id='$E4ID'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM inbox_items WHERE id='$E5ID'")" = 0 ] || fail "the inbox purge took a saved email's row (or kept an unsaved one)"
+ks "capybara+spa" $K3P | grep -q capybara || fail "a saved email left search after the inbox purge"
+kj -X POST $B/api/knowledge/items/from-inbox/$E6ID -d "{\"collection_id\":\"$K3P\"}" > $KS/s1 & kj -X POST $B/api/knowledge/items/from-inbox/$E6ID -d "{\"collection_id\":\"$K3P\"}" > $KS/s2; wait
+[ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE source_id='$E6ID' AND deleted_at IS NULL")" = 1 ] && [ "$(tail -1 $KS/s1)$(tail -1 $KS/s2)" != "201201" ] || fail "two saves at once made two items: $(cat $KS/s1 $KS/s2)"
 # a failed knowledge search (here the 120/h query bucket) never fails the chat: she answers without it and says so
 KNOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); kfill 120 k3q 0
 KF=$(kj -X POST $B/api/ai/chat -d '{"message":"anything","knowledge":{"collections":"all"}}'); D1X "DELETE FROM ai_usage WHERE id LIKE 'smoke-kb-k3q-%'" >/dev/null
 [ "$(kst "$KF")" = 200 ] && kbody "$KF" | js 'd.messages[1].content' | grep -q "I couldn't search your knowledge just now" && ! kbody "$KF" | js 'd.messages[1].content' | grep -q 'stub passages' || fail "a 429 knowledge search failed the chat or said nothing: $KF"
 [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d '{}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-meeting/nope -d "{\"collection_id\":\"$K3C\"}")")" = 404 ] || fail "save validation"
-echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project, and turned work it is sealed in place by the sweep; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
+echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project, and turned work it is sealed in place by the sweep; a saved email survives the inbox purge; two saves at once -> one item; a Locked meeting leaves the Locked passages when its project goes to Trash; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
 echo "smoke: (k3) meeting -> work only (409 personal), Cloud AI item sealed, embedded, ready, searchable; filed under an Offline-only project -> 409 offline_boundary for Cloud AI, Locked ok; personal email -> personal only, ready and searchable"
 for x in $K3P $K3C $K3L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
 for x in $D3P $D3W $D3L; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done

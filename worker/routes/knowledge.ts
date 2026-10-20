@@ -8,7 +8,7 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
 import { chunk, type Passage } from '../lib/chunk.ts';
-import { boundaryChange, compatible, mayTake, needsStepUp, HOME, LIVE, type Scope } from '../lib/knowledge.ts';
+import { boundaryChange, compatible, mayTake, needsStepUp, HOME, KEPT, LIVE, type Scope } from '../lib/knowledge.ts';
 import { embedPending, hybridSearch, remove } from '../lib/vectors.ts';
 import { AiRefused } from '../lib/ai.ts';
 import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
@@ -193,9 +193,15 @@ async function addText(c: Ctx & { json: (b: unknown, s?: ContentfulStatusCode) =
   const v = mayTake(coll, side);
   if (v === 'knowledge_boundary') return c.json({ error: v, message: side.scope === 'work' ? 'This is work: only a work collection can take it.' : 'This is personal: only a personal collection can take it.' }, 409);
   if (v === 'offline_boundary') return c.json({ error: v, message: 'Its project is Offline only, so only a Locked collection can take it.' }, 409);
-  const had = await c.env.DB.prepare('SELECT * FROM knowledge_items WHERE collection_id = ?1 AND source_id = ?2 AND deleted_at IS NULL').bind(coll.id, a.source_id).first<KnowledgeItem>();
+  const had = await c.env.DB.prepare('SELECT * FROM knowledge_items WHERE collection_id = ?1 AND source = ?2 AND source_id = ?3 AND deleted_at IS NULL').bind(coll.id, a.source, a.source_id).first<KnowledgeItem>();
   if (had) return c.json({ item: await open(c.env, 'knowledge_items', had), existing: true }, 200);
-  const item = await addItem(c.env, coll, { source: a.source, source_id: a.source_id, title: a.title, document_id: null, passages: chunk(a.text, a.kind) });
+  let item: KnowledgeItem;
+  try { item = await addItem(c.env, coll, { source: a.source, source_id: a.source_id, title: a.title, document_id: null, passages: chunk(a.text, a.kind) }); }
+  catch (e) { // two saves at once: the unique index (0013) lets one in, the other returns it
+    const won = /UNIQUE/i.test(String((e as Error).message)) && await c.env.DB.prepare('SELECT * FROM knowledge_items WHERE collection_id = ?1 AND source = ?2 AND source_id = ?3 AND deleted_at IS NULL').bind(coll.id, a.source, a.source_id).first<KnowledgeItem>();
+    if (won) return c.json({ item: await open(c.env, 'knowledge_items', won), existing: true }, 200);
+    throw e;
+  }
   kick(c, item);
   return c.json({ item }, 201);
 }
@@ -255,7 +261,7 @@ knowledge.get('/locked/:id/passages', async (c) => {
   if (!coll || coll.scope !== 'work' || coll.boundary !== 'locked') return c.json({ error: 'Not found' }, 404);
   // ponytail: the whole collection in one answer; page it if a Locked collection outgrows a response.
   const { results } = await c.env.DB.prepare(`SELECT c.id, c.item_id, c.ord, c.locator, c.text, c.enc_v, i.document_id, i.title AS item_title, i.enc_v AS item_enc_v FROM ${HOME}
-    WHERE c.collection_id = ?1 AND i.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL AND (d.project_id IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL))))
+    WHERE c.collection_id = ?1 AND ${KEPT}
     ORDER BY i.created_at, c.ord`).bind(coll.id).all<{ id: string; item_id: string; document_id: string | null; ord: number; locator: string; text: string; enc_v: number; item_title: string; item_enc_v: number }>();
   const passages = await Promise.all(results.map(async (r) => {
     const p = await open(c.env, 'knowledge_chunks', { locator: r.locator, text: r.text, enc_v: r.enc_v });

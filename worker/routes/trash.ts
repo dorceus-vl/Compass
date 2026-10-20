@@ -127,7 +127,9 @@ export async function purgeAudit(env: Env): Promise<void> {
  */
 export async function purgeInbox(env: Env): Promise<void> {
   await env.DB.prepare(`DELETE FROM inbox_items WHERE state IN ('dismissed','kept','added') AND updated_at < ?1
-    AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = inbox_items.task_id AND t.deleted_at IS NULL AND t.status != 'done')`).bind(daysAgo(30)).run();
+    AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = inbox_items.task_id AND t.deleted_at IS NULL AND t.status != 'done')
+    AND NOT EXISTS (SELECT 1 FROM knowledge_items k WHERE k.source = 'email' AND k.source_id = inbox_items.id)`).bind(daysAgo(30)).run();
+  // A saved email (KN16) keeps its row while its knowledge item exists, in Trash too (so a restore still finds it); Empty Trash releases it.
 }
 /** Sessions that expired (or were revoked and last seen) over 30 days ago. */
 export async function purgeSessions(env: Env): Promise<void> {

@@ -34,12 +34,13 @@ export interface PassageHome {
   boundary: 'cloud' | 'locked'; scope: Scope; k_del: string | null; i_del: string | null;
   document_id: string | null; d_id: string | null; d_del: string | null;
   source: string; source_id: string | null; s_id: string | null; s_work: number | null;
-  project_id: string | null; p_id: string | null; p_del: string | null; p_boundary: 'cloud' | 'offline' | null;
+  project_id: string | null; p_id: string | null; p_del: string | null; p_boundary: 'cloud' | 'offline' | null; p_kind: Scope | null;
 }
 
 /**
  * Whether a passage may hold a vector and be searched by meaning: a live Cloud AI collection and a live item; its document (if any) live; the meeting
- * or email it was saved from (if any) still there, and an email still on the collection's side (its `work` flag follows its task); and the project
+ * or email it was saved from (if any) still there, and an email still on the collection's side (work when its inbox row says so or its task's project
+ * is a work project: `emailIsWork`); and the project
  * all that belongs to (if any) live and not Offline-only. Anything else is never embedded, and an existing vector is removed.
  * `LIVE` is the same rule in SQL (used to pick and to search); keep the two together.
  */
@@ -47,22 +48,28 @@ export function vectorWanted(h: PassageHome): boolean {
   if (h.boundary !== 'cloud' || h.k_del || h.i_del) return false;
   if (h.document_id && (!h.d_id || h.d_del)) return false;
   if (h.source_id && !h.s_id) return false;
-  if (h.source === 'email' && h.source_id && (h.s_work ? 'work' : 'personal') !== h.scope) return false;
+  if (h.source === 'email' && h.source_id && (emailIsWork(h.s_work, h.p_kind) ? 'work' : 'personal') !== h.scope) return false;
   return !h.project_id || (!!h.p_id && !h.p_del && h.p_boundary === 'cloud');
 }
+/** An email is work when its inbox row is (`work = 1`) or the task it became sits in a work project. `EMAIL_WORK` is the same in SQL (over `ib` and `p`). */
+export const emailIsWork = (work: number | null, projectKind: Scope | null) => !!work || projectKind === 'work';
+export const EMAIL_WORK = `(COALESCE(ib.work, 0) = 1 OR COALESCE(p.kind, '') = 'work')`; // never NULL, so it compares
 /** Joins a passage `c` to its item `i`, collection `k`, document `d`, meeting review `mr` or email `ib` (and its task `tk`), and the project `p` they belong to. */
 export const HOME = `knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_id JOIN knowledge_collections k ON k.id = c.collection_id
   LEFT JOIN documents d ON d.id = i.document_id
   LEFT JOIN meeting_reviews mr ON i.source = 'meeting' AND mr.id = i.source_id
   LEFT JOIN inbox_items ib ON i.source = 'email' AND ib.id = i.source_id LEFT JOIN tasks tk ON tk.id = ib.task_id
   LEFT JOIN projects p ON p.id = COALESCE(d.project_id, mr.project_id, tk.project_id)`;
-const HOME_PROJECT = 'COALESCE(d.project_id, mr.project_id, tk.project_id)';
+export const HOME_PROJECT = 'COALESCE(d.project_id, mr.project_id, tk.project_id)';
 export const HOME_COLS = `k.boundary, k.scope, k.deleted_at AS k_del, i.deleted_at AS i_del, i.document_id, d.id AS d_id, d.deleted_at AS d_del,
-  i.source, i.source_id, COALESCE(mr.id, ib.id) AS s_id, ib.work AS s_work, ${HOME_PROJECT} AS project_id, p.id AS p_id, p.deleted_at AS p_del, p.data_boundary AS p_boundary`;
+  i.source, i.source_id, COALESCE(mr.id, ib.id) AS s_id, ib.work AS s_work, ${HOME_PROJECT} AS project_id, p.id AS p_id, p.deleted_at AS p_del, p.data_boundary AS p_boundary, p.kind AS p_kind`;
+/** Locked search (on the device) keeps Offline-only content but not what is gone or in Trash: the item, its document, its source, the project. */
+export const KEPT = `i.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL))
+  AND (i.source_id IS NULL OR COALESCE(mr.id, ib.id) IS NOT NULL) AND (${HOME_PROJECT} IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL))`;
 export const LIVE = `k.boundary = 'cloud' AND k.deleted_at IS NULL AND i.deleted_at IS NULL
   AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL))
   AND (i.source_id IS NULL OR COALESCE(mr.id, ib.id) IS NOT NULL)
-  AND (i.source != 'email' OR i.source_id IS NULL OR ib.work = (k.scope = 'work'))
+  AND (i.source != 'email' OR i.source_id IS NULL OR ${EMAIL_WORK} = (k.scope = 'work'))
   AND (${HOME_PROJECT} IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL AND p.data_boundary = 'cloud'))`;
 
 /** KN2: a thread's effective kind is its project's kind when it has a project, else its own `kind`, else personal. It is what the thread is sealed with. */
