@@ -7,6 +7,12 @@ assert.equal(allowed({ enabled: true, scopes: [] }, 'compass:read.tasks'), false
 assert.equal(allowed({ enabled: true, scopes: ['compass:read.tasks'] }, 'compass:write.tasks'), false);
 assert.equal(allowed({ enabled: true, scopes: ['compass:read.tasks'] }, 'compass:read.tasks'), true);
 
+// A hand-edited row means off, never a throw.
+assert.equal(allowed({ enabled: true } as never, 'compass:read.tasks'), false);
+assert.equal(allowed({ enabled: true, scopes: 'compass:read.tasks' } as never, 'compass:read.tasks'), false);
+assert.equal(allowed({ enabled: 'true', scopes: ['compass:read.tasks'] } as never, 'compass:read.tasks'), false);
+assert.equal(allowed(undefined, 'compass:read.tasks'), false);
+
 // shared: personal with no project, or a live cloud project.
 const cloud = { data_boundary: 'cloud' as const, deleted_at: null };
 assert.equal(shared({ kind: 'personal', project_id: null }, null), true);

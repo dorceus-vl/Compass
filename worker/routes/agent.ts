@@ -17,7 +17,7 @@ const agent = new Hono<{ Bindings: Env; Variables: Variables }>();
 type AgentTask = { id: string; title: string; due_at: string | null; horizon: Task['horizon']; status: Task['status']; project: string | null; priority: number };
 type Projects = Map<string, Project>;
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
-type Refusal = 'kelly_disabled' | 'scope_not_granted' | 'not_found' | 'rate_limited' | 'write_limit' | 'invalid';
+type Refusal = 'kelly_disabled' | 'scope_not_granted' | 'not_found' | 'rate_limited' | 'write_limit' | 'invalid' | 'error';
 type Outcome = { body: unknown; status?: ContentfulStatusCode; target?: string | null; refused?: Refusal };
 
 agent.use('*', async (c, next) => {
@@ -45,9 +45,10 @@ async function call(c: Ctx, action: string, scope: AgentScope, fn: () => Promise
   const over = overLimit(calls, writes, isWrite);
   if (over) { const r = over === 'rate' ? 'rate_limited' : 'write_limit'; return done(429, { error: r }, r); }
   const kelly = (await getSettings(env)).kelly;
-  if (!kelly.enabled) return done(403, { error: 'kelly_disabled' }, 'kelly_disabled');
+  if (kelly?.enabled !== true) return done(403, { error: 'kelly_disabled' }, 'kelly_disabled');
   if (!allowed(kelly, scope)) return done(403, { error: 'scope_not_granted', scope }, 'scope_not_granted');
-  const out = await fn();
+  let out: Outcome;
+  try { out = await fn(); } catch (e) { console.error(e); return done(500, { error: 'internal' }, 'error'); } // still one audit row for the call
   return done(out.status ?? 200, out.body, out.refused, out.target ?? null);
 }
 
@@ -64,9 +65,9 @@ async function agentTask(env: Env, row: Task, projects: Projects, plain = false)
   return { id: t.id, title: t.title, due_at: t.due_at, horizon: t.horizon, status: t.status, project: await projectName(env, projectOf(projects, t)), priority: t.priority };
 }
 
-/** Open tasks matching `where`, shared ones only (newest rows beyond 500 are not looked at: ponytail, page it if one view ever holds more). */
+/** Open top-level tasks matching `where` (subtasks don't inherit their parent's project or kind, so the agent never sees them), shared ones only (newest rows beyond 500 are not looked at: ponytail, page it if one view ever holds more). */
 async function sharedTasks(env: Env, where: string, args: string[], projects: Projects) {
-  const { results } = await env.DB.prepare(`SELECT * FROM tasks WHERE deleted_at IS NULL AND status != 'done' AND ${where} ORDER BY due_at IS NULL, due_at, created_at LIMIT 500`).bind(...args).all<Task>();
+  const { results } = await env.DB.prepare(`SELECT * FROM tasks WHERE deleted_at IS NULL AND status != 'done' AND parent_id IS NULL AND ${where} ORDER BY due_at IS NULL, due_at, created_at LIMIT 500`).bind(...args).all<Task>();
   const keep = results.filter((t) => shared(t, projectOf(projects, t)));
   return { rows: keep, hidden: results.length - keep.length };
 }
@@ -90,7 +91,7 @@ agent.get('/today', (c) => call(c, 'agent.today', 'compass:read.tasks', async ()
   return { body: { date, ...out, next_milestones, hidden } };
 }));
 
-const VIEWS: Record<string, string> = { today: 'due_at = ?1', overdue: 'due_at < ?1', upcoming: 'due_at > ?1', waiting: `(status = 'waiting' AND ?1 IS NOT NULL)` };
+const VIEWS: Record<string, string> = { today: 'due_at = ?1', overdue: 'due_at < ?1', upcoming: 'due_at > ?1', waiting: `(status = 'waiting' AND ?1 IS NOT NULL)` /* ?1 is only here so the bind count matches */ };
 agent.get('/tasks', (c) => call(c, 'agent.tasks.list', 'compass:read.tasks', async () => {
   const view = c.req.query('view') ?? 'today', n = Number(c.req.query('limit') ?? 20);
   if (!VIEWS[view] || !Number.isInteger(n) || n < 1) return { status: 400, refused: 'invalid', body: { error: 'view must be today, overdue, upcoming or waiting; limit a whole number from 1 to 50' } };
@@ -116,8 +117,8 @@ agent.post('/tasks/:id/done', (c) => call(c, 'agent.tasks.done', 'compass:write.
   const env = c.env, id = c.req.param('id');
   const projects = await liveProjects(env);
   const task = await loadTask(env, id);
-  // Missing, trashed, already done and not-shared all look the same.
-  if (!task || task.status === 'done' || !shared(task, projectOf(projects, task))) return { status: 404, refused: 'not_found', target: id, body: { error: 'Not found' } };
+  // Missing, trashed, a subtask, already done and not-shared all look the same.
+  if (!task || task.parent_id || task.status === 'done' || !shared(task, projectOf(projects, task))) return { status: 404, refused: 'not_found', target: id, body: { error: 'Not found' } };
   const res = await completeTask(env, task, [], 'kelly');
   return { target: id, body: { task: await agentTask(env, res.task, projects, true) } };
 }));

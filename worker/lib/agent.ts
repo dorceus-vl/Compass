@@ -6,7 +6,8 @@ export const MAX_CALLS_PER_MINUTE = 60;
 export const MAX_WRITES_PER_HOUR = 30;
 
 /** Kelly may act only when switched on and the scope is listed. */
-export const allowed = (k: Settings['kelly'], scope: AgentScope): boolean => k.enabled && k.scopes.includes(scope);
+// Defensive: a hand-edited settings row (the only way to change it for now) must mean "off", never a 500.
+export const allowed = (k: Settings['kelly'] | undefined, scope: AgentScope): boolean => k?.enabled === true && Array.isArray(k.scopes) && k.scopes.includes(scope);
 
 /**
  * What an outside app may see: a task with no project only if it is personal; otherwise only a live project with a cloud boundary.

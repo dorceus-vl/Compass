@@ -90,4 +90,6 @@ Only shared items are visible: a task with no project if it is personal; otherwi
 
 Refusals: `401` bad secret; `403 { error: 'kelly_disabled' }`; `403 { error: 'scope_not_granted', scope }`; `400 { error }` bad body; `404`; `429 { error: 'rate_limited' }` (more than 60 calls in 60 seconds) or `{ error: 'write_limit' }` (more than 30 creates and dones in an hour).
 
-Audit: every authenticated call writes one `audit_log` row: actor `kelly`, action `agent.today`, `agent.tasks.list`, `agent.tasks.create`, `agent.tasks.done` or `agent.projects`, target the task id when there is one, detail `{ "ok": true }` or `{ "refused": "kelly_disabled" | "scope_not_granted" | "not_found" | "rate_limited" | "write_limit" | "invalid" }`. Never task text.
+Audit: every authenticated call writes one `audit_log` row: actor `kelly`, action `agent.today`, `agent.tasks.list`, `agent.tasks.create`, `agent.tasks.done` or `agent.projects`, target the task id when there is one, detail `{ "ok": true }` or `{ "refused": "kelly_disabled" | "scope_not_granted" | "not_found" | "rate_limited" | "write_limit" | "invalid" | "error" }`. Never task text. If the handler fails after the checks, the row says `error` and the call answers 500 `{ error: 'internal' }`.
+
+Only top-level tasks are visible: a subtask is never listed and `done` on one is a 404 (subtasks do not inherit their parent's project or kind).

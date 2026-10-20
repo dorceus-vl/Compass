@@ -351,6 +351,12 @@ OFF="{\"title\":\"x\",\"project_id\":\"$AP\"}"; [ "$(agc POST /tasks "$OFF")" = 
 [ "$(agc POST /tasks/$NID/done)" = 404 ] || fail "agent done on a finished task not 404"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND action='agent.tasks.done' AND detail LIKE '%not_found%' AND target='$OT'" | js 'd[0].results[0].n')" = 1 ] || fail "hidden done not audited as not_found"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND detail LIKE '%Smoke agent%'" | js 'd[0].results[0].n')" = 0 ] || fail "task text reached the audit log"
+# A personal, project-less subtask under a work-offline parent is neither listed nor completable.
+ST=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke agent subtask $R\",\"parent_id\":\"$OT\",\"due_at\":\"$TODAY\"}" | js d.task.id)
+agb GET /today | grep -q "Smoke agent subtask $R" && fail "agent today lists a subtask"
+agb GET "/tasks?view=today&limit=50" | grep -q "Smoke agent subtask $R" && fail "agent tasks lists a subtask"
+[ "$(agc POST /tasks/$ST/done)" = 404 ] || fail "agent done on a subtask not 404"
+[ "$(task $ST status)" = new ] || fail "agent finished a subtask"
 A1=$(arows); agc GET /today >/dev/null; [ "$(arows)" = $((A1 + 1)) ] || fail "agent call did not write exactly one audit row"
 # 2 creates and 1 done are in: 27 more writes make 30, the 31st is refused.
 for i in $(seq 27); do BULK="{\"title\":\"Smoke agent bulk $i $R\"}"; [ "$(agc POST /tasks "$BULK")" = 201 ] || fail "agent write $i refused early"; done
