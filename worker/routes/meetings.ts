@@ -12,7 +12,7 @@ import { asReview } from './inbox.ts';
 const meetings = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 type Row = Record<string, unknown> & { enc_v?: number };
-const load = async (env: Env, id: string): Promise<MeetingReview | null> => {
+export const loadMeeting = async (env: Env, id: string): Promise<MeetingReview | null> => {
   const row = await env.DB.prepare('SELECT * FROM meeting_reviews WHERE id = ?1').bind(id).first<Row>();
   return row ? asReview((await open(env, 'meeting_reviews', row)) as Row) : null;
 };
@@ -48,12 +48,12 @@ meetings.get('/', async (c) => {
 });
 
 meetings.get('/:id', async (c) => {
-  const meeting = await load(c.env, c.req.param('id'));
+  const meeting = await loadMeeting(c.env, c.req.param('id'));
   return meeting ? c.json({ meeting }) : c.json({ error: 'Not found' }, 404);
 });
 
 meetings.post('/:id/dismiss', async (c) => {
-  const meeting = await load(c.env, c.req.param('id'));
+  const meeting = await loadMeeting(c.env, c.req.param('id'));
   if (!meeting) return c.json({ error: 'Not found' }, 404);
   if (meeting.state !== 'new') return c.json({ error: 'Already reviewed' }, 409);
   const t = now();
@@ -63,7 +63,7 @@ meetings.post('/:id/dismiss', async (c) => {
 });
 
 meetings.post('/:id/accept', async (c) => {
-  const meeting = await load(c.env, c.req.param('id'));
+  const meeting = await loadMeeting(c.env, c.req.param('id'));
   if (!meeting) return c.json({ error: 'Not found' }, 404);
   if (meeting.state !== 'new') return c.json({ error: 'Already reviewed' }, 409);
   const body = await c.req.json<unknown>().catch(() => null);

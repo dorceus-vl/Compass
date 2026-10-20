@@ -49,3 +49,23 @@ export const HOME = `knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_
 export const HOME_COLS = 'k.boundary, k.deleted_at AS k_del, i.deleted_at AS i_del, i.document_id, d.id AS d_id, d.deleted_at AS d_del, d.project_id, p.id AS p_id, p.deleted_at AS p_del, p.data_boundary AS p_boundary';
 export const LIVE = `k.boundary = 'cloud' AND k.deleted_at IS NULL AND i.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL
   AND (d.project_id IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL AND p.data_boundary = 'cloud'))))`;
+
+/** KN2: a thread's effective kind is its project's kind when it has a project, else its own `kind`, else personal. It is what the thread is sealed with. */
+export const effectiveKind = (projectKind: Scope | null, threadKind: Scope | null): Scope => projectKind ?? threadKind ?? 'personal';
+
+/**
+ * Which collections Athena may read in a thread: nothing when its boundary is Offline only; otherwise live Cloud AI collections, personal ones in any thread
+ * and work ones only when the thread's effective kind is work. Locked and trashed collections never.
+ */
+export function allowedCollections(colls: { id: string; scope: Scope; boundary: 'cloud' | 'locked'; deleted_at: string | null }[], kind: Scope, boundary: 'cloud' | 'offline'): string[] {
+  if (boundary !== 'cloud') return [];
+  return colls.filter((c) => !c.deleted_at && c.boundary === 'cloud' && (c.scope === 'personal' || kind === 'work')).map((c) => c.id);
+}
+
+/** The collections a request names: "all" is the allowed set; a list must sit wholly inside it, else null (the request is refused, 409 knowledge_boundary). */
+export const pickCollections = (asked: string[] | 'all', allowed: string[]): string[] | null =>
+  asked === 'all' ? allowed : asked.every((id) => allowed.includes(id)) ? asked : null;
+
+/** Where text that is not a document may go (a meeting review, an email): a collection of its own side, and a Locked one only when its project is Offline only (Task 1 minor 10). */
+export const mayTake = (coll: { scope: Scope; boundary: 'cloud' | 'locked' }, side: { scope: Scope; offline: boolean }): 'ok' | 'knowledge_boundary' | 'offline_boundary' =>
+  coll.scope !== side.scope ? 'knowledge_boundary' : side.offline && coll.boundary === 'cloud' ? 'offline_boundary' : 'ok';

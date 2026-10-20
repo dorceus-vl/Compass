@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env, Variables } from '../types.ts';
-import type { AiThread, AiMessage, LibraryPage, Milestone, Project, Provider, Task } from '../../shared/types.ts';
+import type { AiThread, AiMessage, Kind, KnowledgeCollection, LibraryPage, Milestone, Project, Provider, Task } from '../../shared/types.ts';
 import { PRESETS } from '../../shared/presets.ts';
 import { isEmpty, splitAnswer } from '../../shared/ai-meta.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
@@ -16,7 +16,9 @@ import { loadDoc, readBytes } from './documents.ts';
 import { attachmentText } from '../lib/extract.ts';
 import { MAX_IMAGE_BYTES } from '../lib/uploads.ts';
 import { retrieve, modelPage } from '../lib/library.ts';
-import { projectAccess, projectContext } from '../lib/project-context.ts';
+import { projectAccess, projectContext, threadAccess } from '../lib/project-context.ts';
+import { allowedCollections, pickCollections } from '../lib/knowledge.ts';
+import { hybridSearch, type FoundPassage } from '../lib/vectors.ts';
 
 const ai = new Hono<{ Bindings: Env; Variables: Variables }>();
 type MsgRow = Omit<AiMessage, 'citations' | 'proposals'> & { citations: string; proposals: string | null };
@@ -46,6 +48,13 @@ ai.post('/chat', async (c) => {
   if (!absent(b.page) && (typeof b.page !== 'string' || !/^[a-z0-9-]+$/.test(b.page))) return c.json({ error: 'page must be a library slug' }, 400);
   if (!absent(b.thread_id) && typeof b.thread_id !== 'string') return c.json({ error: 'thread_id must be text' }, 400);
   if (!absent(b.project_id) && (typeof b.project_id !== 'string' || !b.project_id)) return c.json({ error: 'project_id must be a project id' }, 400);
+  // KN2: `kind` is chosen once, for a new conversation with no project ("No project (work)"); a thread's kind never changes.
+  if (!absent(b.kind) && b.kind !== 'work' && b.kind !== 'personal') return c.json({ error: 'kind must be one of: work, personal' }, 400);
+  if (!absent(b.kind) && (!absent(b.thread_id) || !absent(b.project_id))) return c.json({ error: 'kind is only for a new conversation with no project' }, 400);
+  const k = b.knowledge as { collections?: unknown } | undefined | null;
+  const wanted = absent(k) ? null : k!.collections === 'all' ? 'all' as const
+    : Array.isArray(k!.collections) && k!.collections.length <= 50 && k!.collections.every((x) => typeof x === 'string' && x) ? [...new Set(k!.collections as string[])] : undefined;
+  if (wanted === undefined) return c.json({ error: 'knowledge must be { collections: "all" or a list of collection ids }' }, 400);
   if (rerun && absent(b.thread_id)) return c.json({ error: 'rerun needs a thread_id' }, 400);
   if (!absent(b.document_ids) && (!Array.isArray(b.document_ids) || !b.document_ids.every((x) => typeof x === 'string' && x))) return c.json({ error: 'document_ids must be a list of document ids' }, 400);
   let documentIds = [...new Set((b.document_ids as string[] | undefined) ?? [])];
@@ -60,10 +69,19 @@ ai.post('/chat', async (c) => {
 
   try {
     // 3. Boundary and kind in one read, before anything is stored or sent. The kind sealed with is this one, never a later read.
-    const access = await projectAccess(env, projectId);
+    const newKind = (b.kind as Kind | undefined) ?? null;
+    const access = await threadAccess(env, projectId, thread ? thread.kind : newKind);
     if (!access) return c.json({ error: 'Not found' }, 404);
     const { boundary, kind } = access;
     if (boundary === 'offline') throw new AiRefused('offline_boundary', 'This project is Offline only. Library search, templates and saved answers still work.');
+    // 3b. Knowledge: the collections named must all be allowed in this thread (KN2), before anything is searched, stored or sent.
+    let collections: string[] = [];
+    if (wanted) {
+      const colls = (await env.DB.prepare('SELECT id, scope, boundary, deleted_at FROM knowledge_collections').all<Pick<KnowledgeCollection, 'id' | 'scope' | 'boundary' | 'deleted_at'>>()).results;
+      const picked = pickCollections(wanted, allowedCollections(colls, kind, boundary));
+      if (!picked) return c.json({ error: 'knowledge_boundary', message: kind === 'work' ? 'Athena never reads a Locked collection.' : 'A personal conversation reads only personal collections. Start a work conversation to use work knowledge.' }, 409);
+      collections = picked;
+    }
 
     // 4. History (and, for a rerun, the question and its documents).
     let history: AiTurn[] = [];
@@ -86,8 +104,8 @@ ai.post('/chat', async (c) => {
     for (const id of documentIds) docs[id] = await loadDoc(env, id);
     const boundaries: Record<string, 'cloud' | 'offline' | undefined> = {};
     for (const pid of new Set(Object.values(docs).flatMap((d) => (d?.project_id ? [d.project_id] : [])))) boundaries[pid] = (await projectAccess(env, pid))?.boundary;
-    const verdict = checkAttachments(documentIds, docs, projectId, boundaries);
-    if (verdict === 'document_boundary') return c.json({ error: 'document_boundary', message: 'Athena can only read documents from this project (or unfiled ones in a personal chat), and never from an Offline-only project.' }, 409);
+    const verdict = checkAttachments(documentIds, docs, projectId, kind, boundaries);
+    if (verdict === 'document_boundary') return c.json({ error: 'document_boundary', message: 'Athena can only read documents from this project (or, with no project, unfiled ones of the same kind: work or personal), and never from an Offline-only project.' }, 409);
     const attached: Attachment[] = [], fenced: string[] = [], images: AiImage[] = [];
     for (const id of documentIds) {
       const d = docs[id]!, bytes = await readBytes(env, d);
@@ -110,19 +128,22 @@ ai.post('/chat', async (c) => {
       if (!page) return c.json({ error: 'Not found' }, 404);
       pages = [page, ...(await retrieve(env, page.title + ' ' + message, 6)).filter((p) => p.slug !== page.slug).slice(0, 5)];
     } else pages = await retrieve(env, message, 6);
+    // 5b. Knowledge passages (KN4, k = 6) from the allowed collections only; a work passage is dropped again here unless the thread is work.
+    const passages: FoundPassage[] = collections.length ? (await hybridSearch(env, message, collections, 6)).filter((p) => collections.includes(p.collection.id) && (p.collection.scope === 'personal' || kind === 'work')) : [];
 
     // 6–8. Prompt, model call, validated answer.
     const asked = now();
-    const system = buildSystem({ today: localDate(settings.tz), pages, project: projectId ? await projectContext(env, projectId) : null, preset: preset?.id ?? null });
+    const system = buildSystem({ today: localDate(settings.tz), pages, project: projectId ? await projectContext(env, projectId) : null, preset: preset?.id ?? null,
+      passages: passages.map((p) => ({ id: p.id, document: p.item_title, locator: p.locator, text: p.text })) });
     const out = await runAi(env, preset?.feature ?? 'copilot', { provider, system, messages: [...trimHistory(history), { role: 'user', content: [message, ...fenced].join('\n\n') }], maxTokens: 2000, images });
-    const answer = splitAnswer(out.text, new Set(pages.map((p) => p.slug)));
+    const answer = splitAnswer(out.text, new Set([...pages.map((p) => p.slug), ...passages.map((p) => `k:${p.id}`)])); // stored citations keep only ids
     // An empty answer (e.g. Gemini spent its budget thinking) is a provider failure: nothing is stored.
     if (!answer.content) throw new AiRefused('provider_error', `${provider === 'claude' ? 'Claude' : 'Gemini'} returned an empty answer.`);
 
-    // 9. One batch, every row sealed with the project's kind.
+    // 9. One batch, every row sealed with the thread's effective kind (KN2).
     const t = now();
     const th: AiThread = thread ? { ...(await open(env, 'ai_threads', { ...thread })), updated_at: t }
-      : { id: crypto.randomUUID(), project_id: projectId, title: message.slice(0, 60), provider, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
+      : { id: crypto.randomUUID(), project_id: projectId, kind: projectId ? null : newKind, title: message.slice(0, 60), provider, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
     const msg = (role: 'user' | 'assistant', content: string, extra: Partial<AiMessage>, at: string): AiMessage => ({
       id: crypto.randomUUID(), thread_id: th.id, role, provider: null, content, citations: [], proposals: null, cost_micro: 0, saved: 0, created_at: at, enc_v: 0, ...extra,
     });
@@ -134,8 +155,8 @@ ai.post('/chat', async (c) => {
     if (!thread) {
       const s = await seal(env, 'ai_threads', { ...th }, kind);
       th.enc_v = s.enc_v;
-      stmts.push(env.DB.prepare('INSERT INTO ai_threads (id, project_id, title, provider, created_at, updated_at, enc_v) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
-        .bind(s.id, s.project_id, s.title, s.provider, s.created_at, s.updated_at, s.enc_v));
+      stmts.push(env.DB.prepare('INSERT INTO ai_threads (id, project_id, kind, title, provider, created_at, updated_at, enc_v) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)')
+        .bind(s.id, s.project_id, s.kind, s.title, s.provider, s.created_at, s.updated_at, s.enc_v));
     }
     for (const m of fresh) {
       const s = await seal(env, 'ai_messages', { ...m, citations: JSON.stringify(m.citations), proposals: m.proposals ? JSON.stringify(m.proposals) : null }, kind);
@@ -185,6 +206,32 @@ ai.patch('/messages/:id', async (c) => {
   if (row.role !== 'assistant') return c.json({ error: 'Only answers can be saved' }, 400);
   await c.env.DB.prepare('UPDATE ai_messages SET saved = ?2 WHERE id = ?1').bind(row.id, b.saved).run();
   return c.json({ message: await toMessage(c.env, { ...row, saved: b.saved }) });
+});
+
+/**
+ * The knowledge passages an answer cites (`k:<chunk id>`), named at render time (so a title is never copied into the answer): document title, locator,
+ * and where to open it. A passage whose item, collection or file is gone (or, defensively, a work passage in a personal thread) is `removed`.
+ */
+ai.get('/messages/:id/sources', async (c) => {
+  const env = c.env;
+  const row = await env.DB.prepare('SELECT m.*, t.project_id AS t_project, t.kind AS t_kind FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE m.id = ?1 AND t.deleted_at IS NULL')
+    .bind(c.req.param('id')).first<MsgRow & { t_project: string | null; t_kind: Kind | null }>();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  const ids = (await toMessage(env, row)).citations.filter((x) => x.startsWith('k:')).map((x) => x.slice(2));
+  if (!ids.length) return c.json({ sources: [] });
+  const kind = (await threadAccess(env, row.t_project, row.t_kind))?.kind ?? 'personal';
+  const { results } = await env.DB.prepare(`SELECT c.id, c.locator, c.enc_v, c.item_id, c.collection_id, i.title, i.enc_v AS item_enc_v, i.document_id, k.scope
+    FROM knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_id JOIN knowledge_collections k ON k.id = c.collection_id LEFT JOIN documents d ON d.id = i.document_id
+    WHERE c.id IN (${ids.map((_, i) => `?${i + 1}`).join(',')}) AND i.deleted_at IS NULL AND k.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL))`)
+    .bind(...ids).all<{ id: string; locator: string; enc_v: number; item_id: string; collection_id: string; title: string; item_enc_v: number; document_id: string | null; scope: Kind }>();
+  const found = new Map(results.filter((r) => r.scope === 'personal' || kind === 'work').map((r) => [r.id, r]));
+  const sources = await Promise.all(ids.map(async (id) => {
+    const r = found.get(id);
+    if (!r) return { id: `k:${id}`, removed: true };
+    return { id: `k:${id}`, item_id: r.item_id, collection_id: r.collection_id, document_id: r.document_id,
+      title: (await open(env, 'knowledge_items', { title: r.title, enc_v: r.item_enc_v })).title, locator: (await open(env, 'knowledge_chunks', { locator: r.locator, enc_v: r.enc_v })).locator };
+  }));
+  return c.json({ sources }, 200, { 'Cache-Control': 'private, no-store' });
 });
 
 ai.get('/saved', async (c) => {

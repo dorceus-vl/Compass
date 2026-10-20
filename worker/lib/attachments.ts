@@ -5,16 +5,17 @@ type DocRef = { project_id: string | null; deleted_at: string | null; enc_v?: nu
 /**
  * `docs` holds each requested id's row (null when there is none). A document joins a thread only when it is live and either belongs to the thread's own project
  * or is unfiled while the thread has no project (so a work document never joins a personal thread, nor another project's file this one).
+ * An unfiled document is sealed (enc_v = 2: uploaded for work) or plain, and joins only a project-less thread of the same kind (KN2: `threadKind` is the effective kind).
  * `boundaries` maps project id to its boundary; a project missing from it is in Trash, and an Offline-only one never reaches a model.
  */
 export function checkAttachments(
-  ids: string[], docs: Record<string, DocRef | null>, threadProjectId: string | null, boundaries: Record<string, 'cloud' | 'offline' | undefined>,
+  ids: string[], docs: Record<string, DocRef | null>, threadProjectId: string | null, threadKind: 'work' | 'personal', boundaries: Record<string, 'cloud' | 'offline' | undefined>,
 ): 'ok' | 'too_many' | 'document_boundary' {
   if (new Set(ids).size > MAX_ATTACHMENTS) return 'too_many';
   for (const id of ids) {
     const d = docs[id];
     if (!d || d.deleted_at || d.project_id !== threadProjectId) return 'document_boundary';
-    if (d.project_id === null && d.enc_v === 2) return 'document_boundary'; // unfiled but sealed: uploaded for a work knowledge collection, so it is work (Phase 6)
+    if (d.project_id === null && (d.enc_v === 2) !== (threadKind === 'work')) return 'document_boundary'; // unfiled: sealed is work, plain is personal (Phase 6)
     if (d.project_id !== null && boundaries[d.project_id] !== 'cloud') return 'document_boundary';
   }
   return 'ok';

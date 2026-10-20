@@ -880,5 +880,74 @@ for x in $DAXO $DMENU $DZEB $DPANG $DPROJ; do curl "${H[@]}" -X DELETE $B/api/do
 [ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)")" = 200 ] || fail "Empty Trash after k1"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id IN ('$K1P','$K1O','$K1C','$K1L')")" = 0 ] || fail "k1 passages survived Empty Trash"
 rm -rf $KS
+# (k3) Knowledge, Task 3: Athena reads knowledge (KN2 thread kind, the allowed set, fenced k: passages, citations), "Save to knowledge" from a meeting and an email.
+KS=$(mktemp -d)
+mkdocx $KS/p.docx "The quokka$R picnic budget is forty dollars."
+mkdocx $KS/w.docx "The quokka$R vendor contract renews in June."
+mkdocx $KS/l.docx "The quokka$R merger terms stay Locked."
+K3WP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke k3 work","kind":"work"}' | js d.project.id) # a work project is Offline only by default
+K3P=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k3 personal","scope":"personal"}')" collection)
+K3C=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k3 cloud","scope":"work","boundary":"cloud"}')" collection)
+K3L=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k3 locked","scope":"work"}')" collection)
+D3P=$(kid "$(up "@$KS/p.docx;filename=p.docx;type=$DOCX")" document); D3W=$(kid "$(up "@$KS/w.docx;filename=w.docx;type=$DOCX" -F knowledge_work=1)" document); D3L=$(kid "$(up "@$KS/l.docx;filename=l.docx;type=$DOCX" -F knowledge_work=1)" document)
+I3P=$(kid "$(kitem $K3P $D3P)" item); I3W=$(kid "$(kitem $K3C $D3W)" item); I3L=$(kid "$(kitem $K3L $D3L)" item)
+kwait $K3P $I3P ready && kwait $K3C $I3W ready || fail "k3 items did not become ready"
+kc() { D1X "SELECT id AS n FROM knowledge_chunks WHERE item_id='$1'" | js 'd[0].results[0].n'; }
+CP=$(kc $I3P); CW=$(kc $I3W); CL=$(kc $I3L)
+# cited ids that belong to work collections (must be 0 in a personal thread)
+kwork() { D1X "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.scope='work' AND c.id IN ($(printf '%s' "$1" | js "d.messages[1].citations.filter(c=>c.startsWith('k:')).map(c=>\"'\"+c.slice(2)+\"'\").join(',')||\"''\""))" | js 'd[0].results[0].n'; }
+# a personal thread asking "all": only personal passages reach the stub, fenced as k: blocks, cited, the unsent id dropped
+A3=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"message\":\"quokka$R budget vendor merger\",\"knowledge\":{\"collections\":\"all\"}}")
+[ "$(printf '%s' "$A3" | js 'const m=d.messages[1]; m.content.includes("[stub passages: ")&&m.content.includes("k:'$CP'")&&!m.content.includes("k:'$CW'")&&!m.content.includes("k:'$CL'")&&m.citations.includes("k:'$CP'")&&!m.citations.includes("k:stub-not-sent")&&d.thread.kind===null')" = true ] || fail "personal thread + all: $A3"
+[ "$(kwork "$A3")" = 0 ] || fail "a work passage reached a personal thread"
+A3M=$(printf '%s' "$A3" | js 'd.messages[1].id')
+[ "$(curl "${H[@]}" $B/api/ai/messages/$A3M/sources | js 'const s=d.sources.find(x=>x.id==="k:'$CP'"); !!s&&s.title==="p.docx"&&s.locator==="part 1"&&s.document_id==="'$D3P'"&&!s.removed')" = true ] || fail "sources did not name the passage"
+# a project-less work thread: personal and Cloud AI work passages, never Locked; sealed as work
+A3W=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"quokka$R budget vendor merger\",\"knowledge\":{\"collections\":\"all\"}}")
+[ "$(printf '%s' "$A3W" | js 'const m=d.messages[1]; d.thread.kind==="work"&&m.citations.includes("k:'$CW'")&&m.citations.includes("k:'$CP'")&&!m.content.includes("k:'$CL'")&&!m.citations.includes("k:'$CL'")')" = true ] || fail "work thread + all: $A3W"
+A3WT=$(printf '%s' "$A3W" | js d.thread.id)
+[ "$(kn "SELECT count(*) AS n FROM ai_threads WHERE id='$A3WT' AND kind='work' AND enc_v=2 AND title NOT LIKE '%quokka%'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM ai_messages WHERE thread_id='$A3WT' AND enc_v=2 AND content NOT LIKE '%quokka%'")" = 2 ] || fail "a project-less work thread is not sealed as work"
+A3N=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"thread_id\":\"$A3WT\",\"message\":\"quokka$R vendor\",\"knowledge\":{\"collections\":[\"$K3C\"]}}")
+[ "$(printf '%s' "$A3N" | js 'd.messages[1].citations.includes("k:'$CW'")&&d.thread.kind==="work"')" = true ] || fail "the work thread kept its kind and read the named Cloud AI collection: $A3N"
+# refused before anything is stored or sent
+N0=$(NMSG); Q0=$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND output_tokens=0")
+kj -X POST $B/api/ai/chat -d "{\"message\":\"x\",\"knowledge\":{\"collections\":[\"$K3C\"]}}" | grep -q '"error":"knowledge_boundary"' || fail "a personal thread naming a work collection"
+KB=$(kj -X POST $B/api/ai/chat -d "{\"message\":\"x\",\"knowledge\":{\"collections\":[\"$K3C\"]}}"); [ "$(kst "$KB")" = 409 ] || fail "knowledge_boundary is not 409: $KB"
+kj -X POST $B/api/ai/chat -d "{\"thread_id\":\"$A3WT\",\"message\":\"x\",\"knowledge\":{\"collections\":[\"$K3L\"]}}" | grep -q '"error":"knowledge_boundary"' || fail "a work thread naming a Locked collection"
+[ "$(NMSG)" = "$N0" ] && [ "$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND output_tokens=0")" = "$Q0" ] || fail "a refused knowledge request stored or embedded something"
+[ "$(kst "$(kj -X POST $B/api/ai/chat -d "{\"project_id\":\"$K3WP\",\"kind\":\"work\",\"message\":\"x\"}")")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/ai/chat -d '{"kind":"team","message":"x"}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/ai/chat -d '{"message":"x","knowledge":{"collections":"some"}}')")" = 400 ] || fail "kind / knowledge validation"
+# attachments (Task 0 carry): a sealed unfiled upload joins a project-less work thread, never a personal one
+KA=$(kj -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"read\",\"document_ids\":[\"$D3W\"]}"); [ "$(kst "$KA")" = 200 ] || fail "a sealed upload in a project-less work thread: $(printf '%s' "$KA" | tail -c 300)"
+kj -X POST $B/api/ai/chat -d "{\"message\":\"read\",\"document_ids\":[\"$D3W\"]}" | grep -q '"error":"document_boundary"' || fail "a sealed upload in a personal thread"
+kj -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"read\",\"document_ids\":[\"$D3P\"]}" | grep -q '"error":"document_boundary"' || fail "a plain upload in a project-less work thread"
+# a cited item in Trash: its chip says Removed
+curl "${H[@]}" -X DELETE $B/api/knowledge/items/$I3P >/dev/null
+[ "$(curl "${H[@]}" $B/api/ai/messages/$A3M/sources | js 'd.sources.find(x=>x.id==="k:'$CP'").removed===true')" = true ] || fail "a trashed item's citation is not Removed"
+echo "smoke: (k3) personal thread + all -> personal passages only (fenced k: blocks, cited, unsent id dropped, named by /sources); project-less work thread (sealed) -> personal and Cloud AI work, never Locked; personal->work and work->Locked 409 knowledge_boundary with nothing stored or embedded; sealed uploads only in work threads; trashed item -> Removed"
+# Save to knowledge: a meeting (work) and an email (personal); ready after the embedder runs
+M3="{\"app\":\"sonarflow\",\"kind\":\"meeting\",\"title\":\"Smoke k3 meeting $R\",\"ref\":\"sonarflow:recording:k3$R\",\"payload\":{\"title\":\"Smoke k3 meeting\",\"summary\":\"The wombat rollout slips a week.\",\"decisions\":[{\"text\":\"Ship wombat in May\",\"at\":\"00:01\"}],\"action_items\":[],\"important_notes\":[],\"open_questions\":[]}}"
+post "$IDS" "$M3" >/dev/null; M3ID=$(curl "${H[@]}" $B/api/meetings | js "(d.meetings.find(m=>m.recording_id==='k3$R')||{}).id")
+kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3P\"}" | grep -q '"error":"knowledge_boundary"' || fail "a work meeting into a personal collection"
+SM=$(kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3C\"}"); [ "$(kst "$SM")" = 201 ] || fail "meeting into Cloud AI: $SM"; SMI=$(kid "$SM" item)
+kwait $K3C $SMI ready || fail "the meeting item did not become ready"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE id='$SMI' AND source='meeting' AND enc_v=2 AND title NOT LIKE '%Smoke%'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SMI' AND enc_v=2 AND embedded=1")" -ge 1 ] || fail "the meeting item is not sealed and embedded"
+ks "wombat+rollout" $K3C | grep -q 'wombat' || fail "the meeting minutes are not searchable"
+curl "${H[@]}" -X POST $B/api/meetings/$M3ID/accept -d "{\"project_id\":\"$K3WP\",\"tasks\":[],\"decisions\":[{\"text\":\"k3 decision\"}]}" | grep -q '"state":"reviewed"' || fail "k3 meeting accept"
+[ "$(curl "${H[@]}" $B/api/projects/$K3WP | js 'd.project.data_boundary')" = offline ] || fail "expected the work project to be Offline only"
+kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3C\"}" | grep -q '"error":"offline_boundary"' || fail "an Offline-only meeting into Cloud AI"
+SML=$(kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3L\"}"); [ "$(kst "$SML")" = 201 ] && [ "$(kbody "$SML" | js d.item.state)" = ready ] || fail "an Offline-only meeting into Locked: $SML"
+E3="{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke k3 email $R\",\"ref\":\"smoke:k3mail:$R\",\"body\":\"The platypus dinner moves to Friday.\",\"payload\":{\"from\":\"Ann\",\"account\":\"me@gmail.com\"}}"
+E3ID=$(post "$KELLY" "$E3" | js d.id)
+kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d "{\"collection_id\":\"$K3C\"}" | grep -q '"error":"knowledge_boundary"' || fail "a personal email into a work collection"
+SE=$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d "{\"collection_id\":\"$K3P\"}"); [ "$(kst "$SE")" = 201 ] || fail "email into personal: $SE"; SEI=$(kid "$SE" item)
+kwait $K3P $SEI ready || fail "the email item did not become ready"
+ks "platypus+dinner" $K3P | grep -q 'platypus' || fail "the email is not searchable"
+[ "$(kst "$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d '{}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-meeting/nope -d "{\"collection_id\":\"$K3C\"}")")" = 404 ] || fail "save validation"
+echo "smoke: (k3) meeting -> work only (409 personal), Cloud AI item sealed, embedded, ready, searchable; filed under an Offline-only project -> 409 offline_boundary for Cloud AI, Locked ok; personal email -> personal only, ready and searchable"
+for x in $K3P $K3C $K3L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
+for x in $D3P $D3W $D3L; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
+curl "${H[@]}" -X DELETE $B/api/projects/$K3WP >/dev/null
+[ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)")" = 200 ] || fail "Empty Trash after k3"
+rm -rf $KS
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

@@ -8,11 +8,16 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
 import { chunk, type Passage } from '../lib/chunk.ts';
-import { boundaryChange, compatible, needsStepUp, HOME, LIVE } from '../lib/knowledge.ts';
+import { boundaryChange, compatible, mayTake, needsStepUp, HOME, LIVE, type Scope } from '../lib/knowledge.ts';
 import { embedPending, hybridSearch, remove } from '../lib/vectors.ts';
 import { AiRefused } from '../lib/ai.ts';
 import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
+import { loadMeeting } from './meetings.ts';
+import { loadItem as loadInboxItem, emailText } from './inbox.ts';
+import { projectAccess } from '../lib/project-context.ts';
+import { minutesDoc } from '../../web/src/docs/templates.ts';
+import { toMarkdown } from '../../web/src/docs/to-md.ts';
 
 const knowledge = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -48,6 +53,12 @@ export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: 
   await audit(env, 'you', 'knowledge.item.add', id, { source: a.source, state, chunks: item.chunk_count });
   return item;
 }
+
+type Ctx = { env: Env; executionCtx: { waitUntil: (p: Promise<unknown>) => void } };
+/** addItem has no execution context: a fresh Cloud AI item starts the embedder here, so it is ready without waiting for the cron. */
+const kick = (c: Ctx, item: KnowledgeItem) => {
+  if (item.state === 'indexing') c.executionCtx.waitUntil(embedPending(c.env, 200, { item: item.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+};
 
 /** The passages of a stored document: its text extracted with the existing readers (a PDF per page, a Word file with its headings), then chunked. */
 async function passagesOf(kind: DocKind, bytes: Uint8Array): Promise<Passage[]> {
@@ -165,8 +176,46 @@ knowledge.post('/items', async (c) => {
   if (doc.kind === 'png' || doc.kind === 'jpg') error = 'Images are not read yet.';
   else try { passages = await passagesOf(doc.kind, bytes); } catch { error = 'That file could not be read.'; }
   const item = await addItem(c.env, coll, { source: 'upload', title: doc.name, document_id: doc.id, passages, error });
-  if (item.state === 'indexing') c.executionCtx.waitUntil(embedPending(c.env, 200, { item: item.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+  kick(c, item);
   return c.json({ item }, 201);
+});
+
+/** Text that is not a document: the collection must be of the text's side, and Offline-only content goes only into a Locked collection (checked before addItem: such an item has no project link the embedder could follow). */
+async function addText(c: Ctx & { json: (b: unknown, s?: ContentfulStatusCode) => Response }, collectionId: unknown, side: { scope: Scope; offline: boolean } | null, a: { source: 'meeting' | 'email'; title: string; text: string; kind: 'md' | 'txt' }) {
+  if (typeof collectionId !== 'string') return c.json({ error: 'collection_id is required' }, 400);
+  const coll = await loadCollection(c.env, collectionId);
+  if (!coll || !side) return c.json({ error: 'Not found' }, 404);
+  if (coll.system) return c.json({ error: 'knowledge_boundary', message: 'That collection is filled by your apps.' }, 409);
+  const v = mayTake(coll, side);
+  if (v === 'knowledge_boundary') return c.json({ error: v, message: side.scope === 'work' ? 'This is work: only a work collection can take it.' : 'This is personal: only a personal collection can take it.' }, 409);
+  if (v === 'offline_boundary') return c.json({ error: v, message: 'Its project is Offline only, so only a Locked collection can take it.' }, 409);
+  const item = await addItem(c.env, coll, { source: a.source, title: a.title, document_id: null, passages: chunk(a.text, a.kind) });
+  kick(c, item);
+  return c.json({ item }, 201);
+}
+
+/** A meeting review's minutes (the same Markdown as the Minutes button). A meeting is work unless it is filed under a personal project. */
+knowledge.post('/items/from-meeting/:id', async (c) => {
+  const b = await body(c);
+  const m = await loadMeeting(c.env, c.req.param('id'));
+  const access = m ? await projectAccess(c.env, m.project_id) : null; // a project in Trash: not found
+  const side = m && access ? { scope: m.project_id ? access.kind : 'work' as Scope, offline: access.boundary === 'offline' } : null;
+  let project: string | null = null;
+  if (m?.project_id && access) {
+    const p = await c.env.DB.prepare('SELECT name, enc_v FROM projects WHERE id = ?1').bind(m.project_id).first<{ name: string; enc_v: number }>();
+    project = p ? (await open(c.env, 'projects', p)).name : null;
+  }
+  return addText(c, b.collection_id, side, { source: 'meeting', title: m?.title ?? '', text: m ? toMarkdown(minutesDoc(m, project)) : '', kind: 'md' });
+});
+
+/** A forwarded or relayed email: subject and body. Work when `work = 1`; Offline only when the task it became sits in an Offline-only project. */
+knowledge.post('/items/from-inbox/:id', async (c) => {
+  const b = await body(c);
+  const item = await loadInboxItem(c.env, c.req.param('id'));
+  if (item && item.kind !== 'email') return c.json({ error: 'Only an email can be saved to knowledge' }, 400);
+  const off = item?.task_id ? await c.env.DB.prepare(`SELECT 1 FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?1 AND p.data_boundary = 'offline'`).bind(item.task_id).first() : null;
+  const side = item ? { scope: (item.work ? 'work' : 'personal') as Scope, offline: !!off } : null;
+  return addText(c, b.collection_id, side, { source: 'email', title: item?.title ?? '', text: item ? `${item.title}\n\n${emailText(item)}` : '', kind: 'txt' });
 });
 
 knowledge.delete('/items/:id', async (c) => {

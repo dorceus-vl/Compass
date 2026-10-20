@@ -11,6 +11,7 @@ import { toMarkdown } from '../docs/to-md.ts';
 import { accent } from '../ui/colors.ts';
 import { useReducedMotion } from '../motion.ts';
 import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
+import { SaveToKnowledge } from '../ui/KnowledgePick.tsx';
 
 interface Act { on: boolean; text: string; owner: string; due: string; at: string }
 interface Pick { on: boolean; text: string; at: string }
@@ -125,6 +126,7 @@ export function MeetingView({ id }: { id: string }) {
   const card = (color: string, on: boolean, i: number, more = '') => ({ className: `acard mcard${more}${out && on ? ' out' : ''}`, style: { ...accent(color), ['--i' as string]: i } as CSSProperties });
   const h2 = { fontSize: 16, margin: '22px 0 10px' } as const;
   const minutes = () => minutesDoc(m, projects.find((x) => x.id === (m.project_id ?? project))?.name ?? null);
+  const filed = m.project_id ? projects.find((x) => x.id === m.project_id) ?? null : null;
   const minutesName = fileName('Minutes', m.title, m.received_at.slice(0, 10));
   const minutesWord = async () => {
     try { const { toDocx } = await import('../docs/to-docx.ts'); saveBytes(await toDocx(minutes()), `${minutesName}.docx`, DOCX_TYPE); }
@@ -183,6 +185,9 @@ export function MeetingView({ id }: { id: string }) {
       <div className="row doc-actions">
         <button type="button" className="btn" onClick={() => void minutesWord()}>Word</button>
         <button type="button" className="btn" onClick={() => saveText(toMarkdown(minutes()), `${minutesName}.md`)}>Markdown</button>
+        {/* A meeting is work unless it is filed under a personal project; an Offline-only project's minutes go only into a Locked collection (the server checks again). */}
+        <SaveToKnowledge label="Add the notes to knowledge" disabled={off} title={tip} side={{ scope: filed?.kind ?? 'work', lockedOnly: filed?.data_boundary === 'offline' }}
+          save={(collection_id) => api(`/knowledge/items/from-meeting/${m.id}`, { method: 'POST', json: { collection_id } })} />
         <small className="sub">The meeting as it was received: summary, decisions, actions, questions and notes.</small>
       </div>
 

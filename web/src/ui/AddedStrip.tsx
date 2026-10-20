@@ -9,6 +9,8 @@ import { sourceColor, accent } from './colors.ts';
 import { useSwipe } from './useSwipe.ts';
 import { SectionHead } from './SectionHead.tsx';
 import { SplitSheet } from './SplitSheet.tsx';
+import { SaveToKnowledge } from './KnowledgePick.tsx';
+import { api } from '../api.ts';
 
 type Inbox = ReturnType<typeof useInbox>;
 
@@ -53,6 +55,8 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
               {btn('Snooze', () => void inbox.snooze(item.id))}
               {btn('Dismiss', () => void inbox.dismiss(item.id))}
             </>}
+            {item.kind === 'email' && <SaveToKnowledge className="" disabled={off} title={tip} side={{ scope: item.work ? 'work' : 'personal' }}
+              save={(collection_id) => api(`/knowledge/items/from-inbox/${item.id}`, { method: 'POST', json: { collection_id } })} />}
             {link && <a href={link} target="_blank" rel="noopener noreferrer">Source ↗</a>}
           </div>
         </div>

@@ -1,6 +1,7 @@
 import type { Env } from '../types.ts';
 import type { Kind, Project, Milestone, Task, RaidItem, ChangeRequest, Decision, Lesson } from '../../shared/types.ts';
 import { open, openAll } from './enc.ts';
+import { effectiveKind } from './knowledge.ts';
 
 type Review = { title: string; summary: string | null; received_at: string; enc_v: number };
 
@@ -9,6 +10,12 @@ export async function projectAccess(env: Env, projectId: string | null): Promise
   if (!projectId) return { boundary: 'cloud', kind: 'personal' };
   const r = await env.DB.prepare('SELECT data_boundary, kind FROM projects WHERE id = ?1 AND deleted_at IS NULL').bind(projectId).first<{ data_boundary: 'cloud' | 'offline'; kind: Kind }>();
   return r ? { boundary: r.data_boundary, kind: r.kind } : null;
+}
+
+/** KN2: a thread's boundary (its project's) and the kind it is sealed with (its project's kind, else the thread's own kind, else personal). */
+export async function threadAccess(env: Env, projectId: string | null, threadKind: Kind | null): Promise<{ boundary: 'cloud' | 'offline'; kind: Kind } | null> {
+  const a = await projectAccess(env, projectId);
+  return a && { boundary: a.boundary, kind: effectiveKind(projectId ? a.kind : null, threadKind) };
 }
 
 /** Where a project's data may go: null project → cloud; unknown or trashed project → null. */

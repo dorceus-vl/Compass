@@ -38,7 +38,7 @@ async function saveItemStmt(env: Env, item: InboxItem, cols: string[]): Promise<
   return env.DB.prepare(`UPDATE inbox_items SET ${all.map((k, i) => `${k} = ?${i + 2}`).join(', ')} WHERE id = ?1`)
     .bind(item.id, ...all.map((k) => (s as Record<string, unknown>)[k] ?? null));
 }
-async function loadItem(env: Env, id: string): Promise<InboxItem | null> {
+export async function loadItem(env: Env, id: string): Promise<InboxItem | null> {
   const row = await env.DB.prepare('SELECT * FROM inbox_items WHERE id = ?1').bind(id).first<InboxItem>();
   return row ? open(env, 'inbox_items', row) : null;
 }
@@ -286,7 +286,7 @@ const projectIdOf = (b: unknown): string | null | undefined => {
   return v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : undefined; // undefined: not a string
 };
 /** The email's full text when we kept it (forwarded mail keeps up to 20 000 characters in the payload), else its short body. */
-const emailText = (item: InboxItem): string => {
+export const emailText = (item: InboxItem): string => {
   let p: { text?: unknown } | null = null;
   try { p = item.payload ? JSON.parse(item.payload) : null; } catch { /* not JSON */ }
   return (typeof p?.text === 'string' ? p.text : item.body ?? '').slice(0, 12_000);

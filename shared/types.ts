@@ -117,7 +117,8 @@ export interface ProposedTask { title: string; horizon: Horizon; due_at: string 
 export interface SplitProposal { title: string; due_at: string | null; horizon: Horizon; notes: string | null }
 export interface ProposedRaid { type: RaidType; text: string; probability: number | null; impact: number | null }
 export interface Proposals { tasks: ProposedTask[]; raid: ProposedRaid[]; decisions: { text: string }[] }
-export interface AiThread { id: string; project_id: string | null; title: string; provider: Provider; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
+/** `kind` (KN2) is set only on a project-less thread ('work' from "No project (work)"); null means the project's kind, or personal without one. It never changes. */
+export interface AiThread { id: string; project_id: string | null; kind: Kind | null; title: string; provider: Provider; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
 export interface AiMessage {
   id: string; thread_id: string; role: 'user' | 'assistant'; provider: Provider | null; content: string; citations: string[];
   proposals: Proposals | null; cost_micro: number; saved: number; created_at: string; enc_v: number;

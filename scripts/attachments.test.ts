@@ -6,7 +6,7 @@ import { withAttachments, splitAttachments } from '../shared/attachments.ts';
 
 const live = (project_id: string | null) => ({ project_id, deleted_at: null });
 const cloud = { P1: 'cloud', P2: 'cloud', OFF: 'offline' } as const;
-const ok = (ids: string[], docs: Record<string, ReturnType<typeof live> | null>, thread: string | null) => checkAttachments(ids, docs, thread, { ...cloud });
+const ok = (ids: string[], docs: Record<string, ReturnType<typeof live> | null>, thread: string | null, kind: 'work' | 'personal' = 'personal') => checkAttachments(ids, docs, thread, kind, { ...cloud });
 
 assert.equal(ok(['a'], { a: live('P1') }, 'P1'), 'ok', "a document of the thread's project");
 assert.equal(ok(['a'], { a: live(null) }, null), 'ok', 'unfiled while the thread is personal');
@@ -16,6 +16,10 @@ assert.equal(ok(['a', 'a', 'a', 'a'], { a: live('P1') }, 'P1'), 'ok', 'the same 
 assert.equal(ok(['a', 'b', 'c', 'd'], { a: live('P1'), b: live('P1'), c: live('P1'), d: live('P1') }, 'P1'), 'too_many');
 assert.equal(ok(['a'], { a: { ...live(null), enc_v: 2 } }, null), 'document_boundary', 'unfiled but sealed (a work knowledge upload) never joins a thread');
 assert.equal(ok(['a'], { a: { ...live(null), enc_v: 0 } }, null), 'ok', 'unfiled and plain');
+// KN2: a project-less work thread reads the sealed unfiled uploads (work), and never a plain one; a personal thread the reverse.
+assert.equal(ok(['a'], { a: { ...live(null), enc_v: 2 } }, null, 'work'), 'ok', 'a sealed unfiled upload in a project-less work thread');
+assert.equal(ok(['a'], { a: { ...live(null), enc_v: 0 } }, null, 'work'), 'document_boundary', 'a plain unfiled file in a project-less work thread');
+assert.equal(ok(['a'], { a: { ...live(null), enc_v: 2 } }, 'P1', 'work'), 'document_boundary', "a sealed unfiled upload never joins a project's thread");
 assert.equal(ok(['a'], { a: live('P2') }, 'P1'), 'document_boundary', "another project's document");
 assert.equal(ok(['a'], { a: live('P1') }, null), 'document_boundary', 'a project document never joins a personal thread');
 assert.equal(ok(['a'], { a: live(null) }, 'P1'), 'document_boundary', "an unfiled document does not join a project's thread");

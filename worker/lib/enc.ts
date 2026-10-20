@@ -22,7 +22,7 @@ export const ENC_COLS = {
   knowledge_chunks: ['text', 'locator'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
-type Row = { enc_v?: number; kind?: string }; // typed rows (Project, Milestone) have no index signature
+type Row = { enc_v?: number; kind?: string | null }; // typed rows (Project, Milestone) have no index signature
 type Cols = Record<string, unknown>;
 
 /** Encrypts the table's text columns when the row (or the given kind) is work. Mutates and returns the row. */

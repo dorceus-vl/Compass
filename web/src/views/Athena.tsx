@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
-import type { AiMessage, AiThread, DocumentRow, Project, Provider, Settings } from '../../../shared/types.ts';
+import type { AiMessage, AiThread, DocumentRow, Kind, Project, Provider, Settings } from '../../../shared/types.ts';
 import { PRESETS, type PresetId } from '../../../shared/presets.ts';
 import { api, ApiError, online, SignedOut } from '../api.ts';
 import { ask, loadThread, loadThreads, loadSaved, loadUsage, saveMessage, providerReady, spend, usd, words, type Usage, type SavedMessage } from '../copilot.ts';
@@ -19,6 +19,7 @@ import { fmtDue, today } from '../dates.ts';
 import { athenaGreeting, dueItems } from '../athena-greeting.ts';
 import { AthenaAvatar, type AthenaState } from '../ui/AthenaAvatar.tsx';
 import { micSupported, primeAudio, speakAnswer, stopSpeech, useAthenaVoice, useMic, useSpeech, type MicPhase } from '../athena-voice.ts';
+import { SaveToKnowledge, collLabel, useCollections } from '../ui/KnowledgePick.tsx';
 
 const NAME: Record<Provider, string> = { claude: 'Claude', gemini: 'Gemini' };
 const OTHER: Record<Provider, Provider> = { claude: 'gemini', gemini: 'claude' };
@@ -37,17 +38,17 @@ function Threads({ projectId, openId, onOpen, rev }: { projectId?: string; openI
   const [threads, set] = useState<AiThread[] | null>(null);
   const [filter, setFilter] = useState('all');
   useEffect(() => { loadThreads(projectId).then(set).catch(() => set([])); }, [projectId, rev]);
-  const name = (id: string | null) => (id ? projects.find((p) => p.id === id)?.name ?? 'Project' : 'Personal');
+  const name = (t: AiThread) => (t.project_id ? projects.find((p) => p.id === t.project_id)?.name ?? 'Project' : t.kind === 'work' ? 'Work, no project' : 'Personal');
   const shown = (threads ?? []).filter((t) => filter === 'all' || (filter === 'none' ? !t.project_id : t.project_id === filter));
   return (
     <div className="cp-threads">
       {!projectId && <select className="field" aria-label="Filter by project" value={filter} onChange={(e) => setFilter(e.target.value)}>
-        <option value="all">All projects</option><option value="none">Personal (no project)</option>
+        <option value="all">All projects</option><option value="none">No project</option>
         {projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
       {threads && !shown.length && <p className="sub" style={{ margin: 0 }}>No conversations yet.</p>}
       {shown.map((t) => (
         <button type="button" key={t.id} className="cp-item" aria-current={openId === t.id ? 'true' : undefined} onClick={() => onOpen(t.id)}>
-          <b>{t.title}</b><small>{projectId ? '' : `${name(t.project_id)} · `}{when(t.updated_at)}</small>
+          <b>{t.title}</b><small>{projectId ? '' : `${name(t)} · `}{when(t.updated_at)}</small>
         </button>))}
     </div>
   );
@@ -174,15 +175,38 @@ const readAloud = (id: string, playing: boolean) => {
   speakAnswer(id).catch(voiceErr);
 };
 
+/** A knowledge citation as the server names it now (never copied into the answer); `removed` when its item, collection or file is gone. */
+type Source = { id: string; removed?: boolean; title?: string; locator?: string; collection_id?: string; document_id?: string | null };
+function useSources(id: string, on: boolean) {
+  const [s, set] = useState<Source[] | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    api<{ sources: Source[] }>(`/ai/messages/${id}/sources`).then((r) => live && set(r.sources)).catch(() => {}); // offline: the chips stay generic
+    return () => { live = false; };
+  }, [id, on]);
+  return s;
+}
+function KnowledgeChip({ s }: { s: Source | undefined }) {
+  if (!s) return <span className="chip cite"><Icon name="knowledge" />Knowledge</span>;
+  if (s.removed) return <span className="chip cite gone" title="This passage's item was removed from knowledge"><Icon name="knowledge" />Removed</span>;
+  const label = <><Icon name="knowledge" />{s.title} · {s.locator}</>;
+  return s.document_id ? <a className="chip cite" href={`/api/documents/${s.document_id}/file`} target="_blank" rel="noopener">{label}</a>
+    : <Link to={`/knowledge/${s.collection_id}`} className="chip cite">{label}</Link>;
+}
+
 function Answer({ m, project, onSave, onOther, onShorter }: { m: AiMessage; project: Project | null; onSave: () => void; onOther: false | (() => void); onShorter: false | (() => void) }) {
   const { pages } = useLibrary();
   const speech = useSpeech(), mine = speech?.id === m.id;
+  const lib = m.citations.filter((c) => !c.startsWith('k:')), kn = m.citations.filter((c) => c.startsWith('k:'));
+  const sources = useSources(m.id, kn.length > 0);
   const p = m.provider ?? 'claude';
   return (
     <article className="card cp-msg ath-msg" aria-label={`Answer from ${NAME[p]}`}>
       <div className="ath-who"><span className="ath-av" aria-hidden="true">A</span>Athena</div>
       <Markdown text={m.content} />
-      {m.citations.length > 0 && <div className="row">{m.citations.map((s) => <Link key={s} to={`/library/${s}`} className="chip cite"><Icon name="library" />{pages.find((x) => x.slug === s)?.title ?? s}</Link>)}</div>}
+      {m.citations.length > 0 && <div className="row">{lib.map((s) => <Link key={s} to={`/library/${s}`} className="chip cite"><Icon name="library" />{pages.find((x) => x.slug === s)?.title ?? s}</Link>)}
+        {kn.map((k) => <KnowledgeChip key={k} s={sources?.find((x) => x.id === k)} />)}</div>}
       {m.proposals && <ProposalsPanel m={m} project={project} />}
       <div className="row ath-tools" role="group" aria-label="Answer tools">
         <button type="button" className="ath-tool" onClick={() => void copy(m)}>Copy</button>
@@ -230,16 +254,23 @@ const MAX_FILES = 3;
 type Att = { id: string; name: string };
 type Err = { message: string; again: 'send' | Provider };
 type Run = { message: string; preset?: PresetId; docs: Att[]; shorter?: boolean };
+/** The project picker's "No project (work)": a project-less thread created as work (KN2). */
+const WORK = 'work:none';
+/** KN11: what the Knowledge screen's "Ask Athena about this" hands over (`?knowledge=<collection id|all>&q=`). */
+export type Seed = { knowledge: string; q: string };
+type Picked = null | 'all' | string[];
 
-function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onBusy, onMic }: {
-  id: string | null; projectId?: string; page?: string; usage: Usage | null; speakOn: boolean; onOpen: (id: string | null, replace?: boolean) => void;
+function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSent, onBusy, onMic }: {
+  id: string | null; projectId?: string; page?: string; seed?: Seed; usage: Usage | null; speakOn: boolean; onOpen: (id: string | null, replace?: boolean) => void;
   onSent: (answerId?: string) => void; onBusy: (b: boolean) => void; onMic: (p: MicPhase) => void;
 }) {
   const { projects } = useStore();
   const [thread, setThread] = useState<AiThread | null>(null);
   const [msgs, setMsgs] = useState<AiMessage[]>([]);
   const [missing, setMissing] = useState(false);
-  const [text, setText] = useState(() => prefill || (page ? `About [[${page}]]: ` : ''));
+  const [text, setText] = useState(() => prefill || seed?.q || (page ? `About [[${page}]]: ` : ''));
+  const [kn, setKn] = useState<Picked>(() => (seed?.knowledge ? (seed.knowledge === 'all' ? 'all' : [seed.knowledge]) : null));
+  const colls = useCollections();
   useEffect(() => {
     prefill = ''; // taken by the initial state above
     const take = () => { if (prefill) { setText(prefill); prefill = ''; } };
@@ -286,8 +317,22 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
   // After a send, bring the newest thing (the question, the typing dots, the answer) to the top of the view; loading a thread does not scroll.
   useEffect(() => { if (follow.current) box.current?.lastElementChild?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); }, [msgs.length, pending, err, off]);
 
-  const projSel = projectId ?? (thread ? thread.project_id ?? '' : sel);
+  const projSel = projectId ?? (thread ? thread.project_id ?? '' : sel === WORK ? '' : sel);
   const project = projects.find((p) => p.id === projSel) ?? null;
+  // KN2: the effective kind (the project's, else the thread's own, else what the picker says); the server decides again.
+  const kind: Kind = project?.kind ?? (thread ? thread.kind ?? 'personal' : !projectId && sel === WORK ? 'work' : 'personal');
+  const newKind = !thread && !projectId && sel === WORK ? 'work' as const : undefined;
+  // Collections Athena may read here: personal ones always, Cloud AI work ones in a work conversation; Locked never.
+  const allowed = (colls ?? []).filter((c) => c.boundary === 'cloud' && (c.scope === 'personal' || kind === 'work'));
+  const knowledge = kn === null ? undefined : { collections: kn === 'all' ? 'all' as const : kn.filter((x) => allowed.some((c) => c.id === x)) };
+  const seeded = useRef(seed?.knowledge);
+  useEffect(() => { // a work collection handed over by the Knowledge screen needs a work conversation
+    if (!colls || !seeded.current) return;
+    const c = colls.find((x) => x.id === seeded.current);
+    seeded.current = undefined;
+    if (c?.scope === 'work' && !projectId && !cur.current) setSel(WORK);
+  }, [colls, projectId]);
+  const toggle = (cid: string) => setKn((k) => { const list = k === 'all' || !k ? [] : k; const next = list.includes(cid) ? list.filter((x) => x !== cid) : [...list, cid]; return next.length ? next : 'all'; });
   const projSelRef = useRef(projSel); projSelRef.current = projSel;
   const prov = providerReady(usage, provider) ? provider : OTHER[provider];
   const card = CARDS.find((c) => c.id === preset);
@@ -312,8 +357,8 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
     setOff(null); setBusy(true); setPending({ text: r.message, docs: r.docs }); setLive('Athena is answering…');
     try {
       const a = await ask(r.shorter
-        ? { thread_id: thread!.id, provider: prov, message: r.message }
-        : { thread_id: thread?.id, project_id: thread ? undefined : projSel || undefined, provider: prov, message: r.message, preset: r.preset, page: thread ? undefined : page, ...(r.docs.length ? { document_ids: r.docs.map((d) => d.id) } : {}) });
+        ? { thread_id: thread!.id, provider: prov, message: r.message, knowledge }
+        : { thread_id: thread?.id, project_id: thread ? undefined : projSel || undefined, kind: newKind, provider: prov, message: r.message, preset: r.preset, page: thread ? undefined : page, knowledge, ...(r.docs.length ? { document_ids: r.docs.map((d) => d.id) } : {}) });
       cur.current = a.thread.id;
       setThread(a.thread); setMsgs((x) => [...x, ...a.messages]); setMissing(false);
       if (!r.shorter) { setText(''); setPreset(null); setAtt([]); }
@@ -329,7 +374,7 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
     if (!thread || busy) return;
     setErr(null); setBusy(true); follow.current = true; setLive('Athena is answering…');
     if (speakOn) { stopSpeech(); primeAudio(); }
-    try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true }); setMsgs((x) => [...x, ...r.messages]); onSent(r.messages.at(-1)?.id); setLive('Answer ready'); }
+    try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true, knowledge }); setMsgs((x) => [...x, ...r.messages]); onSent(r.messages.at(-1)?.id); setLive('Answer ready'); }
     catch (e) { fail(e, p); }
     finally { setBusy(false); refocus(); }
   };
@@ -338,7 +383,7 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
     catch (e) { toast((e as Error).message); }
   };
 
-  // Files go through the documents upload (filed to this project, or unfiled while the thread is personal) and come back as chips.
+  // Files go through the documents upload (filed to this project, or unfiled: plain in a personal thread, sealed in a project-less work thread) and come back as chips.
   const attach = async (list: FileList | File[] | null | undefined) => {
     const files = list ? [...list] : [];
     if (!files.length || up) return;
@@ -348,7 +393,7 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
     if (projSel.startsWith('tmp-')) { setAttErr("This project isn't on the server yet. Try again in a moment."); return; }
     const room = MAX_FILES - att.length;
     if (room <= 0 || files.length > room) setAttErr(`Athena reads up to ${MAX_FILES} files in a message.`);
-    const limit = project?.kind === 'work' ? 10 : 20;
+    const limit = kind === 'work' ? 10 : 20;
     setUp(true); setLive('Attaching…');
     try {
       for (const f of files.slice(0, Math.max(room, 0))) {
@@ -356,6 +401,7 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
         const fd = new FormData();
         fd.append('file', f);
         if (projSel) fd.append('project_id', projSel);
+        else if (kind === 'work') fd.append('knowledge_work', '1'); // sealed like a work file
         const { document: d } = await api<{ document: DocumentRow }>('/documents', { method: 'POST', body: fd });
         setAtt((x) => [...x, { id: d.id, name: d.name }]);
         setLive(`${d.name} attached`);
@@ -363,6 +409,7 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
     } catch (e) { if (!(e instanceof SignedOut)) setAttErr((e as Error).message); }
     finally { setUp(false); }
   };
+  const saveDoc = (collection_id: string, document_id: string) => api('/knowledge/items', { method: 'POST', json: { collection_id, document_id } });
   const drop = (e: DragEvent) => { e.preventDefault(); setOver(false); void attach(e.dataTransfer.files); };
 
   if (missing) return <div className="card"><p style={{ margin: 0 }}>This conversation isn't available. <Link to="/athena">Back to Athena</Link></p></div>;
@@ -378,22 +425,35 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); } }} />
         {(att.length > 0 || up) && <div className="row" aria-label="Attached files">
           {att.map((a) => <span key={a.id} className="chip file">{a.name}
+            <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind }} save={(cid) => saveDoc(cid, a.id)} />
             <button type="button" className="x" aria-label={`Remove ${a.name}`} onClick={() => setAtt((x) => x.filter((y) => y.id !== a.id))}>✕</button></span>)}
           {up && <span className="chip file" role="status">Attaching…</span>}</div>}
         {attErr && <small className="sub ath-err" role="alert">{attErr}</small>}
         <div className="row ath-meta">
           {projectId || thread
             ? <div className="chip cp-lock" aria-label="Project">
-                <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? 'None (personal)'}</b>
+                <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? (kind === 'work' ? 'No project (work)' : 'None (personal)')}</b>
                 <small>{thread ? 'stays with this conversation' : 'this project'}</small></div>
-            : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={projSel} disabled={up}
+            : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={sel} disabled={up}
                 onChange={(e) => { setSel(e.target.value); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
-                <option value="">None (personal)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
+                <option value="">None (personal)</option><option value={WORK}>No project (work)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
+          <button type="button" className={`chip ath-more ath-kn${kn ? ' on' : ''}`} aria-pressed={!!kn} aria-expanded={!!kn} aria-controls="ath-kn"
+            disabled={project?.data_boundary === 'offline'} onClick={() => setKn(kn ? null : 'all')}><Icon name="knowledge" />Use knowledge</button>
           <div className="seg" role="group" aria-label="Provider">
             {(['claude', 'gemini'] as const).map((p) => <button type="button" key={p} className={prov === p ? 'on' : ''} aria-pressed={prov === p} disabled={!providerReady(usage, p)}
               onClick={() => { picked.current = true; setProvider(p); }}>{NAME[p]}</button>)}</div>
         </div>
         {(['claude', 'gemini'] as const).some((p) => !providerReady(usage, p)) && <small className="sub">Not set up: see Settings → AI ({(['claude', 'gemini'] as const).filter((p) => !providerReady(usage, p)).map((p) => NAME[p]).join(', ')})</small>}
+        {kn && <div id="ath-kn" className="ath-knp" role="group" aria-label="Knowledge Athena reads">
+          <div className="row">
+            <button type="button" className={`chip ath-more${kn === 'all' ? ' on' : ''}`} aria-pressed={kn === 'all'} onClick={() => setKn('all')}>All I'm allowed ({allowed.length})</button>
+            {allowed.map((c) => { const on = kn !== 'all' && kn.includes(c.id); return (
+              <button type="button" key={c.id} className={`chip ath-more${on ? ' on' : ''}`} aria-pressed={on} title={collLabel(c)} onClick={() => toggle(c.id)}>{c.name}</button>); })}
+          </div>
+          <small className="sub">{colls === null ? 'Loading collections…' : kind === 'work'
+            ? 'A work conversation reads personal and Cloud AI work collections. Locked collections never reach a model.'
+            : 'A personal conversation reads personal collections only. Pick "No project (work)" or a work project to use work knowledge.'}</small>
+        </div>}
         {project?.data_boundary === 'offline' && <small className="sub">Offline only: Send searches Compass instead of asking a model.</small>}
         <div className="ath-crow">
           <div className="ath-types" aria-label="Files Athena reads">{TYPES.map((t) => <span key={t}>{t}</span>)}</div>
@@ -430,12 +490,13 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
       <section aria-label="Athena's answer" className="ath-answer">
         <div className="row cp-top">
           <div className="eyebrow">Athena's answer</div>
-          {thread && <><span className="ath-title">{thread.title}</span><span className="chip">{thread.project_id ? projects.find((p) => p.id === thread.project_id)?.name ?? 'Project' : 'Personal'}</span></>}
+          {thread && <><span className="ath-title">{thread.title}</span><span className="chip">{thread.project_id ? projects.find((p) => p.id === thread.project_id)?.name ?? 'Project' : thread.kind === 'work' ? 'Work, no project' : 'Personal'}</span></>}
         </div>
         <div className="cp-msgs" ref={box}>
           {!id && !thread && !pending && !off && <Greeting projectId={projectId} projectName={projectId ? project?.name : undefined} />}
           {msgs.map((m, i) => { const s = m.role === 'user' ? splitAttachments(m.content) : null; return s
-            ? <div key={m.id} className="cp-user">{s.text}{s.attachments.length > 0 && <div className="row">{s.attachments.map((a) => <span key={a.id} className="chip file">{a.name}</span>)}</div>}</div>
+            ? <div key={m.id} className="cp-user">{s.text}{s.attachments.length > 0 && <div className="row">{s.attachments.map((a) => <span key={a.id} className="chip file">{a.name}
+                <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind }} save={(cid) => saveDoc(cid, a.id)} /></span>)}</div>}</div>
             : <Answer key={m.id} m={m} project={project} onSave={() => void save(m)}
                 onShorter={i === lastAnswer && !busy && lastUser >= 0 && (() => void run({ message: SHORTER, docs: [], shorter: true }))}
                 onOther={i === lastAnswer && !busy && lastUser >= 0 && providerReady(usage, OTHER[m.provider ?? 'claude'])
@@ -467,8 +528,8 @@ function Stage({ state, onStop }: { state: AthenaState; onStop?: () => void }) {
   );
 }
 
-export function Workspace({ projectId, openId, onOpen, page, usage, refreshUsage }: {
-  projectId?: string; openId: string | null; onOpen: (id: string | null, replace?: boolean) => void; page?: string; usage: Usage | null; refreshUsage: () => void;
+export function Workspace({ projectId, openId, onOpen, page, seed, usage, refreshUsage }: {
+  projectId?: string; openId: string | null; onOpen: (id: string | null, replace?: boolean) => void; page?: string; seed?: Seed; usage: Usage | null; refreshUsage: () => void;
 }) {
   const [rev, setRev] = useState(0);
   const [thinking, setThinking] = useState(false);
@@ -494,7 +555,7 @@ export function Workspace({ projectId, openId, onOpen, page, usage, refreshUsage
     <div className={`ath${projectId ? ' ath-project' : ''}`}>
       {!projectId && <Stage state={state} onStop={speech || speaking ? hush : undefined} />}
       <div className="ath-main">
-        <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} usage={usage} speakOn={speakOn} onOpen={onOpen} onBusy={setThinking} onMic={setMic}
+        <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} seed={seed} usage={usage} speakOn={speakOn} onOpen={onOpen} onBusy={setThinking} onMic={setMic}
           onSent={(answerId) => { setRev((x) => x + 1); refreshUsage(); answered(answerId); }} />
         <details className="ath-threads" open={!!projectId || undefined}>
           <summary>Conversations{n ? ` (${n})` : ''}</summary>
@@ -525,12 +586,19 @@ function SpeakSwitch() {
 export function AthenaView({ id }: { id?: string }) {
   const { usage, refresh } = useUsage();
   const page = new URLSearchParams(location.search).get('page') ?? undefined;
+  // KN11: "Ask Athena about this" (Knowledge screen) hands over the collection and the question; read once, then cleared from the URL.
+  const [seed] = useState<Seed | undefined>(() => { const p = new URLSearchParams(location.search); return p.has('knowledge') || p.has('q') ? { knowledge: p.get('knowledge') ?? '', q: (p.get('q') ?? '').slice(0, 8000) } : undefined; });
+  useEffect(() => {
+    if (!seed) return;
+    const p = new URLSearchParams(location.search); p.delete('knowledge'); p.delete('q');
+    history.replaceState(history.state, '', location.pathname + (p.size ? `?${p}` : ''));
+  }, [seed]);
   return (
     <>
       <div className="head"><div><div className="eyebrow">Counsel</div><h1 style={{ marginTop: 6 }}><b>Athena</b></h1>
         <div className="sub">Your PM colleague. Bring her an email, a status update, a spreadsheet or any document; answers cite the library, and nothing reaches the board until you add it.</div></div>
         <div className="row ath-headr"><SpeakSwitch /><SpendChip usage={usage} /></div></div>
-      <Workspace openId={id ?? null} page={page} usage={usage} refreshUsage={refresh} onOpen={(to, replace) => navigate(to === null ? '/athena' : `/athena/${to}`, replace)} />
+      <Workspace openId={id ?? null} page={page} seed={seed} usage={usage} refreshUsage={refresh} onOpen={(to, replace) => navigate(to === null ? '/athena' : `/athena/${to}`, replace)} />
     </>
   );
 }

@@ -4,7 +4,7 @@ import { api } from './api.ts';
 import { idb } from './store/db.ts';
 
 export interface Usage { month_cost_micro: number; cap_micro: number; keys: Record<Provider, boolean>; models: Record<Provider, string> }
-export interface AskBody { thread_id?: string; document_ids?: string[]; project_id?: string; provider?: Provider; message?: string; preset?: PresetId; page?: string; rerun?: boolean }
+export interface AskBody { thread_id?: string; document_ids?: string[]; project_id?: string; kind?: 'work'; provider?: Provider; message?: string; preset?: PresetId; page?: string; rerun?: boolean; knowledge?: { collections: 'all' | string[] } }
 export type SavedMessage = AiMessage & { project_id: string | null; thread_title: string };
 
 // Last copy of what was read, in IndexedDB `meta`, so threads and the open conversation can be read offline.

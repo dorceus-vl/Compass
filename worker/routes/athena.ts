@@ -7,7 +7,7 @@ import { MAX_CLIP_BYTES, MAX_CLIPS, MAX_PORTRAIT_BYTES, MEDIA_TYPE, sniffMedia }
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { AiRefused, meter } from '../lib/ai.ts';
 import { open as openRow, sealBytes, openBytes } from '../lib/enc.ts';
-import { projectAccess } from '../lib/project-context.ts';
+import { projectAccess, threadAccess } from '../lib/project-context.ts';
 import { speechText, synthesize, transcribe, parseVoicePrices, ttsCostMicro, sttCostMicro, sniffAudio, voiceKey } from '../lib/voice.ts';
 
 const athena = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -148,11 +148,11 @@ athena.post('/speak', async (c) => {
     }
     if (typeof b.message_id !== 'string' || !b.message_id) return c.json({ error: 'message_id must be a message id' }, 400);
     // The answer, in a live thread, read with its project's boundary (the same check chat makes): Offline-only or trashed never reaches ElevenLabs.
-    const row = await env.DB.prepare('SELECT m.*, t.project_id FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE m.id = ?1 AND t.deleted_at IS NULL')
-      .bind(b.message_id).first<{ id: string; role: string; content: string; enc_v: number; project_id: string | null }>();
+    const row = await env.DB.prepare('SELECT m.*, t.project_id, t.kind AS thread_kind FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE m.id = ?1 AND t.deleted_at IS NULL')
+      .bind(b.message_id).first<{ id: string; role: string; content: string; enc_v: number; project_id: string | null; thread_kind: 'work' | 'personal' | null }>();
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.role !== 'assistant') return c.json({ error: 'Only answers are read aloud' }, 400);
-    const access = await projectAccess(env, row.project_id);
+    const access = await threadAccess(env, row.project_id, row.thread_kind); // KN2: a project-less work thread's audio is sealed as work
     if (!access) return c.json({ error: 'Not found' }, 404);
     if (access.boundary === 'offline') return c.json({ error: 'offline_boundary', message: 'This project is Offline only: its answers are not sent to ElevenLabs.' }, 409);
 

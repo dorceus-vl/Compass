@@ -125,8 +125,9 @@ function stubAnswer(call: AiCall): Read {
   }
   const last = [...call.messages].reverse().find((t) => t.role === 'user')?.content ?? '';
   const slug = call.system.match(/<<<data page ([^ \n]+)/)?.[1];
-  const meta = { citations: slug ? [slug] : [], proposals: { tasks: [{ title: 'Stub task', horizon: 'short', due_at: null }], raid: [], decisions: [] } };
-  return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n[stub: ${call.images?.length ?? 0} image(s)]\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
+  const ks = [...call.system.matchAll(/<<<data passage (k:[^ \n]+)/g)].map((m) => m[1]); // knowledge passages: cited, plus one id never sent (it must be dropped)
+  const meta = { citations: [...(slug ? [slug] : []), ...ks, 'k:stub-not-sent'], proposals: { tasks: [{ title: 'Stub task', horizon: 'short', due_at: null }], raid: [], decisions: [] } };
+  return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n[stub: ${call.images?.length ?? 0} image(s)]${ks.length ? `\n[stub passages: ${ks.join(' ')}]` : ''}\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
 }
 
 export type Usage = { provider: Provider | 'elevenlabs' | 'workers_ai'; input_tokens: number; output_tokens: number; cost_micro: number };
