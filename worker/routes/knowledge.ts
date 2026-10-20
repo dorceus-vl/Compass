@@ -16,8 +16,8 @@ import { loadDoc, readBytes } from './documents.ts';
 import { loadMeeting } from './meetings.ts';
 import { loadItem as loadInboxItem, emailText } from './inbox.ts';
 import { projectAccess } from '../lib/project-context.ts';
-import { minutesDoc } from '../../web/src/docs/templates.ts';
-import { toMarkdown } from '../../web/src/docs/to-md.ts';
+import { minutesDoc } from '../../shared/doc-model.ts';
+import { toMarkdown } from '../../shared/to-md.ts';
 
 const knowledge = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -30,14 +30,14 @@ const loadCollection = async (env: Env, id: string): Promise<KnowledgeCollection
  * Stores one item and its passages (sealed when the collection is work). A Locked collection's item is `ready` at once; any other is `indexing` with
  * `embedded = 0` until the embedder runs (callers kick `embedPending(env, …, { item })` in waitUntil; the cron finishes anything left). `error` stores a failed item (no passages); it is stored plain, so it must be a fixed message, never document content. Task 3 and 4 call this for text that is not a document.
  */
-export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: KnowledgeSource; title: string; document_id: string | null; passages: Passage[]; error?: string }): Promise<KnowledgeItem> {
+export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: KnowledgeSource; title: string; document_id: string | null; source_id?: string | null; passages: Passage[]; error?: string }): Promise<KnowledgeItem> {
   const id = crypto.randomUUID(), t = now(), failed = !!a.error || a.passages.length === 0;
   const state = failed ? 'failed' : coll.boundary === 'locked' ? 'ready' : 'indexing';
-  const item: KnowledgeItem = { id, collection_id: coll.id, document_id: a.document_id, source: a.source, title: a.title, state, error: a.error ?? (failed ? 'No text found in that document.' : null),
+  const item: KnowledgeItem = { id, collection_id: coll.id, document_id: a.document_id, source_id: a.source_id ?? null, source: a.source, title: a.title, state, error: a.error ?? (failed ? 'No text found in that document.' : null),
     chunk_count: failed ? 0 : a.passages.length, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
   const si = await seal(env, 'knowledge_items', { ...item }, coll.scope);
-  const insItem = env.DB.prepare('INSERT INTO knowledge_items (id, collection_id, document_id, source, title, state, error, chunk_count, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,?10)')
-    .bind(id, coll.id, a.document_id, a.source, si.title, state, item.error, item.chunk_count, t, si.enc_v);
+  const insItem = env.DB.prepare('INSERT INTO knowledge_items (id, collection_id, document_id, source_id, source, title, state, error, chunk_count, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10,?11)')
+    .bind(id, coll.id, a.document_id, item.source_id, a.source, si.title, state, item.error, item.chunk_count, t, si.enc_v);
   const rows = failed ? [] : a.passages;
   try {
     for (let i = 0; i === 0 || i < rows.length; i += 99) { // 99 passages and, the first time, the item in one batch
@@ -180,8 +180,12 @@ knowledge.post('/items', async (c) => {
   return c.json({ item }, 201);
 });
 
-/** Text that is not a document: the collection must be of the text's side, and Offline-only content goes only into a Locked collection (checked before addItem: such an item has no project link the embedder could follow). */
-async function addText(c: Ctx & { json: (b: unknown, s?: ContentfulStatusCode) => Response }, collectionId: unknown, side: { scope: Scope; offline: boolean } | null, a: { source: 'meeting' | 'email'; title: string; text: string; kind: 'md' | 'txt' }) {
+/**
+ * Text that is not a document (a meeting review, an email): the collection must be of the text's side, and Offline-only content goes only into a
+ * Locked collection. The item keeps its `source_id`, so search and the sweep follow the source's project afterwards (KN16: LIVE), and saving the
+ * same source into the same collection again returns the item already there (200).
+ */
+async function addText(c: Ctx & { json: (b: unknown, s?: ContentfulStatusCode) => Response }, collectionId: unknown, side: { scope: Scope; offline: boolean } | null, a: { source: 'meeting' | 'email'; source_id: string; title: string; text: string; kind: 'md' | 'txt' }) {
   if (typeof collectionId !== 'string') return c.json({ error: 'collection_id is required' }, 400);
   const coll = await loadCollection(c.env, collectionId);
   if (!coll || !side) return c.json({ error: 'Not found' }, 404);
@@ -189,7 +193,9 @@ async function addText(c: Ctx & { json: (b: unknown, s?: ContentfulStatusCode) =
   const v = mayTake(coll, side);
   if (v === 'knowledge_boundary') return c.json({ error: v, message: side.scope === 'work' ? 'This is work: only a work collection can take it.' : 'This is personal: only a personal collection can take it.' }, 409);
   if (v === 'offline_boundary') return c.json({ error: v, message: 'Its project is Offline only, so only a Locked collection can take it.' }, 409);
-  const item = await addItem(c.env, coll, { source: a.source, title: a.title, document_id: null, passages: chunk(a.text, a.kind) });
+  const had = await c.env.DB.prepare('SELECT * FROM knowledge_items WHERE collection_id = ?1 AND source_id = ?2 AND deleted_at IS NULL').bind(coll.id, a.source_id).first<KnowledgeItem>();
+  if (had) return c.json({ item: await open(c.env, 'knowledge_items', had), existing: true }, 200);
+  const item = await addItem(c.env, coll, { source: a.source, source_id: a.source_id, title: a.title, document_id: null, passages: chunk(a.text, a.kind) });
   kick(c, item);
   return c.json({ item }, 201);
 }
@@ -205,7 +211,7 @@ knowledge.post('/items/from-meeting/:id', async (c) => {
     const p = await c.env.DB.prepare('SELECT name, enc_v FROM projects WHERE id = ?1').bind(m.project_id).first<{ name: string; enc_v: number }>();
     project = p ? (await open(c.env, 'projects', p)).name : null;
   }
-  return addText(c, b.collection_id, side, { source: 'meeting', title: m?.title ?? '', text: m ? toMarkdown(minutesDoc(m, project)) : '', kind: 'md' });
+  return addText(c, b.collection_id, side, { source: 'meeting', source_id: m?.id ?? '', title: m?.title ?? '', text: m ? toMarkdown(minutesDoc(m, project)) : '', kind: 'md' });
 });
 
 /** A forwarded or relayed email: subject and body. Work when `work = 1`; Offline only when the task it became sits in an Offline-only project. */
@@ -213,9 +219,10 @@ knowledge.post('/items/from-inbox/:id', async (c) => {
   const b = await body(c);
   const item = await loadInboxItem(c.env, c.req.param('id'));
   if (item && item.kind !== 'email') return c.json({ error: 'Only an email can be saved to knowledge' }, 400);
-  const off = item?.task_id ? await c.env.DB.prepare(`SELECT 1 FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?1 AND p.data_boundary = 'offline'`).bind(item.task_id).first() : null;
+  // the project of the task it became: Offline only or in Trash counts as Offline (LIVE then keeps following it)
+  const off = item?.task_id ? await c.env.DB.prepare(`SELECT 1 FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?1 AND (p.data_boundary = 'offline' OR p.deleted_at IS NOT NULL)`).bind(item.task_id).first() : null;
   const side = item ? { scope: (item.work ? 'work' : 'personal') as Scope, offline: !!off } : null;
-  return addText(c, b.collection_id, side, { source: 'email', title: item?.title ?? '', text: item ? `${item.title}\n\n${emailText(item)}` : '', kind: 'txt' });
+  return addText(c, b.collection_id, side, { source: 'email', source_id: item?.id ?? '', title: item?.title ?? '', text: item ? `${item.title}\n\n${emailText(item)}` : '', kind: 'txt' });
 });
 
 knowledge.delete('/items/:id', async (c) => {

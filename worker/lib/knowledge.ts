@@ -26,29 +26,44 @@ export function boundaryChange(from: 'cloud' | 'locked', to: 'cloud' | 'locked')
   return to === 'locked' ? { purge: true, state: { from: 'indexing', to: 'ready' } } : { purge: false, state: { from: 'ready', to: 'indexing' } };
 }
 
-/** Where a passage lives, as `HOME` below selects it: its collection, item, document (if any) and that document's project (if any). */
+/**
+ * Where a passage lives, as `HOME` below selects it: its collection, item, document (if any), the meeting review or email it was saved from (if any)
+ * and the project all that belongs to (a document's project; a meeting's; the project of the task an email became), if any.
+ */
 export interface PassageHome {
-  boundary: 'cloud' | 'locked'; k_del: string | null; i_del: string | null;
-  document_id: string | null; d_id: string | null; d_del: string | null; project_id: string | null; p_id: string | null; p_del: string | null; p_boundary: 'cloud' | 'offline' | null;
+  boundary: 'cloud' | 'locked'; scope: Scope; k_del: string | null; i_del: string | null;
+  document_id: string | null; d_id: string | null; d_del: string | null;
+  source: string; source_id: string | null; s_id: string | null; s_work: number | null;
+  project_id: string | null; p_id: string | null; p_del: string | null; p_boundary: 'cloud' | 'offline' | null;
 }
 
 /**
- * Whether a passage may hold a vector and be searched by meaning: a live Cloud AI collection, a live item, and when it comes from a document,
- * a live document whose project (if any) is live and not Offline-only. Anything else is never embedded, and an existing vector is removed.
+ * Whether a passage may hold a vector and be searched by meaning: a live Cloud AI collection and a live item; its document (if any) live; the meeting
+ * or email it was saved from (if any) still there, and an email still on the collection's side (its `work` flag follows its task); and the project
+ * all that belongs to (if any) live and not Offline-only. Anything else is never embedded, and an existing vector is removed.
  * `LIVE` is the same rule in SQL (used to pick and to search); keep the two together.
  */
 export function vectorWanted(h: PassageHome): boolean {
   if (h.boundary !== 'cloud' || h.k_del || h.i_del) return false;
-  if (!h.document_id) return true;
-  if (!h.d_id || h.d_del) return false;
+  if (h.document_id && (!h.d_id || h.d_del)) return false;
+  if (h.source_id && !h.s_id) return false;
+  if (h.source === 'email' && h.source_id && (h.s_work ? 'work' : 'personal') !== h.scope) return false;
   return !h.project_id || (!!h.p_id && !h.p_del && h.p_boundary === 'cloud');
 }
-/** Joins a passage `c` to its item `i`, collection `k`, document `d` and project `p`. */
+/** Joins a passage `c` to its item `i`, collection `k`, document `d`, meeting review `mr` or email `ib` (and its task `tk`), and the project `p` they belong to. */
 export const HOME = `knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_id JOIN knowledge_collections k ON k.id = c.collection_id
-  LEFT JOIN documents d ON d.id = i.document_id LEFT JOIN projects p ON p.id = d.project_id`;
-export const HOME_COLS = 'k.boundary, k.deleted_at AS k_del, i.deleted_at AS i_del, i.document_id, d.id AS d_id, d.deleted_at AS d_del, d.project_id, p.id AS p_id, p.deleted_at AS p_del, p.data_boundary AS p_boundary';
-export const LIVE = `k.boundary = 'cloud' AND k.deleted_at IS NULL AND i.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL
-  AND (d.project_id IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL AND p.data_boundary = 'cloud'))))`;
+  LEFT JOIN documents d ON d.id = i.document_id
+  LEFT JOIN meeting_reviews mr ON i.source = 'meeting' AND mr.id = i.source_id
+  LEFT JOIN inbox_items ib ON i.source = 'email' AND ib.id = i.source_id LEFT JOIN tasks tk ON tk.id = ib.task_id
+  LEFT JOIN projects p ON p.id = COALESCE(d.project_id, mr.project_id, tk.project_id)`;
+const HOME_PROJECT = 'COALESCE(d.project_id, mr.project_id, tk.project_id)';
+export const HOME_COLS = `k.boundary, k.scope, k.deleted_at AS k_del, i.deleted_at AS i_del, i.document_id, d.id AS d_id, d.deleted_at AS d_del,
+  i.source, i.source_id, COALESCE(mr.id, ib.id) AS s_id, ib.work AS s_work, ${HOME_PROJECT} AS project_id, p.id AS p_id, p.deleted_at AS p_del, p.data_boundary AS p_boundary`;
+export const LIVE = `k.boundary = 'cloud' AND k.deleted_at IS NULL AND i.deleted_at IS NULL
+  AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL))
+  AND (i.source_id IS NULL OR COALESCE(mr.id, ib.id) IS NOT NULL)
+  AND (i.source != 'email' OR i.source_id IS NULL OR ib.work = (k.scope = 'work'))
+  AND (${HOME_PROJECT} IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL AND p.data_boundary = 'cloud'))`;
 
 /** KN2: a thread's effective kind is its project's kind when it has a project, else its own `kind`, else personal. It is what the thread is sealed with. */
 export const effectiveKind = (projectKind: Scope | null, threadKind: Scope | null): Scope => projectKind ?? threadKind ?? 'personal';

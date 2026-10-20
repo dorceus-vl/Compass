@@ -8,6 +8,7 @@ import { date } from '../lib/validate.ts';
 import { projectKind } from './projects.ts';
 import { buildTaskFromSource, insertTaskStmt } from './tasks.ts';
 import { asReview } from './inbox.ts';
+import { unembedStale } from '../lib/vectors.ts';
 
 const meetings = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -150,6 +151,8 @@ meetings.post('/:id/accept', async (c) => {
   writes.push(inboxStmt(c.env, meeting.recording_id, 'kept', t), reviewStmt(c.env, meeting.id, project_id as string | null, t));
   if (!(await commit(c.env, meeting.id, writes))) return c.json({ error: 'Already reviewed' }, 409);
   await audit(c.env, 'you', 'meeting.accept', meeting.id, { tasks: madeTasks.length, decisions: madeDecisions.length, raid: raidItems.length });
+  // KN16: notes already saved to knowledge now follow this project; Offline only takes their vectors at once (search already leaves them out: LIVE).
+  if (project_id) c.executionCtx.waitUntil(unembedStale(c.env).catch((e) => console.error(`[knowledge] sweep failed: ${(e as Error).name}`)));
   return c.json({ meeting: { ...meeting, state: 'reviewed', project_id, reviewed_at: t }, tasks: madeTasks, decisions: madeDecisions, raid: raidItems.length }, 201);
 });
 

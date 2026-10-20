@@ -22,6 +22,8 @@ import { hybridSearch, type FoundPassage } from '../lib/vectors.ts';
 
 const ai = new Hono<{ Bindings: Env; Variables: Variables }>();
 type MsgRow = Omit<AiMessage, 'citations' | 'proposals'> & { citations: string; proposals: string | null };
+/** The line added to an answer when the knowledge search failed (shared with the smoke). */
+export const KNOWLEDGE_NOTE = "I couldn't search your knowledge just now, so this answer doesn't use it.";
 const MSG_ORDER = 'ORDER BY created_at, rowid'; // a user message and its answer can share a millisecond
 
 async function toMessage(env: Env, row: MsgRow): Promise<AiMessage> {
@@ -129,7 +131,12 @@ ai.post('/chat', async (c) => {
       pages = [page, ...(await retrieve(env, page.title + ' ' + message, 6)).filter((p) => p.slug !== page.slug).slice(0, 5)];
     } else pages = await retrieve(env, message, 6);
     // 5b. Knowledge passages (KN4, k = 6) from the allowed collections only; a work passage is dropped again here unless the thread is work.
-    const passages: FoundPassage[] = collections.length ? (await hybridSearch(env, message, collections, 6)).filter((p) => collections.includes(p.collection.id) && (p.collection.scope === 'personal' || kind === 'work')) : [];
+    // A failed search (the hourly limit, the cap, Workers AI or Vectorize down) never fails the chat: she answers without it and says so.
+    let passages: FoundPassage[] = [], unsearched = false;
+    if (collections.length) {
+      try { passages = (await hybridSearch(env, message, collections, 6)).filter((p) => collections.includes(p.collection.id) && (p.collection.scope === 'personal' || kind === 'work')); }
+      catch (e) { unsearched = true; console.warn(`[ai] knowledge search failed: ${e instanceof AiRefused ? e.code : (e as Error).name}`); }
+    }
 
     // 6–8. Prompt, model call, validated answer.
     const asked = now();
@@ -139,6 +146,7 @@ ai.post('/chat', async (c) => {
     const answer = splitAnswer(out.text, new Set([...pages.map((p) => p.slug), ...passages.map((p) => `k:${p.id}`)])); // stored citations keep only ids
     // An empty answer (e.g. Gemini spent its budget thinking) is a provider failure: nothing is stored.
     if (!answer.content) throw new AiRefused('provider_error', `${provider === 'claude' ? 'Claude' : 'Gemini'} returned an empty answer.`);
+    if (unsearched) answer.content += `\n\n${KNOWLEDGE_NOTE}`;
 
     // 9. One batch, every row sealed with the thread's effective kind (KN2).
     const t = now();
@@ -216,9 +224,10 @@ ai.get('/messages/:id/sources', async (c) => {
   const env = c.env;
   const row = await env.DB.prepare('SELECT m.*, t.project_id AS t_project, t.kind AS t_kind FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE m.id = ?1 AND t.deleted_at IS NULL')
     .bind(c.req.param('id')).first<MsgRow & { t_project: string | null; t_kind: Kind | null }>();
-  if (!row) return c.json({ error: 'Not found' }, 404);
+  const nostore = { 'Cache-Control': 'private, no-store' };
+  if (!row) return c.json({ error: 'Not found' }, 404, nostore);
   const ids = (await toMessage(env, row)).citations.filter((x) => x.startsWith('k:')).map((x) => x.slice(2));
-  if (!ids.length) return c.json({ sources: [] });
+  if (!ids.length) return c.json({ sources: [] }, 200, nostore);
   const kind = (await threadAccess(env, row.t_project, row.t_kind))?.kind ?? 'personal';
   const { results } = await env.DB.prepare(`SELECT c.id, c.locator, c.enc_v, c.item_id, c.collection_id, i.title, i.enc_v AS item_enc_v, i.document_id, k.scope
     FROM knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_id JOIN knowledge_collections k ON k.id = c.collection_id LEFT JOIN documents d ON d.id = i.document_id
@@ -231,7 +240,7 @@ ai.get('/messages/:id/sources', async (c) => {
     return { id: `k:${id}`, item_id: r.item_id, collection_id: r.collection_id, document_id: r.document_id,
       title: (await open(env, 'knowledge_items', { title: r.title, enc_v: r.item_enc_v })).title, locator: (await open(env, 'knowledge_chunks', { locator: r.locator, enc_v: r.enc_v })).locator };
   }));
-  return c.json({ sources }, 200, { 'Cache-Control': 'private, no-store' });
+  return c.json({ sources }, 200, nostore);
 });
 
 ai.get('/saved', async (c) => {

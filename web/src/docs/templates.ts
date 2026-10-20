@@ -1,14 +1,8 @@
-import type { MeetingReview, ReportModel } from '../../../shared/types.ts';
+import type { ReportModel } from '../../../shared/types.ts';
+import { p, fields, list, table, sec, type TemplateDoc } from '../../../shared/doc-model.ts';
 
-export type DocBlock = { t: 'p'; text: string } | { t: 'list'; items: string[] } | { t: 'table'; headers: string[]; rows: string[][] } | { t: 'fields'; pairs: [string, string][] };
-export type TemplateDoc = { title: string; subtitle: string; sections: { heading: string; blocks: DocBlock[] }[] };
 export type BuiltinId = 'charter' | 'raid_log' | 'raci' | 'wbs' | 'status_report' | 'change_request' | 'exception_report' | 'lessons_learned';
 
-const p = (text = ''): DocBlock => ({ t: 'p', text });
-const fields = (...pairs: [string, string][]): DocBlock => ({ t: 'fields', pairs });
-const list = (items: string[], none = 'None.'): DocBlock => (items.length ? { t: 'list', items } : p(none));
-const table = (headers: string[], rows: (string | number)[][], none = 'None.'): DocBlock => (rows.length ? { t: 'table', headers, rows: rows.map((r) => r.map(String)) } : p(none));
-const sec = (heading: string, ...blocks: DocBlock[]) => ({ heading, blocks });
 const sub = (m: ReportModel) => `${m.project.name} · ${m.range.label}`;
 const budget = (m: ReportModel) => m.project.budget_planned;
 
@@ -115,18 +109,3 @@ export const BUILTINS: { id: BuiltinId; name: string; guide: string; make: (m: R
     ],
   }) },
 ];
-
-export function minutesDoc(meeting: MeetingReview, projectName: string | null): TemplateDoc {
-  const date = meeting.received_at.slice(0, 10);
-  return {
-    title: 'Meeting minutes', subtitle: [meeting.title, projectName].filter(Boolean).join(' · '),
-    sections: [
-      sec('Meeting', fields(['Title', meeting.title], ['Date', date], ['Project', projectName ?? ''])),
-      sec('Summary', p(meeting.summary ?? '')),
-      sec('Decisions', list(meeting.decisions.map((d) => d.text))),
-      sec('Action items', table(['Action', 'Owner', 'Due'], meeting.action_items.map((a) => [a.text, a.owner ?? '', a.due ?? '']), 'No action items.')),
-      sec('Open questions', list(meeting.open_questions.map((q) => q.text))),
-      sec('Important notes', list(meeting.important_notes.map((n) => n.text))),
-    ],
-  };
-}

@@ -1,4 +1,4 @@
-import type { DocBlock, TemplateDoc } from './templates.ts';
+import type { DocBlock, TemplateDoc } from './doc-model.ts';
 
 const cell = (s: string) => s.replace(/\s+/g, ' ').replaceAll('|', '\\|').trim();
 const row = (cells: string[]) => `| ${cells.map(cell).join(' | ')} |`;

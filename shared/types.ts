@@ -102,7 +102,7 @@ export interface KnowledgeCollection {
   created_at: string; updated_at: string; deleted_at: string | null; enc_v: number; item_count?: number;
 }
 export interface KnowledgeItem {
-  id: string; collection_id: string; document_id: string | null; source: KnowledgeSource; title: string; state: 'indexing' | 'ready' | 'failed'; error: string | null;
+  id: string; collection_id: string; document_id: string | null; /** the meeting review or inbox item it was saved from (KN16) */ source_id: string | null; source: KnowledgeSource; title: string; state: 'indexing' | 'ready' | 'failed'; error: string | null;
   chunk_count: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
   /** Only on the item list: a ready Cloud AI item that meaning-search can't find right now (`reindexing`: the embedder will take it; `excluded`: its project is Offline-only or its file is in Trash). */
   search?: 'reindexing' | 'excluded';

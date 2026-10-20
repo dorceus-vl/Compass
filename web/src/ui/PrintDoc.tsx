@@ -1,4 +1,4 @@
-import type { DocBlock, TemplateDoc } from '../docs/templates.ts';
+import type { DocBlock, TemplateDoc } from '../../../shared/doc-model.ts';
 
 function Block({ b }: { b: DocBlock }) {
   switch (b.t) {

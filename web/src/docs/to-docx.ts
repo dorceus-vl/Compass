@@ -1,5 +1,5 @@
 import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, HeadingLevel, WidthType, ShadingType } from 'docx';
-import type { DocBlock, TemplateDoc } from './templates.ts';
+import type { DocBlock, TemplateDoc } from '../../../shared/doc-model.ts';
 
 const cellOf = (text: string, o: { bold?: boolean; fill?: string; width?: number } = {}) => new TableCell({
   children: [new Paragraph({ children: [new TextRun({ text, bold: o.bold })] })],

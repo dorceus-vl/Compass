@@ -932,8 +932,18 @@ SM=$(kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\"
 kwait $K3C $SMI ready || fail "the meeting item did not become ready"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE id='$SMI' AND source='meeting' AND enc_v=2 AND title NOT LIKE '%Smoke%'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SMI' AND enc_v=2 AND embedded=1")" -ge 1 ] || fail "the meeting item is not sealed and embedded"
 ks "wombat+rollout" $K3C | grep -q 'wombat' || fail "the meeting minutes are not searchable"
+SMC=$(kc $SMI)
+SM2=$(kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3C\"}"); [ "$(kst "$SM2")" = 200 ] && [ "$(kbody "$SM2" | js 'd.item.id+","+d.existing')" = "$SMI,true" ] || fail "saving the same meeting twice made a second item"
+WMB() { curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"wombat rollout slips\",\"knowledge\":{\"collections\":[\"$K3C\"]}}"; }
+WMB | js 'd.messages[1].content' | grep -q "k:$SMC" || fail "the saved meeting notes did not reach a work thread"
 curl "${H[@]}" -X POST $B/api/meetings/$M3ID/accept -d "{\"project_id\":\"$K3WP\",\"tasks\":[],\"decisions\":[{\"text\":\"k3 decision\"}]}" | grep -q '"state":"reviewed"' || fail "k3 meeting accept"
 [ "$(curl "${H[@]}" $B/api/projects/$K3WP | js 'd.project.data_boundary')" = offline ] || fail "expected the work project to be Offline only"
+# KN16: the notes now follow the meeting's Offline-only project: out of search and never sent at once, their vectors gone after the accept's sweep
+! ks "wombat+rollout" $K3C | grep -q 'wombat' || fail "a filed Offline-only meeting's notes are still searchable"
+WMB | js 'd.messages[1].content' | grep -q "k:$SMC" && fail "a filed Offline-only meeting's notes reached the stub"
+for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SMI' AND embedded=1")" = 0 ] && break; sleep 0.25; done
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SMI' AND embedded=1")" = 0 ] || fail "a filed Offline-only meeting's notes kept their vectors"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$K3C/items | js "d.items.find(i=>i.id==='$SMI').search")" = excluded ] || fail "item list: the filed meeting is not marked excluded"
 kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3C\"}" | grep -q '"error":"offline_boundary"' || fail "an Offline-only meeting into Cloud AI"
 SML=$(kj -X POST $B/api/knowledge/items/from-meeting/$M3ID -d "{\"collection_id\":\"$K3L\"}"); [ "$(kst "$SML")" = 201 ] && [ "$(kbody "$SML" | js d.item.state)" = ready ] || fail "an Offline-only meeting into Locked: $SML"
 E3="{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke k3 email $R\",\"ref\":\"smoke:k3mail:$R\",\"body\":\"The platypus dinner moves to Friday.\",\"payload\":{\"from\":\"Ann\",\"account\":\"me@gmail.com\"}}"
@@ -942,11 +952,22 @@ kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d "{\"collection_id\":\"$K3C
 SE=$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d "{\"collection_id\":\"$K3P\"}"); [ "$(kst "$SE")" = 201 ] || fail "email into personal: $SE"; SEI=$(kid "$SE" item)
 kwait $K3P $SEI ready || fail "the email item did not become ready"
 ks "platypus+dinner" $K3P | grep -q 'platypus' || fail "the email is not searchable"
+SE2=$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d "{\"collection_id\":\"$K3P\"}"); [ "$(kst "$SE2")" = 200 ] && [ "$(kbody "$SE2" | js d.item.id)" = "$SEI" ] || fail "saving the same email twice: $SE2"
+# the email follows the project of the task it became: moved into an Offline-only project, it leaves search
+E3T=$(kn "SELECT task_id AS n FROM inbox_items WHERE id='$E3ID'"); K3PP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke k3 personal offline","kind":"personal"}' | js d.project.id)
+curl "${H[@]}" -X PATCH $B/api/projects/$K3PP -d '{"data_boundary":"offline"}' >/dev/null
+curl "${H[@]}" -X PATCH $B/api/tasks/$E3T -d "{\"project_id\":\"$K3PP\"}" | grep -q "\"project_id\":\"$K3PP\"" || fail "move the email's task"
+! ks "platypus+dinner" $K3P | grep -q 'platypus' || fail "an email whose task sits in an Offline-only project is still searchable"
+# a failed knowledge search (here the 120/h query bucket) never fails the chat: she answers without it and says so
+KNOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); kfill 120 k3q 0
+KF=$(kj -X POST $B/api/ai/chat -d '{"message":"anything","knowledge":{"collections":"all"}}'); D1X "DELETE FROM ai_usage WHERE id LIKE 'smoke-kb-k3q-%'" >/dev/null
+[ "$(kst "$KF")" = 200 ] && kbody "$KF" | js 'd.messages[1].content' | grep -q "I couldn't search your knowledge just now" && ! kbody "$KF" | js 'd.messages[1].content' | grep -q 'stub passages' || fail "a 429 knowledge search failed the chat or said nothing: $KF"
 [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d '{}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-meeting/nope -d "{\"collection_id\":\"$K3C\"}")")" = 404 ] || fail "save validation"
+echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
 echo "smoke: (k3) meeting -> work only (409 personal), Cloud AI item sealed, embedded, ready, searchable; filed under an Offline-only project -> 409 offline_boundary for Cloud AI, Locked ok; personal email -> personal only, ready and searchable"
 for x in $K3P $K3C $K3L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
 for x in $D3P $D3W $D3L; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
-curl "${H[@]}" -X DELETE $B/api/projects/$K3WP >/dev/null
+curl "${H[@]}" -X DELETE $B/api/projects/$K3WP >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$K3PP >/dev/null
 [ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)")" = 200 ] || fail "Empty Trash after k3"
 rm -rf $KS
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"

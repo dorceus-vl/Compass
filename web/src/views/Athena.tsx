@@ -324,7 +324,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
   const newKind = !thread && !projectId && sel === WORK ? 'work' as const : undefined;
   // Collections Athena may read here: personal ones always, Cloud AI work ones in a work conversation; Locked never.
   const allowed = (colls ?? []).filter((c) => c.boundary === 'cloud' && (c.scope === 'personal' || kind === 'work'));
-  const knowledge = kn === null ? undefined : { collections: kn === 'all' ? 'all' as const : kn.filter((x) => allowed.some((c) => c.id === x)) };
+  const knowledge = kn === null ? undefined : { collections: kn }; // as picked: a pick that isn't allowed here gets the server's 409, never a silent drop
   const seeded = useRef(seed?.knowledge);
   useEffect(() => { // a work collection handed over by the Knowledge screen needs a work conversation
     if (!colls || !seeded.current) return;
@@ -332,7 +332,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
     seeded.current = undefined;
     if (c?.scope === 'work' && !projectId && !cur.current) setSel(WORK);
   }, [colls, projectId]);
-  const toggle = (cid: string) => setKn((k) => { const list = k === 'all' || !k ? [] : k; const next = list.includes(cid) ? list.filter((x) => x !== cid) : [...list, cid]; return next.length ? next : 'all'; });
+  const toggle = (cid: string) => setKn((k) => { const list = k === 'all' || !k ? [] : k; const next = list.includes(cid) ? list.filter((x) => x !== cid) : [...list, cid]; return next.length ? next : null; }); // the last one off turns knowledge off
   const projSelRef = useRef(projSel); projSelRef.current = projSel;
   const prov = providerReady(usage, provider) ? provider : OTHER[provider];
   const card = CARDS.find((c) => c.id === preset);
@@ -425,7 +425,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); } }} />
         {(att.length > 0 || up) && <div className="row" aria-label="Attached files">
           {att.map((a) => <span key={a.id} className="chip file">{a.name}
-            <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind }} save={(cid) => saveDoc(cid, a.id)} />
+            <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind, lockedOnly: project?.data_boundary === 'offline' }} save={(cid) => saveDoc(cid, a.id)} />
             <button type="button" className="x" aria-label={`Remove ${a.name}`} onClick={() => setAtt((x) => x.filter((y) => y.id !== a.id))}>✕</button></span>)}
           {up && <span className="chip file" role="status">Attaching…</span>}</div>}
         {attErr && <small className="sub ath-err" role="alert">{attErr}</small>}
@@ -435,7 +435,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
                 <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? (kind === 'work' ? 'No project (work)' : 'None (personal)')}</b>
                 <small>{thread ? 'stays with this conversation' : 'this project'}</small></div>
             : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={sel} disabled={up}
-                onChange={(e) => { setSel(e.target.value); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
+                onChange={(e) => { setSel(e.target.value); if (Array.isArray(kn)) setKn('all'); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
                 <option value="">None (personal)</option><option value={WORK}>No project (work)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
           <button type="button" className={`chip ath-more ath-kn${kn ? ' on' : ''}`} aria-pressed={!!kn} aria-expanded={!!kn} aria-controls="ath-kn"
             disabled={project?.data_boundary === 'offline'} onClick={() => setKn(kn ? null : 'all')}><Icon name="knowledge" />Use knowledge</button>
@@ -496,7 +496,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
           {!id && !thread && !pending && !off && <Greeting projectId={projectId} projectName={projectId ? project?.name : undefined} />}
           {msgs.map((m, i) => { const s = m.role === 'user' ? splitAttachments(m.content) : null; return s
             ? <div key={m.id} className="cp-user">{s.text}{s.attachments.length > 0 && <div className="row">{s.attachments.map((a) => <span key={a.id} className="chip file">{a.name}
-                <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind }} save={(cid) => saveDoc(cid, a.id)} /></span>)}</div>}</div>
+                <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind, lockedOnly: project?.data_boundary === 'offline' }} save={(cid) => saveDoc(cid, a.id)} /></span>)}</div>}</div>
             : <Answer key={m.id} m={m} project={project} onSave={() => void save(m)}
                 onShorter={i === lastAnswer && !busy && lastUser >= 0 && (() => void run({ message: SHORTER, docs: [], shorter: true }))}
                 onOther={i === lastAnswer && !busy && lastUser >= 0 && providerReady(usage, OTHER[m.provider ?? 'claude'])

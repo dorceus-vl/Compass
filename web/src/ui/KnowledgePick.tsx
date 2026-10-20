@@ -46,7 +46,8 @@ function SaveDialog({ side, save, onClose }: { side: Side; save: (collectionId: 
     catch (e) { if (!(e instanceof SignedOut)) setErr(e instanceof ApiError ? e.message : "Couldn't save it. Check your connection and try again."); }
     finally { setBusy(false); }
   };
-  const why = side.scope === 'personal' ? 'This is personal, so only personal collections are offered.'
+  const why = side.scope === 'personal' && side.lockedOnly ? "Its project is Offline only, and personal collections are always Cloud AI, so it can't go into knowledge."
+    : side.scope === 'personal' ? 'This is personal, so only personal collections are offered.'
     : side.lockedOnly ? 'Its project is Offline only, so only a Locked work collection can take it.' : 'This is work, so only work collections are offered.';
   return (
     <dialog ref={dlg} className="kn-dlg" onClose={onClose} aria-labelledby="kn-save-h">
@@ -58,6 +59,7 @@ function SaveDialog({ side, save, onClose }: { side: Side; save: (collectionId: 
             {fits.map((c) => <label key={c.id} className={`kn-opt${chosen === c.id ? ' on' : ''}`}>
               <input type="radio" name="kn-save" checked={chosen === c.id} onChange={() => setPick(c.id)} /><span><b>{c.name}</b><small>{collLabel(c)}</small></span></label>)}
           </fieldset>
+          : side.scope === 'personal' && side.lockedOnly ? null
           : <p>No {side.lockedOnly ? 'Locked work' : side.scope} collection yet. <Link to="/knowledge">Make one in Knowledge</Link>.</p>}
         {err && <div className="kn-note" role="alert">{err}</div>}
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>

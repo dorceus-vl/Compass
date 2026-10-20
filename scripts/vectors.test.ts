@@ -79,12 +79,17 @@ assert.deepEqual(boundaryChange('cloud', 'locked'), { purge: true, state: { from
 assert.deepEqual(boundaryChange('locked', 'cloud'), { purge: false, state: { from: 'ready', to: 'indexing' } }, 'Locked -> Cloud AI: items wait for the embedder');
 
 // which passages may hold a vector
-const h = (o: Partial<PassageHome> = {}): PassageHome => ({ boundary: 'cloud', k_del: null, i_del: null, document_id: 'd', d_id: 'd', d_del: null, project_id: 'p', p_id: 'p', p_del: null, p_boundary: 'cloud', ...o });
+const h = (o: Partial<PassageHome> = {}): PassageHome => ({ boundary: 'cloud', scope: 'personal', k_del: null, i_del: null, document_id: 'd', d_id: 'd', d_del: null,
+  source: 'upload', source_id: null, s_id: null, s_work: null, project_id: 'p', p_id: 'p', p_del: null, p_boundary: 'cloud', ...o });
 const T = 'x';
+const text = { document_id: null, d_id: null };
+const meeting = (o: Partial<PassageHome> = {}): Partial<PassageHome> => ({ ...text, scope: 'work', source: 'meeting', source_id: 'm', s_id: 'm', ...o });
+const email = (o: Partial<PassageHome> = {}): Partial<PassageHome> => ({ ...text, source: 'email', source_id: 'e', s_id: 'e', s_work: 0, ...o });
+const none = { project_id: null, p_id: null, p_boundary: null };
 const cases: [Partial<PassageHome>, boolean, string][] = [
   [{}, true, 'live cloud project file'],
   [{ project_id: null, p_id: null, p_boundary: null }, true, 'unfiled file'],
-  [{ document_id: null, d_id: null, project_id: null, p_id: null, p_boundary: null }, true, 'no document (meeting, email, app digest)'],
+  [{ ...text, source: 'app:compass', ...none }, true, 'no document and no source (app digest)'],
   [{ boundary: 'locked' }, false, 'Locked'],
   [{ k_del: T }, false, 'collection in Trash'],
   [{ i_del: T }, false, 'item in Trash'],
@@ -93,18 +98,34 @@ const cases: [Partial<PassageHome>, boolean, string][] = [
   [{ p_boundary: 'offline' }, false, 'project Offline only'],
   [{ p_del: T }, false, 'project in Trash'],
   [{ p_id: null, p_boundary: null }, false, 'project gone'],
+  // KN16: a meeting or an email follows its project (the meeting's; the project of the task the email became) and its own row
+  [meeting(none), true, 'unfiled meeting'],
+  [meeting(), true, 'meeting filed in a cloud project'],
+  [meeting({ p_boundary: 'offline' }), false, 'meeting filed in an Offline-only project'],
+  [meeting({ p_del: T }), false, "meeting's project in Trash"],
+  [meeting({ s_id: null, ...none }), false, 'meeting review gone'],
+  [email(none), true, 'personal email with no task project'],
+  [email(), true, "personal email whose task is in a cloud project"],
+  [email({ p_boundary: 'offline' }), false, "email whose task is in an Offline-only project"],
+  [email({ p_del: T }), false, "email whose task's project is in Trash"],
+  [email({ s_work: 1, ...none }), false, 'email turned work, in a personal collection'],
+  [email({ scope: 'work', s_work: 1, ...none }), true, 'work email in a work collection'],
+  [email({ s_id: null, ...none }), false, 'email gone'],
 ];
 for (const [o, want, why] of cases) assert.equal(vectorWanted(h(o)), want, why);
 // the SQL twin (LIVE) says the same for every case
 const db = new DatabaseSync(':memory:');
-db.exec(`CREATE TABLE knowledge_collections (id TEXT, boundary TEXT, deleted_at TEXT); CREATE TABLE knowledge_items (id TEXT, document_id TEXT, deleted_at TEXT);
-  CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, collection_id TEXT); CREATE TABLE documents (id TEXT, project_id TEXT, deleted_at TEXT); CREATE TABLE projects (id TEXT, data_boundary TEXT, deleted_at TEXT)`);
+db.exec(`CREATE TABLE knowledge_collections (id TEXT, boundary TEXT, scope TEXT, deleted_at TEXT); CREATE TABLE knowledge_items (id TEXT, document_id TEXT, deleted_at TEXT, source TEXT, source_id TEXT);
+  CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, collection_id TEXT); CREATE TABLE documents (id TEXT, project_id TEXT, deleted_at TEXT); CREATE TABLE projects (id TEXT, data_boundary TEXT, deleted_at TEXT);
+  CREATE TABLE meeting_reviews (id TEXT, project_id TEXT); CREATE TABLE inbox_items (id TEXT, task_id TEXT, work INTEGER); CREATE TABLE tasks (id TEXT, project_id TEXT)`);
 cases.forEach(([o], n) => {
-  const r = h(o), id = String(n);
-  db.prepare('INSERT INTO knowledge_collections VALUES (?, ?, ?)').run('k' + id, r.boundary, r.k_del);
-  db.prepare('INSERT INTO knowledge_items VALUES (?, ?, ?)').run('i' + id, r.document_id && r.document_id + id, r.i_del);
+  const r = h(o), id = String(n), pid = r.project_id && r.project_id + id;
+  db.prepare('INSERT INTO knowledge_collections VALUES (?, ?, ?, ?)').run('k' + id, r.boundary, r.scope, r.k_del);
+  db.prepare('INSERT INTO knowledge_items VALUES (?, ?, ?, ?, ?)').run('i' + id, r.document_id && r.document_id + id, r.i_del, r.source, r.source_id && r.source_id + id);
   db.prepare('INSERT INTO knowledge_chunks VALUES (?, ?, ?)').run(id, 'i' + id, 'k' + id);
-  if (r.d_id) db.prepare('INSERT INTO documents VALUES (?, ?, ?)').run(r.d_id + id, r.project_id && r.project_id + id, r.d_del);
+  if (r.d_id) db.prepare('INSERT INTO documents VALUES (?, ?, ?)').run(r.d_id + id, pid, r.d_del);
+  if (r.s_id && r.source === 'meeting') db.prepare('INSERT INTO meeting_reviews VALUES (?, ?)').run(r.s_id + id, pid);
+  if (r.s_id && r.source === 'email') { db.prepare('INSERT INTO inbox_items VALUES (?, ?, ?)').run(r.s_id + id, 't' + id, r.s_work); db.prepare('INSERT INTO tasks VALUES (?, ?)').run('t' + id, pid); }
   if (r.p_id) db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run(r.p_id + id, r.p_boundary, r.p_del);
 });
 const live = new Set((db.prepare(`SELECT c.id FROM ${HOME} WHERE ${LIVE}`).all() as { id: string }[]).map((r) => r.id));
