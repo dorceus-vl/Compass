@@ -37,6 +37,18 @@ settings.patch('/', async (c) => {
     }
     patch.push = p;
   }
+  if (body.athena && typeof body.athena === 'object') { // her voice and whether she speaks; portrait_id is set only by POST/DELETE /api/athena/portrait
+    const a = { ...(await getSettings(c.env)).athena }, b = body.athena as Record<string, unknown>;
+    if (b.voice_id !== undefined) {
+      if (b.voice_id !== null && !(typeof b.voice_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(b.voice_id))) return c.json({ error: 'athena.voice_id must be an ElevenLabs voice id (letters and digits) or null' }, 400);
+      a.voice_id = b.voice_id as string | null;
+    }
+    if (b.speak_answers !== undefined) {
+      if (typeof b.speak_answers !== 'boolean') return c.json({ error: 'athena.speak_answers must be true or false' }, 400);
+      a.speak_answers = b.speak_answers;
+    }
+    patch.athena = a;
+  }
   if (Array.isArray(body.work_email_domains)) {
     const d = body.work_email_domains;
     if (d.length > 10 || !d.every((x) => typeof x === 'string' && DOMAIN.test(x))) return c.json({ error: 'work_email_domains must be up to 10 lowercase domains' }, 400);

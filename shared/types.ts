@@ -35,7 +35,12 @@ export interface Settings {
   ai_monthly_cap_micro: number; default_provider: Provider;
   /** What Kelly's agent API may do (changed only through PUT /api/kelly, never PATCH /api/settings). Off by default. `at` is the last change: the relay caches are keyed on it, so a change starts them afresh. */
   kelly: { enabled: boolean; scopes: AgentScope[]; at?: string };
+  /** Athena: her ElevenLabs voice and whether answers are spoken (Task 4), and the id of her still portrait (set by POST/DELETE /api/athena/portrait). */
+  athena: { voice_id: string | null; speak_answers: boolean; portrait_id: string | null };
 }
+/** One of Athena's avatar loops (Settings → Athena). The file is served by GET /api/athena/media/:id. */
+export type AthenaClipState = 'idle' | 'listening' | 'thinking' | 'speaking';
+export interface AthenaClip { id: string; state: AthenaClipState; name: string; bytes: number; created_at: string }
 export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass:read.projects';
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
@@ -43,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true },
   work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
   kelly: { enabled: false, scopes: [] },
+  athena: { voice_id: null, speak_answers: false, portrait_id: null },
 };
 export interface TodayAnswer {
   date: string; short: Task[]; medium: Task[]; long: Task[]; overdue: Task[]; done_this_week: number; open_today: number;

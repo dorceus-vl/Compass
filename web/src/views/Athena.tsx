@@ -433,13 +433,17 @@ export function Workspace({ projectId, openId, onOpen, page, usage, refreshUsage
 }) {
   const [rev, setRev] = useState(0);
   const [thinking, setThinking] = useState(false);
+  const [speaking, setSpeaking] = useState(false); // ruling A7: 4 s after an answer arrives (Task 4 holds it for the length of the audio)
+  const talk = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(talk.current), []);
+  const answered = () => { clearTimeout(talk.current); setSpeaking(true); talk.current = setTimeout(() => setSpeaking(false), 4000); };
   const [n, setN] = useState<number | null>(null);
   useEffect(() => { loadThreads(projectId).then((t) => setN(t.length)).catch(() => {}); }, [projectId, rev]);
   return (
     <div className={`ath${projectId ? ' ath-project' : ''}`}>
-      {!projectId && <Stage state={thinking ? 'thinking' : 'idle'} />}
+      {!projectId && <Stage state={thinking ? 'thinking' : speaking ? 'speaking' : 'idle'} />}
       <div className="ath-main">
-        <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} usage={usage} onOpen={onOpen} onBusy={setThinking} onSent={() => { setRev((x) => x + 1); refreshUsage(); }} />
+        <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} usage={usage} onOpen={onOpen} onBusy={setThinking} onSent={() => { setRev((x) => x + 1); refreshUsage(); answered(); }} />
         <details className="ath-threads" open={!!projectId || undefined}>
           <summary>Conversations{n ? ` (${n})` : ''}</summary>
           <button type="button" className="btn primary" onClick={() => onOpen('new')}>New conversation</button>

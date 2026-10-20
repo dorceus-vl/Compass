@@ -67,7 +67,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [events, , , tasks, messages, threads, , , docs, raid, changes, lessons, decisions, milestones, , , projects] = await env.DB.batch([
+  const [events, , , tasks, messages, threads, , , docs, raid, changes, lessons, decisions, milestones, , , projects, clips] = await env.DB.batch([
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
@@ -85,14 +85,16 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
     q(`UPDATE meeting_reviews SET project_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK)
     q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
+    q(`DELETE FROM athena_clips WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING r2_key`), // Athena's removed clips and portraits
   ]);
   // best effort, only after the rows are gone
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email'))));
   await Promise.all((docs.results as { r2_key: string }[]).map(({ r2_key }) => env.FILES.delete(r2_key).catch(() => console.warn('[trash] could not delete a document file'))));
+  await Promise.all((clips.results as { r2_key: string }[]).map(({ r2_key }) => env.FILES.delete(r2_key).catch(() => console.warn('[trash] could not delete an Athena clip'))));
   return {
     task_events: events.meta.changes, tasks: tasks.results.length, ai_messages: messages.meta.changes, ai_threads: threads.meta.changes, documents: docs.results.length,
     raid_items: raid.meta.changes, change_requests: changes.meta.changes, lessons: lessons.meta.changes, decisions: decisions.meta.changes,
-    milestones: milestones.meta.changes, projects: projects.meta.changes,
+    milestones: milestones.meta.changes, projects: projects.meta.changes, athena_clips: clips.results.length,
   };
 }
 export async function purgeAudit(env: Env): Promise<void> {

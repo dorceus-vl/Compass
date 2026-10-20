@@ -12,6 +12,7 @@
 .rail{position:relative;background:var(--panel);border:1px solid var(--border-soft);border-radius:26px;padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:4px;view-transition-name:rail}
 .rail .logo{width:42px;height:42px;border-radius:999px;margin-bottom:10px;display:block;position:relative}
 .rail a{position:relative;z-index:1;width:56px;padding:8px 0 7px;border-radius:14px;color:var(--text-faint);font-size:10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform var(--dur-quick) var(--ease-out),color var(--dur-quick)}
+.rail a .ath-rail-img{width:20px;height:20px;border-radius:50%;object-fit:cover;display:block;border:1.5px solid currentColor;box-sizing:border-box}
 .rail a svg,.ptab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .rail a:hover{transform:translateY(-2px);color:var(--text)}.rail a.on{color:var(--accent)}
 @media (prefers-reduced-motion: reduce){.rail a:hover{transform:none}}
@@ -767,6 +768,9 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
 .ath-frame .ring{fill:none;stroke:rgba(var(--accent-rgb),.3);stroke-width:1.2}
 .ath-frame .orb{fill:rgba(var(--accent-rgb),.8)}.ath-frame .orb.a{fill:var(--swatch-3)}
 .ath-frame .bar{fill:rgba(var(--accent-rgb),.85)}
+.ath-frame video,.ath-frame .ath-still{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.ath-frame video{opacity:0}.ath-frame video.on{opacity:1}
+@media (prefers-reduced-motion:no-preference){.ath-frame video{transition:opacity .4s linear}}
 .ath-tag{position:absolute;left:12px;top:12px;display:flex;align-items:center;gap:8px;background:rgba(5,5,7,.6);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid var(--field-border);border-radius:999px;padding:5px 10px 5px 8px;font-family:var(--mono);font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent)}
 .ath-tag .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px rgba(var(--accent-rgb),.8)}
 .ath-plate{display:flex;flex-direction:column;gap:8px}
@@ -830,3 +834,21 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
 @media (max-width:760px),(pointer:coarse){
   .ath-tool,.chip.ath-more{min-height:44px}
 }
+
+/* Settings → Athena card (Phase 5b Task 3) */
+.ath-set-top{display:grid;grid-template-columns:minmax(140px,200px) minmax(0,1fr);gap:18px;align-items:start;margin-bottom:8px}
+.ath-set-prev{display:flex;flex-direction:column;gap:8px}
+.ath-set-prev .ath-frame{max-height:260px}
+.ath-set-portrait{display:flex;gap:12px;align-items:flex-start}
+.ath-set-portrait img,.ath-set-none{flex:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid var(--field-border);background:var(--field)}
+.ath-set-portrait .hint{margin:2px 0 8px}
+.ath-set-state{border-top:1px solid var(--border-soft);padding:10px 0 4px}
+.ath-set-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.ath-set-head .hint{margin:2px 0 8px}
+.ath-set-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.ath-set .btn,.ath-set label.btn{min-height:44px;display:inline-flex;align-items:center;cursor:pointer;position:relative}
+.ath-set label.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.ath-set label.btn[aria-disabled="true"]{opacity:.5}
+.ath-set-voice{border-top:1px solid var(--border-soft);padding-top:10px;display:flex;flex-direction:column}
+.ath-set-voice .field{max-width:220px}
+@media (max-width:760px){.ath-set-top{grid-template-columns:minmax(0,1fr)}.ath-set-prev{max-width:200px}}

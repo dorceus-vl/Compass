@@ -9,6 +9,7 @@ import { replay } from '../store/sync.ts';
 import { shell, nativeDevice } from '../native.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
+import { AthenaCard } from './AthenaCard.tsx';
 import { CardHead } from '../ui/CardHead.tsx';
 import { Icon } from '../ui/Shell.tsx';
 import { Documents } from './project/Documents.tsx';
@@ -75,6 +76,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Rules />
       <Email s={s} save={save} />
       <Ai s={s} save={save} />
+      <AthenaCard s={s} save={save} />
       <KellyCard />
       <ExportCard />
       <div className="card">

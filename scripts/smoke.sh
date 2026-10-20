@@ -283,6 +283,48 @@ FREE="{\"message\":\"x\",\"document_ids\":[\"$AFD\"]}"
 echo "smoke: (p3) athena: xlsx -> fenced workbook in the stub, the stored question keeps names and ids only, a rerun keeps its document, png -> 1 image; offline, work-in-personal, other-project, unfiled-in-project, missing, trashed -> 409 document_boundary with nothing stored and no model call; more than 3 -> 400"
 for x in $AX $APN $AWD $AOD $AFD; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
 for x in $AP1 $AW $AO; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done; rm -rf $AD
+# Phase 5b Task 3: Athena's clips (private R2, served with Range): upload checks, 206 slices, 416, the 415s, Trash and the purge of the file.
+AM=$(mktemp -d); { printf '\000\000\000\030ftypisom\000\000\002\000isomiso2'; head -c 480 /dev/zero; } > $AM/c.mp4; printf '%%PDF-1.7 not a video' > $AM/fake.mp4; ASZ=$(wc -c < $AM/c.mp4 | tr -d ' ')
+clip() { curl -s -w '\n%{http_code}' -b $J -c $J -H "Origin: $B" -H "Content-Type: ${CT:-video/mp4}" -H "X-File-Name: $2" --data-binary @$1 "$B/api/athena/clips?state=${3:-idle}"; }
+CU=$(clip $AM/c.mp4 'idle%201.mp4'); [ "$(printf '%s' "$CU" | tail -1)" = 201 ] || fail "clip upload: $CU"; AC1=$(printf '%s' "$CU" | head -1 | js d.clip.id)
+printf '%s' "$CU" | head -1 | js 'd.clip.state==="idle"&&d.clip.name==="idle 1.mp4"&&d.clip.bytes==='$ASZ'&&!("r2_key" in d.clip)' | grep -q true || fail "clip row: $CU"
+curl "${H[@]}" $B/api/athena/clips | js "d.clips.some(c=>c.id==='$AC1')&&d.portrait_id===null" | grep -q true || fail "clip list"
+curl -s -D $AM/h -o $AM/b -b $J -H "Range: bytes=0-9" $B/api/athena/media/$AC1; head -1 $AM/h | grep -q 206 || fail "range status"
+[ "$(wc -c < $AM/b | tr -d ' ')" = 10 ] && [ "$(head -c 10 $AM/c.mp4 | cmp - $AM/b; echo $?)" = 0 ] || fail "range body"
+tr -d '\r' < $AM/h | grep -qi "^content-range: bytes 0-9/$ASZ$" && grep -qi '^accept-ranges: bytes' $AM/h && grep -qi '^content-type: video/mp4' $AM/h && grep -qi '^cache-control: private, max-age=86400' $AM/h || fail "range headers"
+curl -s -D $AM/h -o $AM/b -b $J -H "Range: bytes=-5" $B/api/athena/media/$AC1; [ "$(wc -c < $AM/b | tr -d ' ')" = 5 ] && head -1 $AM/h | grep -q 206 || fail "suffix range"
+curl -s -D $AM/h -o $AM/b -b $J $B/api/athena/media/$AC1; head -1 $AM/h | grep -q 200 && [ "$(wc -c < $AM/b | tr -d ' ')" = "$ASZ" ] && grep -qi '^accept-ranges: bytes' $AM/h || fail "full GET"
+curl -s -D $AM/h -o /dev/null -b $J -H "Range: bytes=$ASZ-" $B/api/athena/media/$AC1; head -1 $AM/h | grep -q 416 && tr -d '\r' < $AM/h | grep -qi "^content-range: bytes \*/$ASZ$" || fail "416"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b $J -H 'Range: bytes=0-1,4-5' $B/api/athena/media/$AC1)" = 416 ] || fail "two ranges"
+[ "$(curl -s -o /dev/null -w '%{http_code}' $B/api/athena/media/$AC1)" = 401 ] || fail "media without a cookie"
+ANL() { D1X "SELECT count(*) AS n FROM athena_clips" | js 'd[0].results[0].n'; }; ANB=$(ANL)
+[ "$(CT=text/plain clip $AM/c.mp4 x.mp4 | tail -1)" = 415 ] || fail "wrong type was not 415"
+[ "$(clip $AM/fake.mp4 fake.mp4 | tail -1)" = 415 ] || fail "a non-mp4 body declared video/mp4 was accepted"
+[ "$(clip $AM/c.mp4 x.mp4 dancing | tail -1)" = 400 ] || fail "a bad state was accepted"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b $J -H "Origin: $B" -H 'Content-Type: video/mp4' -H 'X-File-Name: c.mp4' -H 'Transfer-Encoding: chunked' --data-binary @$AM/c.mp4 "$B/api/athena/clips?state=idle")" = 411 ] || fail "a chunked upload was not 411"
+{ cat $AM/c.mp4; head -c $((15 * 1024 * 1024)) /dev/zero; } > $AM/big.mp4
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b $J -H "Origin: $B" -H 'Content-Type: video/mp4' -H 'X-File-Name: big.mp4' --data-binary @$AM/big.mp4 "$B/api/athena/clips?state=idle")" = 413 ] || fail "an oversize clip was not 413"
+[ "$(ANL)" = "$ANB" ] || fail "a refused upload left a row"
+printf '\211PNG\r\n\032\n' > $AM/p.png; head -c 300 /dev/zero >> $AM/p.png
+PU=$(curl -s -w '\n%{http_code}' -b $J -H "Origin: $B" -H 'Content-Type: image/png' -H 'X-File-Name: her.png' --data-binary @$AM/p.png $B/api/athena/portrait); [ "$(printf '%s' "$PU" | tail -1)" = 201 ] || fail "portrait: $PU"; APID=$(printf '%s' "$PU" | head -1 | js d.portrait_id)
+curl "${H[@]}" $B/api/athena/clips | js "d.portrait_id==='$APID'&&!d.clips.some(c=>c.id==='$APID')" | grep -q true || fail "portrait id not reported"
+curl "${H[@]}" $B/api/settings | js "d.athena.portrait_id==='$APID'&&d.athena.voice_id===null&&d.athena.speak_answers===false" | grep -q true || fail "athena settings"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b $J -H "Origin: $B" -H 'Content-Type: image/jpeg' --data-binary @$AM/p.png $B/api/athena/portrait)" = 415 ] || fail "a png declared jpeg was accepted"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"athena":{"voice_id":"abc123","speak_answers":true,"portrait_id":"hacked"}}' | js 'd.athena.voice_id==="abc123"&&d.athena.speak_answers===true&&d.athena.portrait_id==="'$APID'"' | grep -q true || fail "settings patch (portrait_id must stay put)"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/settings -d '{"athena":{"voice_id":"a b/../c"}}')" = 400 ] || fail "a bad voice id was accepted"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"athena":{"voice_id":null,"speak_answers":false}}' >/dev/null
+curl "${H[@]}" -X DELETE $B/api/athena/portrait | grep -q '"ok":true' || fail "portrait delete"
+curl "${H[@]}" -X DELETE $B/api/athena/clips/$AC1 | grep -q '"ok":true' || fail "clip delete"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b $J $B/api/athena/media/$AC1)" = 404 ] || fail "a removed clip is still served"
+[ "$(D1X "SELECT count(*) AS n FROM athena_clips WHERE id='$AC1' AND deleted_at IS NOT NULL" | js 'd[0].results[0].n')" = 1 ] || fail "a removed clip was hard-deleted"
+npx wrangler r2 object get compass-files/athena/$AC1 --local --file $AM/still >/dev/null 2>&1 || fail "the removed clip's file went before the purge"
+D1X "UPDATE athena_clips SET deleted_at='2020-01-01T00:00:00.000Z' WHERE id IN ('$AC1','$APID')" >/dev/null
+curl -s "http://localhost:8790/cdn-cgi/handler/scheduled?cron=*%2F15+*+*+*+*" >/dev/null
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(D1X "SELECT count(*) AS n FROM athena_clips WHERE id IN ('$AC1','$APID')" | js 'd[0].results[0].n')" = 0 ] && break; sleep 1; done
+[ "$(D1X "SELECT count(*) AS n FROM athena_clips WHERE id IN ('$AC1','$APID')" | js 'd[0].results[0].n')" = 0 ] || fail "the purge left the clip rows"
+! npx wrangler r2 object get compass-files/athena/$AC1 --local --file $AM/gone >/dev/null 2>&1 || fail "the purge left the clip's file in R2"
+rm -rf $AM
+echo "smoke: (a3) athena clips: upload (mp4 only, first bytes, 15 MB, 411/413/415), Range 206/416 with Content-Range, full GET 200, portrait, settings patch, soft delete, purge removes the R2 file"
 # Status report data (Phase 3 Task 10): W1 is a cloud work project here, so its rows are sealed and come back readable; the stub writes the summary.
 curl "${H[@]}" -X POST $B/api/projects/$W1/raid -d '{"type":"risk","text":"Smoke report risk","probability":4,"impact":5}' >/dev/null
 SR='{"project_id":"'$W1'","from":"2026-01-01","to":"2026-12-31","ai":true}'

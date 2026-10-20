@@ -18,6 +18,7 @@ import reports from './routes/reports.ts';
 import settings from './routes/settings.ts';
 import push from './routes/push.ts';
 import ai from './routes/ai.ts';
+import athena from './routes/athena.ts';
 import exportRoute from './routes/export.ts';
 import { stepUpChallenge } from './lib/step-up.ts';
 import { email } from './email.ts';
@@ -28,7 +29,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', secureHeaders({
   contentSecurityPolicy: {
     defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-    fontSrc: ["'self'", 'https://fonts.gstatic.com'], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"],
+    fontSrc: ["'self'", 'https://fonts.gstatic.com'], imgSrc: ["'self'", 'data:', 'blob:'], mediaSrc: ["'self'", 'blob:'], connectSrc: ["'self'"],
     workerSrc: ["'self'"], manifestSrc: ["'self'"], objectSrc: ["'none'"], baseUri: ["'self'"], formAction: ["'self'"], frameAncestors: ["'none'"],
   },
   strictTransportSecurity: 'max-age=31536000; includeSubDomains', xFrameOptions: 'DENY', referrerPolicy: 'strict-origin-when-cross-origin',
@@ -56,6 +57,7 @@ app.route('/api/documents', documents);
 app.route('/api/reports', reports);
 app.route('/api/push', push);
 app.route('/api/ai', ai);
+app.route('/api/athena', athena);
 app.route('/api/export', exportRoute);
 app.post('/api/step-up/challenge', stepUpChallenge);
 app.get('/api/email/address', (c) => c.json({ address: c.env.EMAIL_INBOX_ADDRESS || null }, 200, { 'Cache-Control': 'private, no-store' }));

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Link, useRoute } from '../router.ts';
 import { useInbox } from '../inbox.ts';
+import { mediaUrl, useAthenaMedia } from '../athena-media.ts';
 
 // Inline icons, 24-box, stroke 1.75 (set in CSS), no library.
 const ICONS: Record<string, ReactNode> = {
@@ -64,6 +65,7 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
   const { path } = useRoute();
   const fresh = useInbox().items.filter((i) => i.state === 'new').length;
   const on = (k: string) => (path === k || (k === 'projects' && path === 'project') || (k === 'library' && path === 'libpage') ? 'on' : '');
+  const portrait = useAthenaMedia()?.portrait_id;
   const rail = useRef<HTMLElement>(null), railPill = useRef<HTMLSpanElement>(null), tab = useRef<HTMLElement>(null), tabPill = useRef<HTMLSpanElement>(null);
   useSlider(rail, railPill, path); useSlider(tab, tabPill, path);
   return (
@@ -71,7 +73,9 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
       <nav className="rail" aria-label="Main" ref={rail}>
         <span className="slide" ref={railPill} aria-hidden="true" />
         <img className="logo" src="/icons/icon-192.png" width={42} height={42} alt="Compass, Knocturn Labs" />
-        {NAV.map(([k, to, label]) => k === 'inbox'
+        {NAV.map(([k, to, label]) => k === 'athena' && portrait
+          ? <Link key={k} to={to} className={on(k)} aria-current={on(k) ? 'page' : undefined}><img className="ath-rail-img" src={mediaUrl(portrait)} alt="" />{label}</Link>
+          : k === 'inbox'
           ? <Link key={k} to={to} className={on(k)} aria-current={on(k) ? 'page' : undefined} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}><Icon name={k} />Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
           : <Link key={k} to={to} className={on(k)} aria-current={on(k) ? 'page' : undefined}><Icon name={k} />{label}</Link>)}
         <button className="btn rk" onClick={onPalette} aria-label="Command palette">⌘K</button>
