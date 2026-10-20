@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { appsDue, claimRefresh, cleanRelay, compassDigest, refreshApps, scrub, waitMinutes, SECTION_MAX } from '../worker/lib/digest.ts';
+import { appsDue, claimRefresh, cleanRelay, compassDigest, lastRun, refreshApps, scrub, waitMinutes, SECTION_MAX } from '../worker/lib/digest.ts';
 import { query, hashVector } from '../worker/lib/vectors.ts';
 
 const db = new DatabaseSync(':memory:');
@@ -19,7 +19,8 @@ const stmt = (sql: string, args: unknown[] = []): Stmt => ({
   all: async () => ({ results: db.prepare(sql).all(...(args as never[])) }),
   first: async () => db.prepare(sql).get(...(args as never[])) ?? null,
 });
-const DB = { prepare: (sql: string) => stmt(sql), batch: async (xs: Stmt[]) => { const out = []; for (const x of xs) out.push(/^\s*(SELECT|WITH)/i.test(x.sql) ? await x.all() : await x.run()); return out; } };
+let failDelete = false; // the next batch that deletes items throws (D1 down)
+const DB = { prepare: (sql: string) => stmt(sql), batch: async (xs: Stmt[]) => { if (failDelete && xs.some((x) => x.sql.startsWith('DELETE FROM knowledge_items'))) { failDelete = false; throw new Error('D1 is down'); } const out = []; for (const x of xs) out.push(/^\s*(SELECT|WITH)/i.test(x.sql) ? await x.all() : await x.run()); return out; } };
 const env = { DB, AI_STUB: '1', DEV_LOGIN: '1', COMPASS_DATA_KEY: 'k', KELLY_RELAY_URL: 'https://relay.test/api/compass-relay', KELLY_RELAY_SECRET: 's3cret' } as never;
 const T = '2026-10-01T00:00:00.000Z', at = new Date('2026-10-20T15:00:00Z'); // Tuesday; the week ends Sunday 2026-10-25
 const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
@@ -85,16 +86,22 @@ assert.ok(cleanRelay({ sections: { finance: ('line\n').repeat(2000) } }).finance
 assert.equal(scrub('Acct 123456789012 and 4111 1111 1111 1111 and $1,234,567 on 2026-10-20 12:30'), 'Acct [number removed] and [number removed] and $1,234,567 on 2026-10-20 12:30');
 assert.ok(!cleanRelay({ sections: { health: 'ref 99999999999' } }).health!.includes('99999999999'));
 
-// -- Once a day after digest_hour, Toronto time (October: UTC-4).
+// -- Once a day after digest_hour, Toronto time (October: UTC-4); again, an hour apart, while the day's refresh has failures.
 const s = { tz: 'America/Toronto', digest_hour: 7 };
-const atZ = (z: string) => new Date(z);
+const atZ = (z: string) => new Date(z), ok = (z: string) => ({ at: z, failed: false }), bad = (z: string) => ({ at: z, failed: true });
 assert.equal(appsDue(s, null, atZ('2026-10-20T10:45:00Z')), false, '6:45 Toronto: before the hour');
+assert.equal(appsDue(s, bad('2026-10-19T11:00:00.000Z'), atZ('2026-10-20T10:45:00Z')), false, 'before the hour, even after a failed day');
 assert.equal(appsDue(s, null, atZ('2026-10-20T11:00:00Z')), true, '7:00 Toronto');
-assert.equal(appsDue(s, '2026-10-20T11:00:00.000Z', atZ('2026-10-20T11:15:00Z')), false, 'already tried today');
-assert.equal(appsDue(s, '2026-10-20T11:00:00.000Z', atZ('2026-10-21T10:45:00Z')), false, 'tomorrow 6:45: not yet');
-assert.equal(appsDue(s, '2026-10-20T11:00:00.000Z', atZ('2026-10-21T11:00:00Z')), true, 'tomorrow 7:00');
-assert.equal(appsDue(s, '2026-10-21T03:30:00.000Z', atZ('2026-10-21T11:00:00Z')), true, '03:30Z is 23:30 on the 20th in Toronto, so the 21st at 7:00 is due');
-assert.equal(appsDue(s, '2026-10-21T04:30:00.000Z', atZ('2026-10-21T11:00:00Z')), false, '04:30Z is 00:30 on the 21st: already tried that day');
+assert.equal(appsDue(s, ok('2026-10-20T11:00:00.000Z'), atZ('2026-10-20T15:00:00Z')), false, 'a clean refresh today: done');
+assert.equal(appsDue(s, ok('2026-10-20T11:00:00.000Z'), atZ('2026-10-21T10:45:00Z')), false, 'tomorrow 6:45: not yet');
+assert.equal(appsDue(s, ok('2026-10-20T11:00:00.000Z'), atZ('2026-10-21T11:00:00Z')), true, 'tomorrow 7:00');
+assert.equal(appsDue(s, ok('2026-10-21T03:30:00.000Z'), atZ('2026-10-21T11:00:00Z')), true, '03:30Z is 23:30 on the 20th in Toronto, so the 21st at 7:00 is due');
+assert.equal(appsDue(s, ok('2026-10-21T04:30:00.000Z'), atZ('2026-10-21T11:00:00Z')), false, '04:30Z is 00:30 on the 21st: already done that day');
+assert.equal(appsDue(s, bad('2026-10-20T11:00:00.000Z'), atZ('2026-10-20T11:15:00Z')), false, 'failed at 7:00: not again at 7:15');
+assert.equal(appsDue(s, bad('2026-10-20T11:00:00.000Z'), atZ('2026-10-20T11:59:00Z')), false, 'nor at 7:59');
+assert.equal(appsDue(s, bad('2026-10-20T11:00:00.000Z'), atZ('2026-10-20T12:00:00Z')), true, 'retried an hour later');
+assert.equal(appsDue(s, bad('2026-10-20T12:00:00.000Z'), atZ('2026-10-20T12:15:00Z')), false, 'and an hour apart from then on');
+assert.equal(appsDue(s, bad('2026-10-20T12:00:00.000Z'), atZ('2026-10-20T13:00:00Z')), true);
 assert.equal(appsDue({ tz: 'America/Toronto', digest_hour: 0 }, null, atZ('2026-10-20T04:00:00Z')), true, 'digest_hour 0 is midnight');
 assert.equal(appsDue({ tz: 'America/Toronto', digest_hour: 7 }, null, atZ('2026-11-01T11:30:00Z')), false, 'after the clocks go back, 11:30Z is 6:30');
 
@@ -107,6 +114,17 @@ assert.equal(await claimRefresh(env, 'you', t0 + 10 * 60_000 + 1), true, 'after 
 assert.equal(waitMinutes('2026-10-20T15:00:00.000Z', t0 + 60_000), 9);
 assert.equal(waitMinutes('2026-10-20T15:00:00.000Z', t0 + 599_000), 1);
 assert.equal(waitMinutes(null, t0), 10);
+// lastRun: the newest attempt, clean only when its done row names no failed app (no done row = it never finished)
+const aud = (at: string, action: string, detail: string | null) => db.prepare('INSERT INTO audit_log (id, at, actor, action, target, detail) VALUES (?,?,?,?,?,?)').run(crypto.randomUUID(), at, 'cron', action, null, detail);
+db.exec("DELETE FROM audit_log WHERE action LIKE 'knowledge.apps.%'");
+assert.equal(await lastRun(env), null);
+aud('2026-10-20T11:00:00.000Z', 'knowledge.apps.refresh', null);
+assert.deepEqual(await lastRun(env), { at: '2026-10-20T11:00:00.000Z', failed: true }, 'no done row: unfinished counts as failed');
+aud('2026-10-20T11:00:09.000Z', 'knowledge.apps.done', '{"ok":["compass"],"failed":["hollow"]}');
+assert.deepEqual(await lastRun(env), { at: '2026-10-20T11:00:00.000Z', failed: true });
+aud('2026-10-20T12:00:00.000Z', 'knowledge.apps.refresh', null); aud('2026-10-20T12:00:09.000Z', 'knowledge.apps.done', '{"ok":["compass","finance","health","home","hollow"],"failed":[]}');
+assert.deepEqual(await lastRun(env), { at: '2026-10-20T12:00:00.000Z', failed: false }, "the newest attempt's own result, not an older failure");
+db.exec("DELETE FROM audit_log WHERE action LIKE 'knowledge.apps.%'");
 
 // -- refreshApps with a faked relay.
 let relay: () => Response | Promise<Response> = () => new Response('{}');
@@ -186,6 +204,24 @@ for (const [mk, msg] of [[() => json({ error: 'x' }, 502), 'Kelly-Cloud answered
 const bare = { ...(env as object), KELLY_RELAY_URL: undefined } as never;
 r = await refreshApps(bare);
 assert.equal(r.errors.hollow, "Kelly-Cloud isn't connected.");
+
+// all or nothing: if removing the old item fails, the new one is taken back out and yesterday's stays, showing the error
+relay = () => json(sections('SEVEN'));
+const prev = items().find((i) => i.source === 'app:compass')!, prevChunks = (db.prepare('SELECT id FROM knowledge_chunks WHERE item_id = ?').all(prev.id) as { id: string }[]).map((x) => x.id);
+failDelete = true;
+const err = console.error; console.error = () => {};
+try { r = await refreshApps(env); } finally { console.error = err; }
+assert.equal(r.errors.compass, 'Compass could not be stored.');
+assert.deepEqual(r.ok, ['finance', 'health', 'home', 'hollow'], 'the others refreshed');
+const keptC = items().filter((i) => i.source === 'app:compass');
+assert.equal(keptC.length, 1, 'not two items for that source');
+assert.deepEqual([keptC[0].id, keptC[0].state, keptC[0].error], [prev.id, 'ready', 'Compass could not be stored.'], "yesterday's item stays, with the error");
+assert.deepEqual((db.prepare('SELECT id FROM knowledge_chunks WHERE item_id = ?').all(prev.id) as { id: string }[]).map((x) => x.id), prevChunks, 'with its passages');
+assert.equal(n("SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_id WHERE i.source = 'app:compass'"), prevChunks.length, "and none of the new item's");
+relay = () => json(sections('EIGHT'));
+r = await refreshApps(env);
+assert.deepEqual(r.errors, {}); assert.equal(items().filter((i) => i.source === 'app:compass').length, 1);
+assert.notEqual(items().find((i) => i.source === 'app:compass')!.id, prev.id);
 
 // a source that has never worked: a failed item that says why, and the first good answer replaces it
 db.exec("DELETE FROM knowledge_chunks WHERE item_id IN (SELECT id FROM knowledge_items WHERE source = 'app:hollow'); DELETE FROM knowledge_items WHERE source = 'app:hollow'");

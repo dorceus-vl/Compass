@@ -79,16 +79,30 @@ export function cleanRelay(body: unknown): Record<(typeof RELAY_SOURCES)[number]
   })) as Record<(typeof RELAY_SOURCES)[number], string | null>;
 }
 
-/** Whether the cron owes today's refresh: it is `digest_hour` or later in the user's zone and nothing was tried yet on that zone's date. */
-export function appsDue(s: Pick<Settings, 'tz' | 'digest_hour'>, lastAt: string | null, at: Date): boolean {
+export const RETRY_MS = 3_600_000;
+/**
+ * Whether the cron owes a refresh: it is `digest_hour` or later in the user's zone and either nothing was tried yet on that zone's date, or the
+ * last attempt of the day did not come out clean (a source failed, or it never finished) and was made at least an hour ago (one retry an hour at most).
+ */
+export function appsDue(s: Pick<Settings, 'tz' | 'digest_hour'>, last: { at: string; failed: boolean } | null, at: Date): boolean {
   const n = localNow(s.tz, at);
-  return n.hhmm >= `${String(s.digest_hour).padStart(2, '0')}:00` && (!lastAt || localDate(s.tz, new Date(lastAt)) !== n.date);
+  if (n.hhmm < `${String(s.digest_hour).padStart(2, '0')}:00`) return false;
+  if (!last || localDate(s.tz, new Date(last.at)) !== n.date) return true;
+  return last.failed && at.getTime() - Date.parse(last.at) >= RETRY_MS;
+}
+
+/** The newest attempt and whether it came out clean: its `knowledge.apps.done` row (written when it finishes) names the apps that failed; none = it never finished. */
+export async function lastRun(env: Env): Promise<{ at: string; failed: boolean } | null> {
+  const at = await lastAttempt(env);
+  if (!at) return null;
+  const done = await env.DB.prepare('SELECT detail FROM audit_log WHERE action = ?1 AND at >= ?2 ORDER BY at DESC LIMIT 1').bind('knowledge.apps.done', at).first<{ detail: string | null }>();
+  try { return { at, failed: !done || (JSON.parse(done.detail ?? '{}').failed ?? []).length > 0 }; } catch { return { at, failed: true }; }
 }
 
 /** The newest refresh attempt (cron or Refresh now), or null. */
 export const lastAttempt = async (env: Env) => (await env.DB.prepare('SELECT MAX(at) AS at FROM audit_log WHERE action = ?1').bind(ACTION).first<{ at: string | null }>())?.at ?? null;
 
-/** Takes the right to refresh in one statement (so two callers cannot both): false when an attempt was made in the last 10 minutes. */
+/** Takes the right to refresh in one statement (rows in `audit_log`, so the audit retention must stay far longer than 10 minutes) (so two callers cannot both): false when an attempt was made in the last 10 minutes. */
 export async function claimRefresh(env: Env, actor: 'you' | 'cron', at = Date.now()): Promise<boolean> {
   const r = await env.DB.prepare(`INSERT INTO audit_log (id, at, actor, action, target, detail) SELECT ?1, ?2, ?3, ?4, NULL, NULL
     WHERE NOT EXISTS (SELECT 1 FROM audit_log WHERE action = ?4 AND at > ?5)`)
@@ -111,16 +125,30 @@ export async function appsCollection(env: Env): Promise<KnowledgeCollection> {
   return c!;
 }
 
-/** Adds the new item first, then removes every other item of that source with its passages and vectors, so a failed add keeps yesterday's. */
+/** Removes items with their passages: the rows in one atomic batch, then their vectors (a vector left behind is invisible to search, which re-checks D1, and is only logged). */
+async function dropItems(env: Env, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const mark = ids.map((_, i) => `?${i + 1}`).join(',');
+  const chunks = (await env.DB.prepare(`SELECT id FROM knowledge_chunks WHERE item_id IN (${mark})`).bind(...ids).all<{ id: string }>()).results.map((r) => r.id);
+  await env.DB.batch([env.DB.prepare(`DELETE FROM knowledge_chunks WHERE item_id IN (${mark})`).bind(...ids), env.DB.prepare(`DELETE FROM knowledge_items WHERE id IN (${mark})`).bind(...ids)]);
+  await remove(env, chunks).catch((e) => console.error(`[apps] vectors not removed: ${(e as Error).name}`));
+}
+
+/**
+ * All or nothing: the new item must be stored with its passages (not failed) before any old item of that source goes; if the new one is empty, or
+ * removing the old ones fails, the new one is taken back out and this throws, so yesterday's item stays (the caller shows the error on it).
+ */
 async function replaceItem(env: Env, coll: KnowledgeCollection, app: AppSource, text: string): Promise<void> {
   const source = `app:${app}` as KnowledgeSource;
   const item = await addItem(env, coll, { source, title: TITLE[app], document_id: null, passages: chunk(text, 'md') });
-  const old = (await env.DB.prepare('SELECT id FROM knowledge_items WHERE collection_id = ?1 AND source = ?2 AND id != ?3').bind(coll.id, source, item.id).all<{ id: string }>()).results.map((r) => r.id);
-  if (!old.length) return;
-  const mark = old.map((_, i) => `?${i + 1}`).join(',');
-  const chunks = (await env.DB.prepare(`SELECT id FROM knowledge_chunks WHERE item_id IN (${mark})`).bind(...old).all<{ id: string }>()).results.map((r) => r.id);
-  await remove(env, chunks); // vectors first: a row left behind is invisible to search, a vector left behind is a leak
-  await env.DB.batch([env.DB.prepare(`DELETE FROM knowledge_chunks WHERE item_id IN (${mark})`).bind(...old), env.DB.prepare(`DELETE FROM knowledge_items WHERE id IN (${mark})`).bind(...old)]);
+  try {
+    if (item.state === 'failed' || item.chunk_count < 1) throw new Error('empty digest');
+    const old = (await env.DB.prepare('SELECT id FROM knowledge_items WHERE collection_id = ?1 AND source = ?2 AND id != ?3').bind(coll.id, source, item.id).all<{ id: string }>()).results.map((r) => r.id);
+    await dropItems(env, old);
+  } catch (e) {
+    await dropItems(env, [item.id]).catch(() => {}); // take the new one back out; the old stays
+    throw e;
+  }
 }
 
 /** A source that failed: yesterday's item stays with the reason on it; with no item yet, a failed one says why. */
@@ -152,7 +180,9 @@ export async function refreshApps(env: Env, defer?: (p: Promise<unknown>) => voi
   for (const app of SOURCES) {
     try {
       if (texts[app]) await replaceItem(env, coll, app, texts[app]!); else await failItem(env, coll, app, errors[app]!);
-    } catch (e) { console.error(`[apps] ${app} not stored: ${(e as Error).name}`); errors[app] = `${TITLE[app]} could not be stored.`; delete texts[app]; }
+    } catch (e) { console.error(`[apps] ${app} not stored: ${(e as Error).name}`); errors[app] = `${TITLE[app]} could not be stored.`; delete texts[app];
+      await failItem(env, coll, app, errors[app]!).catch(() => {}); // yesterday's item stays, with the reason on it
+    }
   }
   const embedding = embedPending(env, 500, { collection: coll.id }).catch((e) => console.error(`[apps] embed failed: ${(e as Error).name}`));
   if (defer) defer(embedding); else await embedding;

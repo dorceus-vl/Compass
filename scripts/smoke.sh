@@ -1071,8 +1071,13 @@ arm; curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$HRNOW}" >/dev
 cron; for _ in $(seq 1 40); do [ "$(donen)" = 1 ] && break; sleep 0.25; done
 [ "$(donen)" = 1 ] || fail "the cron did not refresh once digest_hour had come"
 cron; sleep 2; [ "$(donen)" = 1 ] || fail "the cron refreshed twice in one day"
+# a day's refresh with a failure, made two hours ago: the next tick tries again (and once it is clean, no more)
+TWO=$(date -u -v-2H +%Y-%m-%dT%H:%M:%S.000Z); D1X "UPDATE audit_log SET at='$TWO' WHERE action='knowledge.apps.refresh'; UPDATE audit_log SET at='$TWO', detail='{\"ok\":[],\"failed\":[\"hollow\"]}' WHERE action='knowledge.apps.done'" >/dev/null
+cron; for _ in $(seq 1 40); do [ "$(donen)" = 2 ] && break; sleep 0.25; done
+[ "$(donen)" = 2 ] || fail "the cron did not retry a failed refresh an hour later"
+cron; sleep 2; [ "$(donen)" = 2 ] || fail "the cron retried a clean refresh"
 curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$SET0}" >/dev/null
-echo "smoke: (k4) From my apps: five items (compass, finance, health, home, hollow) personal and plain, embedded and searchable, no work task in the Compass part; Refresh now -> 429 within 10 minutes; a second refresh replaces (old rows, passages and answers gone); a failing source keeps yesterday's item with its error, a down relay keeps them all, a good refresh clears the errors; the system collection can't be deleted, changed, filled or emptied by hand; the cron refreshes once after digest_hour"
+echo "smoke: (k4) From my apps: five items (compass, finance, health, home, hollow) personal and plain, embedded and searchable, no work task in the Compass part; Refresh now -> 429 within 10 minutes; a second refresh replaces (old rows, passages and answers gone); a failing source keeps yesterday's item with its error, a down relay keeps them all, a good refresh clears the errors; the system collection can't be deleted, changed, filled or emptied by hand; the cron refreshes once after digest_hour and retries a failed day's refresh an hour later"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

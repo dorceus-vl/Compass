@@ -5,7 +5,7 @@ import { pushAll } from './lib/notify.ts';
 import { duePushes, localNow } from './lib/schedule.ts';
 import { purgeTrash, purgeAudit, purgeSessions, purgeInbox } from './routes/trash.ts';
 import { embedPending, unembedStale } from './lib/vectors.ts';
-import { appsDue, claimRefresh, lastAttempt, refreshApps } from './lib/digest.ts';
+import { appsDue, claimRefresh, lastRun, refreshApps } from './lib/digest.ts';
 
 /** Every 15 minutes: the purges, the knowledge embedder, then whatever pushes are due. Each part is on its own, so one failing never stops the rest. */
 async function pushes(env: Env, at: Date): Promise<void> {
@@ -24,8 +24,8 @@ export async function runCron(env: Env, at = new Date()): Promise<void> {
     'purge trash': () => purgeTrash(env), 'purge audit': () => purgeAudit(env), 'purge sessions': () => purgeSessions(env), 'purge inbox': () => purgeInbox(env), pushes: () => pushes(env, at),
     // Knowledge: drop vectors that may no longer be held (safety sweep), then embed what is waiting (KN5).
     knowledge: async () => { await unembedStale(env); await embedPending(env, 1000); },
-    // "From my apps" (KN7): once a day after digest_hour in the user's zone; a refresh nobody asked for is claimed first, so two runs can't both go.
-    apps: async () => { if (appsDue(await getSettings(env), await lastAttempt(env), at) && await claimRefresh(env, 'cron', at.getTime())) await refreshApps(env, undefined, 'cron'); },
+    // "From my apps" (KN7): once a day after digest_hour in the user's zone, and again (hourly at most) while the day's refresh has failures; a refresh nobody asked for is claimed first, so two runs can't both go.
+    apps: async () => { if (appsDue(await getSettings(env), await lastRun(env), at) && await claimRefresh(env, 'cron', at.getTime())) await refreshApps(env, undefined, 'cron'); },
   };
   await Promise.all(Object.entries(parts).map(([name, run]) => run().catch((e) => console.error(`[cron] ${name} failed: ${(e as Error).name}`))));
 }
