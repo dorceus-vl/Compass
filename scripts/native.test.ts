@@ -25,6 +25,13 @@ assert.throws(() => callbackCode('compass://auth?code=abc&state=X', 'S'));
 assert.throws(() => callbackCode('compass://auth?state=S', 'S'));
 assert.throws(() => callbackCode('https://evil.test/?code=abc&state=S', 'S'));
 assert.throws(() => callbackCode(undefined, 'S'));
+assert.equal(callbackCode('compass://auth/?code=abc&state=S', 'S'), 'abc');
+assert.throws(() => callbackCode('compass://anything?code=abc&state=S', 'S'), /didn’t finish/, 'wrong host');
+assert.throws(() => callbackCode('compass://auth/extra?code=abc&state=S', 'S'), /didn’t finish/, 'wrong path');
+assert.throws(() => callbackCode('compass://auth.evil?code=abc&state=S', 'S'), /didn’t finish/);
+assert.throws(() => callbackCode('compass://auth?error=access_denied&state=S', 'S'), /cancel/i, 'an error answer is a closed sheet');
+assert.throws(() => callbackCode('compass://auth?error=access_denied&code=abc&state=S', 'S'), /cancel/i);
+assert.throws(() => callbackCode('compass://auth?error=access_denied&state=X', 'S'), /didn’t finish/, 'state is still checked first');
 
 // sharedToQuickAdd
 assert.deepEqual(sharedToQuickAdd('Call the dentist'), { title: 'Call the dentist', notes: null });
@@ -99,6 +106,11 @@ status = 401;
 await assert.rejects(nativeSignIn(), /expired/);
 assert.equal(replaced, '');
 status = 200;
+// a callback carrying error= is silent too, and nothing is posted
+posts.length = 0;
+reply = (_m, a) => ({ url: `compass://auth?error=access_denied&state=${new URL(a.url).searchParams.get('state')}` });
+await assert.rejects(nativeSignIn(), /cancel/i);
+assert.equal(posts.length, 0);
 // a closed sheet is the native side's rejection, passed up for the page to ignore
 reply = () => { throw Object.assign(new Error('The user cancelled.'), { code: 'cancelled' }); };
 await assert.rejects(nativeSignIn(), /cancel/i);

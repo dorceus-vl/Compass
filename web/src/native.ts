@@ -57,12 +57,14 @@ export function signInUrl(o: { challenge: string; state: string; deviceId: strin
   return `https://id.knocturnlabs.com/?${q}`;
 }
 
-/** The one-time code in the callback url, or an error to show. */
+/** The one-time code in the callback url, or an error to show. Only compass://auth (no other host or path) with our state counts; an `error=` answer (Knocturn ID refused or the user said no) is treated like a closed sheet. */
 export function callbackCode(back: unknown, state: string): string {
   let u: URL | null = null;
   try { u = new URL(String(back)); } catch { /* not a url */ }
-  const code = u?.searchParams.get('code');
-  if (!u || u.protocol !== 'compass:' || u.searchParams.get('state') !== state || !code) throw new Error('Sign-in didn’t finish. Try again.');
+  if (!u || u.protocol !== 'compass:' || u.host !== 'auth' || (u.pathname !== '' && u.pathname !== '/') || u.searchParams.get('state') !== state) throw new Error('Sign-in didn’t finish. Try again.');
+  if (u.searchParams.has('error')) throw Object.assign(new Error('Sign-in was cancelled.'), { code: 'cancelled' }); // the page ignores a message matching /cancel/i
+  const code = u.searchParams.get('code');
+  if (!code) throw new Error('Sign-in didn’t finish. Try again.');
   return code;
 }
 
