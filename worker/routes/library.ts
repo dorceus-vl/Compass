@@ -3,7 +3,7 @@ import type { Env, Variables } from '../types.ts';
 import type { LibraryPage } from '../../shared/types.ts';
 import { snippet } from '../../shared/search.ts';
 import { allPages, extraPages, searchPages } from '../lib/library.ts';
-import { now, audit } from '../lib/db.ts';
+import { now, audit, getSettings } from '../lib/db.ts';
 import { docText } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
 import { projectAccess } from '../lib/project-context.ts';
@@ -50,11 +50,15 @@ library.post('/import', async (c) => {
   ]);
   await audit(c.env, 'you', 'library.import', doc.id);
   // Kelly's own search too (ruling K4): only a personal document of no project or a live cloud one, and only now that the import held. A failure here never fails the import.
-  let kelly: 'sent' | 'failed' | undefined;
+  // Kelly's master switch (Settings → Kelly) comes first: off = nothing goes to her, no relay call (ruling P5-12).
+  let kelly: 'sent' | 'failed' | 'off' | undefined;
   if (body.also_kelly === true) {
-    const ok = access.kind === 'personal' && access.boundary === 'cloud' && doc.enc_v !== 2 && await sendDocument(c.env, doc.name, bytes);
-    kelly = ok ? 'sent' : 'failed';
-    await audit(c.env, 'you', 'kelly.document', doc.id, { ok });
+    if ((await getSettings(c.env)).kelly.enabled !== true) kelly = 'off';
+    else {
+      const ok = access.kind === 'personal' && access.boundary === 'cloud' && doc.enc_v !== 2 && await sendDocument(c.env, doc.name, bytes);
+      kelly = ok ? 'sent' : 'failed';
+      await audit(c.env, 'you', 'kelly.document', doc.id, { ok });
+    }
   }
   return c.json({ page: { slug, section: 'Imports', title, source: 'import' }, ...(kelly ? { kelly } : {}) }, 201);
 });

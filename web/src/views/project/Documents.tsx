@@ -63,10 +63,11 @@ function Row({ d, project, off, relay, reload }: { d: DocumentRow; project: Proj
           ? <small className="sub">This project is Offline only, so its files stay out of the library.</small>
           : <>
             <button type="button" className="btn" disabled={off || busy} onClick={() => void act(async () => {
-              const r = await api<{ kelly?: 'sent' | 'failed' }>('/library/import', { method: 'POST', json: { document_id: d.id, ...(kelly ? { also_kelly: true } : {}) } });
-              toast(r.kelly === 'failed' ? "Added to the library. Kelly couldn't take it." : r.kelly === 'sent' ? 'Added to the library and shared with Kelly' : 'Added to the library');
+              const r = await api<{ kelly?: 'sent' | 'failed' | 'off' }>('/library/import', { method: 'POST', json: { document_id: d.id, ...(kelly ? { also_kelly: true } : {}) } });
+              setKelly(false); // one import, one hand-off: the next is ticked again
+              toast(r.kelly === 'failed' ? "Added to the library. Kelly couldn't take it." : r.kelly === 'off' ? 'Added to the library. Kelly is switched off.' : r.kelly === 'sent' ? 'Added to the library and shared with Kelly' : 'Added to the library');
             })}>Add to library</button>
-            {relay && <label className="tap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}><input type="checkbox" checked={kelly} disabled={off || busy} onChange={(e) => setKelly(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />Also let Kelly search it</label>}
+            {relay && <label className="tap sub"><input type="checkbox" checked={kelly} disabled={off || busy} onChange={(e) => setKelly(e.target.checked)} />Also let Kelly search it</label>}
           </>)}
         <button type="button" className="btn" style={{ color: 'var(--danger)', marginLeft: 'auto' }} disabled={off || busy}
           onClick={async () => { if (await confirmAction(`Move "${d.name}" to Trash?`, { danger: true })) await act(() => api(`/documents/${d.id}`, { method: 'DELETE' }), 'Moved to Trash'); }}>Trash</button>
@@ -86,8 +87,8 @@ export function Documents({ project }: { project: Project | null }) {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const off = offline || !online();
-  const [relay, setRelay] = useState(false); // Kelly's relay is set up (Settings → Kelly): only then is a document offered to her
-  useEffect(() => { api<{ relay?: boolean }>('/kelly').then((k) => setRelay(k.relay === true)).catch(() => {}); }, []);
+  const [relay, setRelay] = useState(false); // Kelly's relay is set up and her master switch is on (Settings → Kelly): only then is a document offered to her
+  useEffect(() => { api<{ relay?: boolean; enabled?: boolean }>('/kelly').then((k) => setRelay(k.relay === true && k.enabled === true)).catch(() => {}); }, []);
   const limit = project?.kind === 'work' ? 10 : 20;
   const upload = async (files: FileList | File[] | null | undefined) => {
     const list = files ? [...files] : [];

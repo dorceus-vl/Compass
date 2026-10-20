@@ -62,7 +62,8 @@ export async function sendDocument(env: Env, name: string, bytes: Uint8Array): P
   if (!g) return false;
   try {
     const r = await relayFetch(g, '/documents', { method: 'POST', body: bytes, headers: { 'X-File-Name': encodeURIComponent(name), 'Content-Type': 'application/octet-stream' } }, 60_000);
-    return r.ok && typeof ((await r.json().catch(() => null)) as { id?: unknown } | null)?.id === 'string';
+    if (!r.ok) { console.error('kelly relay document: status', r.status); return false; } // the status only, never the body
+    return typeof ((await r.json().catch(() => null)) as { id?: unknown } | null)?.id === 'string';
   } catch (e) { console.error('kelly relay document', e); return false; }
 }
 /** One relay GET, cached in the Worker's own cache (not D1) under `name`. `clean` turns the body into what we keep (null = unusable). 3xx counts as unavailable, never followed. */

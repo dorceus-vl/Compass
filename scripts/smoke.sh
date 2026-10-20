@@ -432,6 +432,12 @@ KWK=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke kelly work","kin
 KOF=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke kelly offline","kind":"personal"}' | js d.project.id)
 curl "${H[@]}" -X PATCH $B/api/projects/$KOF -d '{"data_boundary":"offline"}' >/dev/null
 K0=$(kd length)
+KD7=$(kdoc x -F "project_id=$KPR")
+kset '{"enabled":false,"scopes":[]}' # Kelly's master switch off: the import holds, nothing goes to her, no relay call, no kelly.document row
+R7=$(kimp $KD7 ',"also_kelly":true'); [ "$(printf '%s' "$R7" | tail -1)" = 201 ] && [ "$(printf '%s' "$R7" | head -1 | js d.kelly)" = off ] && printf '%s' "$R7" | head -1 | grep -q '"page"' || fail "also_kelly with Kelly off: $R7"
+[ "$(kd length)" = "$K0" ] || fail "a document reached Kelly while she was switched off"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action='kelly.document' AND target='$KD7'" | js 'd[0].results[0].n')" = 0 ] || fail "kelly.document audited with Kelly off"
+kset '{"enabled":true,"scopes":[]}'
 KD1=$(kdoc x -F "project_id=$KPR"); KD2=$(kdoc x); KD3=$(kdoc x -F "project_id=$KWK"); KD4=$(kdoc x -F "project_id=$KOF"); KD5=$(kdoc x -F "project_id=$KPR"); KD6=$(kdoc x -F "project_id=$KPR")
 R1=$(kimp $KD1 ''); [ "$(printf '%s' "$R1" | tail -1)" = 201 ] && ! printf '%s' "$R1" | head -1 | grep -q '"kelly"' || fail "import without also_kelly: $R1"
 [ "$(kd length)" = "$K0" ] || fail "a plain import reached Kelly"
@@ -447,11 +453,11 @@ curl "${H[@]}" -X DELETE $B/api/documents/$KD5 >/dev/null
 curl "${H[@]}" -X PATCH $B/api/documents/$KD6 -d '{"name":"kelly-refuse.pdf"}' >/dev/null
 R6=$(kimp $KD6 ',"also_kelly":true'); [ "$(printf '%s' "$R6" | tail -1)" = 201 ] && [ "$(printf '%s' "$R6" | head -1 | js d.kelly)" = failed ] && printf '%s' "$R6" | head -1 | grep -q '"page"' || fail "a refusing relay failed the import: $R6"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action='kelly.document' AND target='$KD6' AND detail='{\"ok\":false}'" | js 'd[0].results[0].n')" = 1 ] || fail "failed hand-off not audited"
-for x in $KD1 $KD2 $KD3 $KD4 $KD6; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
+for x in $KD1 $KD2 $KD3 $KD4 $KD6 $KD7; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
 for x in $(curl "${H[@]}" $B/api/library/imports | js "d.pages.filter(p=>p.title.startsWith('hello')||p.title.startsWith('kelly-refuse')).map(p=>p.slug).join(' ')"); do curl "${H[@]}" -X DELETE $B/api/library/$x >/dev/null; done
 for x in $KPR $KWK $KOF; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
 D1X "DELETE FROM audit_log WHERE action='kelly.document'" >/dev/null
-echo "smoke: (z2) kelly document hand-off: personal and unfiled reach the stub; plain, work, offline, trashed never; a refusing relay leaves the import done"
+echo "smoke: (z2) kelly document hand-off: personal and unfiled reach the stub; plain, work, offline, trashed never; Kelly off sends nothing; a refusing relay leaves the import done"
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
 echo "smoke: (z) kelly: PUT validated + audited, brief and calendar gated (off / no scope), via the relay, capped, cached, log shows tasks while they exist"
 kset '{"enabled":false,"scopes":[]}'; D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
