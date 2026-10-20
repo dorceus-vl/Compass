@@ -978,12 +978,17 @@ D1X "UPDATE inbox_items SET state = 'dismissed', task_id = NULL, updated_at = '2
 ks "capybara+spa" $K3P | grep -q capybara || fail "a saved email left search after the inbox purge"
 kj -X POST $B/api/knowledge/items/from-inbox/$E6ID -d "{\"collection_id\":\"$K3P\"}" > $KS/s1 & kj -X POST $B/api/knowledge/items/from-inbox/$E6ID -d "{\"collection_id\":\"$K3P\"}" > $KS/s2; wait
 [ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE source_id='$E6ID' AND deleted_at IS NULL")" = 1 ] && [ "$(tail -1 $KS/s1)$(tail -1 $KS/s2)" != "201201" ] || fail "two saves at once made two items: $(cat $KS/s1 $KS/s2)"
+# restoring a trashed item while a newer save of the same source is live: 409 with a plain message, nothing changes
+S6A=$(kn "SELECT id AS n FROM knowledge_items WHERE source_id='$E6ID' AND deleted_at IS NULL")
+curl "${H[@]}" -X DELETE $B/api/knowledge/items/$S6A | grep -q '"ok":true' || fail "trash the twice-saved email"
+S6B=$(kid "$(kj -X POST $B/api/knowledge/items/from-inbox/$E6ID -d "{\"collection_id\":\"$K3P\"}")" item)
+RC=$(kj -X POST $B/api/trash/knowledge_items/$S6A/restore); [ "$(kst "$RC")" = 409 ] && kbody "$RC" | grep -q 'This is already in the collection' && [ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE source_id='$E6ID' AND deleted_at IS NULL AND id='$S6B'")" = 1 ] || fail "restore over a live save of the same source: $RC"
 # a failed knowledge search (here the 120/h query bucket) never fails the chat: she answers without it and says so
 KNOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); kfill 120 k3q 0
 KF=$(kj -X POST $B/api/ai/chat -d '{"message":"anything","knowledge":{"collections":"all"}}'); D1X "DELETE FROM ai_usage WHERE id LIKE 'smoke-kb-k3q-%'" >/dev/null
 [ "$(kst "$KF")" = 200 ] && kbody "$KF" | js 'd.messages[1].content' | grep -q "I couldn't search your knowledge just now" && ! kbody "$KF" | js 'd.messages[1].content' | grep -q 'stub passages' || fail "a 429 knowledge search failed the chat or said nothing: $KF"
 [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d '{}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-meeting/nope -d "{\"collection_id\":\"$K3C\"}")")" = 404 ] || fail "save validation"
-echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project, and turned work it is sealed in place by the sweep; a saved email survives the inbox purge; two saves at once -> one item; a Locked meeting leaves the Locked passages when its project goes to Trash; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
+echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project, and turned work it is sealed in place by the sweep; a saved email survives the inbox purge; two saves at once -> one item; restoring over a live save of the same source -> 409; a Locked meeting leaves the Locked passages when its project goes to Trash; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
 echo "smoke: (k3) meeting -> work only (409 personal), Cloud AI item sealed, embedded, ready, searchable; filed under an Offline-only project -> 409 offline_boundary for Cloud AI, Locked ok; personal email -> personal only, ready and searchable"
 for x in $K3P $K3C $K3L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
 for x in $D3P $D3W $D3L; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done

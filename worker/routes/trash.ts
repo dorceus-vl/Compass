@@ -40,12 +40,19 @@ trash.post('/:table/:id/restore', async (c) => {
   if (!Object.hasOwn(TABLES, table)) return c.json({ error: 'Not found' }, 404);
   const id = c.req.param('id');
   // A task's source_ref is unique among live tasks: if a newer task took it while this one was in Trash, the restored one lets go of it (restore never fails).
-  const [, r] = await c.env.DB.batch([
-    c.env.DB.prepare(table === 'tasks'
-      ? `UPDATE tasks SET source_ref = NULL WHERE id = ?1 AND deleted_at IS NOT NULL AND source_ref IS NOT NULL AND EXISTS (SELECT 1 FROM tasks o WHERE o.source_ref = tasks.source_ref AND o.deleted_at IS NULL AND o.id != tasks.id)`
-      : 'SELECT ?1').bind(id),
-    c.env.DB.prepare(`UPDATE ${table} SET deleted_at = NULL, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NOT NULL`).bind(now(), id),
-  ]);
+  let r;
+  try {
+    [, r] = await c.env.DB.batch([
+      c.env.DB.prepare(table === 'tasks'
+        ? `UPDATE tasks SET source_ref = NULL WHERE id = ?1 AND deleted_at IS NOT NULL AND source_ref IS NOT NULL AND EXISTS (SELECT 1 FROM tasks o WHERE o.source_ref = tasks.source_ref AND o.deleted_at IS NULL AND o.id != tasks.id)`
+        : 'SELECT ?1').bind(id),
+      c.env.DB.prepare(`UPDATE ${table} SET deleted_at = NULL, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NOT NULL`).bind(now(), id),
+    ]);
+  } catch (e) {
+    // 0013: one live knowledge item per (collection, source, source_id); a newer save of the same source wins.
+    if (table === 'knowledge_items' && /UNIQUE/i.test(String((e as Error).message))) return c.json({ error: 'conflict', message: 'This is already in the collection' }, 409);
+    throw e;
+  }
   if (!r.meta.changes) return c.json({ error: 'Not found' }, 404);
   await audit(c.env, 'you', `${table}.restore`, c.req.param('id'));
   return c.json({ ok: true });
