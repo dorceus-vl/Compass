@@ -36,4 +36,31 @@ assert.equal((apnsRequest(token, 'production', 't', { ...msg, tag: undefined }, 
 
 // Without the secrets a send is 'local' and never reaches the network.
 assert.equal(await sendApns({ APPLE_TEAM_ID: 'T', APNS_TOPIC: 'x' }, { endpoint: token, env: 'production' }, msg), 'local');
+
+// Status mapping, with an injected fetch. Distinct key ids avoid the per-isolate JWT cache between cases.
+const env = { APNS_KEY_P8: p8, APNS_KEY_ID: 'K', APPLE_TEAM_ID: 'T', APNS_TOPIC: 'com.knocturnlabs.compass' };
+const sub = { endpoint: token, env: 'production' };
+const reply = (status: number, reason?: string) => (async () => new Response(reason ? JSON.stringify({ reason }) : '', { status })) as typeof fetch;
+const cases: [number, string | undefined, string][] = [
+  [200, undefined, 'sent'],
+  [410, undefined, 'gone'], [400, 'BadDeviceToken', 'gone'], [400, 'DeviceTokenNotForTopic', 'gone'], [400, 'Unregistered', 'gone'],
+  [403, 'InvalidProviderToken', 'local'], [403, 'ExpiredProviderToken', 'local'], [403, 'MissingProviderToken', 'local'], [403, undefined, 'local'],
+  [400, 'BadTopic', 'local'], [400, 'TopicDisallowed', 'local'], [429, 'TooManyProviderTokenUpdates', 'local'],
+  [400, 'PayloadEmpty', 'failed'], [429, 'TooManyRequests', 'failed'], [500, undefined, 'failed'], [503, 'ServiceUnavailable', 'failed'],
+];
+for (const [status, reason, want] of cases) assert.equal(await sendApns(env, sub, msg, reply(status, reason)), want, `${status} ${reason ?? ''}`);
+assert.equal(await sendApns(env, sub, msg, (async () => { throw new TypeError('network'); }) as typeof fetch), 'failed', 'network error');
+assert.equal(await sendApns(env, sub, msg, (async () => { throw new DOMException('timed out', 'TimeoutError'); }) as typeof fetch), 'failed', 'timeout');
+assert.equal(await sendApns({ ...env, APNS_KEY_P8: 'not a key' , APNS_KEY_ID: 'BAD'}, sub, msg, reply(200)), 'local', 'unusable key');
+assert.equal(await sendApns({ ...env, APNS_TOPIC: undefined as never }, sub, msg, reply(200)), 'local', 'missing topic');
+// Several devices at once on a cold isolate share one provider token.
+{
+  let n = 0;
+  const seen = new Set<string>();
+  const f = (async (_u: string, init: RequestInit) => { n++; seen.add((init.headers as Record<string, string>).authorization); return new Response('', { status: 200 }); }) as unknown as typeof fetch;
+  const e2 = { ...env, APNS_KEY_ID: 'K2' };
+  assert.deepEqual(await Promise.all([1, 2, 3, 4].map(() => sendApns(e2, sub, msg, f))), ['sent', 'sent', 'sent', 'sent']);
+  assert.equal(n, 4);
+  assert.equal(seen.size, 1, 'one JWT for concurrent sends');
+}
 console.log('apns ok');

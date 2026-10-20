@@ -32,38 +32,52 @@ export function fcmRequest(projectId: string, accessToken: string, token: string
   };
 }
 
-// Access tokens last an hour; one per isolate, renewed after 50 minutes.
-let cached: { at: number; token: string; id: string } | null = null;
-async function accessToken(json: string, a: Account, nowSec: number): Promise<string> {
+// Access tokens last an hour; one per isolate, renewed after 50 minutes. The promise is cached, so concurrent sends share one exchange.
+let cached: { at: number; token: Promise<string>; id: string } | null = null;
+function accessToken(json: string, a: Account, nowSec: number, f: typeof fetch): Promise<string> {
   if (cached && cached.id === a.client_email && nowSec - cached.at < 50 * 60 && nowSec >= cached.at) return cached.token;
-  const assertion = await fcmJwt(json, nowSec);
-  const r = await fetch(a.token_uri ?? TOKEN_URI, {
-    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(10_000),
-    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
-  });
-  const t = ((await r.json().catch(() => ({}))) as { access_token?: string }).access_token;
-  if (!r.ok || !t) throw new Error(`fcm oauth ${r.status}`);
-  cached = { at: nowSec, token: t, id: a.client_email };
-  return t;
+  const token = (async () => {
+    const assertion = await fcmJwt(json, nowSec);
+    const r = await f(a.token_uri ?? TOKEN_URI, {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(10_000),
+      body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
+    });
+    const t = ((await r.json().catch(() => ({}))) as { access_token?: string }).access_token;
+    if (!r.ok || !t) throw new Error(`fcm oauth ${r.status}`);
+    return t;
+  })();
+  const entry = { at: nowSec, token, id: a.client_email };
+  cached = entry;
+  token.catch(() => { if (cached === entry) cached = null; }); // a failed exchange is not remembered
+  return token;
 }
 
-/** One device (endpoint = its registration token). Sent; 404 / UNREGISTERED is gone; a missing or unusable service account is local. */
-export async function sendFcm(env: Pick<Env, 'FCM_SERVICE_ACCOUNT'>, sub: { endpoint: string }, msg: PushMessage): Promise<Sent> {
+/**
+ * One device (endpoint = its registration token). Sent; 404 / UNREGISTERED is gone. A missing or unusable service account, a failed token exchange,
+ * or Google refusing OUR credentials (401 / 403, which also drops the cached access token) is local: the secret's fault, the row is left alone.
+ * 5xx, other errors, network failure and timeout are failed.
+ */
+export async function sendFcm(env: Pick<Env, 'FCM_SERVICE_ACCOUNT'>, sub: { endpoint: string }, msg: PushMessage, f: typeof fetch = fetch): Promise<Sent> {
   const a = env.FCM_SERVICE_ACCOUNT ? account(env.FCM_SERVICE_ACCOUNT) : null;
   if (!a) return 'local';
   if (!/^[A-Za-z0-9_:-]{20,4096}$/.test(sub.endpoint)) return 'gone'; // never a token Google would take
   let req: { url: string; init: RequestInit };
   try {
-    req = fcmRequest(a.project_id, await accessToken(env.FCM_SERVICE_ACCOUNT!, a, Math.floor(Date.now() / 1000)), sub.endpoint, msg);
+    req = fcmRequest(a.project_id, await accessToken(env.FCM_SERVICE_ACCOUNT!, a, Math.floor(Date.now() / 1000), f), sub.endpoint, msg);
   } catch {
     console.error('[push] fcm cannot sign or get a token');
     return 'local';
   }
   try {
-    const r = await fetch(req.url, { ...req.init, signal: AbortSignal.timeout(10_000) });
+    const r = await f(req.url, { ...req.init, signal: AbortSignal.timeout(10_000) });
     if (r.ok) return 'sent';
     const status = ((await r.json().catch(() => ({}))) as { error?: { status?: string } }).error?.status;
     if (r.status === 404 || status === 'UNREGISTERED') return 'gone';
+    if (r.status === 401 || r.status === 403) {
+      cached = null;
+      console.error(`[push] fcm refused our credentials: ${r.status} ${status ?? ''}`);
+      return 'local';
+    }
     console.error(`[push] fcm answered ${r.status} ${status ?? ''}`);
     return 'failed';
   } catch (e) {
