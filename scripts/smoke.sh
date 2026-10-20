@@ -366,5 +366,44 @@ kset '{"enabled":false,"scopes":[]}'
 D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
 for x in $(curl "${H[@]}" "$B/api/tasks?status=all" | js "d.tasks.filter(t=>t.title.startsWith('Smoke agent')).map(t=>t.id).join(' ')"); do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 curl "${H[@]}" -X DELETE $B/api/projects/$AP >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$AC >/dev/null
+# (z) Phase 5 Kelly's side: PUT /api/kelly (dev session skips the passkey), the log, and the brief proxy against a local stub relay.
+RS=$(dv KELLY_RELAY_SECRET); [ -n "$RS" ] || fail "KELLY_RELAY_SECRET missing in .dev.vars"
+node "$(dirname "$0")/relay-stub.mjs" "$RS" 8791 & STUB=$!; trap 'kill $STUB 2>/dev/null' EXIT; sleep 1
+BD=2031-$(printf %02d $((RANDOM % 12 + 1)))-$(printf %02d $((RANDOM % 28 + 1))) # a date nobody asked for in the last hour: the Worker caches briefs per date
+hits() { curl -s localhost:8791/hits | js d.hits; }
+kb() { curl "${H[@]}" "$B/api/kelly/brief?date=$1"; }
+kput() { curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PUT $B/api/kelly -d "$1"; }
+kset '{"enabled":false,"scopes":[]}'
+H0=$(hits)
+kb $BD | grep -q '"unavailable":true' || fail "brief answered while Kelly was off"
+kput '{"enabled":true,"scopes":[]}' | grep -q 200 || fail "PUT /api/kelly enabled"
+kb $BD | grep -q '"unavailable":true' || fail "brief answered without compass:read.tasks"
+[ "$(hits)" = "$H0" ] || fail "relay was called while off or without the scope"
+[ "$(kput '{"scopes":["compass:delete.tasks"]}')" = 400 ] || fail "PUT accepted an unknown scope"
+[ "$(kput '{}')" = 400 ] || fail "PUT accepted an empty body"
+[ "$(kput '{"scopes":["compass:read.tasks","compass:read.tasks"]}')" = 200 ] || fail "PUT scopes"
+curl "${H[@]}" $B/api/kelly | grep -q '"scopes":\["compass:read.tasks"\]' || fail "GET /api/kelly scopes (duplicates not folded?)"
+curl "${H[@]}" $B/api/kelly | js 'd.enabled===true && d.relay===true && typeof d.calls_today==="number"' | grep -q true || fail "GET /api/kelly shape"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='you' AND action='kelly.scopes' AND at >= '$TS'" | js 'd[0].results[0].n')" = 2 ] || fail "kelly.scopes not audited once per change"
+BR=$(kb $BD); echo "$BR" | grep -q 'water-bill' || fail "brief did not come through the relay"
+[ "$(echo "$BR" | js 'Object.keys(d).sort().join()')" = generated_at,text ] || fail "brief shape"
+[ "$(hits)" = $((H0 + 1)) ] || fail "relay not called once"
+kb $BD | grep -q 'water-bill' || fail "cached brief lost"
+[ "$(hits)" = $((H0 + 1)) ] || fail "second brief call was not served from the Worker cache"
+[ "$(kb 2000-01-02 | js 'd.text.length<=1200 && d.text.startsWith("<script>")')" = true ] || fail "long relay text not capped (or HTML interpreted)"
+kb 2000-01-03 | grep -q '"unavailable":true' || fail "relay 500 is not unavailable"
+curl "${H[@]}" -o /dev/null -w '%{http_code}' "$B/api/kelly/log?limit=0" | grep -q 400 || fail "log limit 0 not 400"
+LG=$(curl "${H[@]}" "$B/api/kelly/log?limit=100")
+[ "$(echo "$LG" | js 'd.rows.length>=1 && d.rows.length<=100 && d.rows.every((r,i)=>r.actor==="kelly"||r.action==="kelly.scopes")')" = true ] || fail "log rows"
+[ "$(echo "$LG" | js 'd.rows.some(r=>r.action==="kelly.scopes"&&r.detail&&r.detail.after)')" = true ] || fail "log has no kelly.scopes row with before/after"
+kset '{"enabled":true,"scopes":["compass:write.tasks"]}'; LT=$(agb POST /tasks "{\"title\":\"Smoke kelly log $R\"}" | js d.task.id)
+curl "${H[@]}" "$B/api/kelly/log?limit=5" | js "d.rows.some(r=>r.target==='$LT'&&r.action==='agent.tasks.create'&&r.task_live===true)" | grep -q true || fail "log does not show the live task"
+curl "${H[@]}" -X DELETE $B/api/tasks/$LT >/dev/null
+curl "${H[@]}" "$B/api/kelly/log?limit=5" | js "d.rows.some(r=>r.target==='$LT'&&r.task_live===false)" | grep -q true || fail "log still links a trashed task"
+kput '{"enabled":false}' >/dev/null; kb 2026-10-21 | grep -q '"unavailable":true' || fail "brief answered after Kelly was switched off"
+kb $BD | grep -q '"unavailable":true' || fail "cached brief served after Kelly was switched off"
+kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
+echo "smoke: (z) kelly: PUT validated + audited, brief gated (off / no scope), via the relay, capped, cached, log shows tasks while they exist"
+kset '{"enabled":false,"scopes":[]}'; D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

@@ -20,6 +20,7 @@ import { ReviewView } from './views/Review.tsx';
 import { LibraryView } from './views/Library.tsx';
 import { LibraryPageView } from './views/LibraryPage.tsx';
 import { CopilotView } from './views/Copilot.tsx';
+import { KellyLog } from './views/KellyLog.tsx';
 import { Palette } from './ui/Palette.tsx';
 import { startSync, replay } from './store/sync.ts';
 import { shell, startShell, sharedToQuickAdd, closeQuickAdd, stepUpInBrowser, openExternal } from './native.ts';
@@ -61,7 +62,7 @@ export function App() {
     : <><Palette onClose={closeQuickAdd} onAdded={() => void replay().finally(closeQuickAdd)} /><Toasts /><ConfirmDialog /></>;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
   const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, timeline: <Timeline />, projects: <Projects />,
-    project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, copilot: <CopilotView id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
+    project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, kelly: <KellyLog />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, copilot: <CopilotView id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
   return (
     <>
       <Shell onPalette={() => setPalette(true)}>{view}</Shell>

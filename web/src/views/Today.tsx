@@ -30,8 +30,15 @@ export function Today() {
   const [ai, setAi] = useState<string | null>(null); // the copilot's version of today's brief, kept in `meta` for the rest of the day
   const [canAsk, setCanAsk] = useState(false);
   const [writing, setWriting] = useState(false);
+  const [kelly, setKelly] = useState<string | null>(null); // Kelly's paragraph from Kelly-Cloud, kept in `meta` for the day (plain text, never HTML)
   useEffect(() => {
-    setAi(null);
+    setAi(null); setKelly(null);
+    void idb.get<{ text: string }>('meta', `kelly-brief:${t}`).then((c) => setKelly((cur) => cur ?? c?.text ?? null)).catch(() => {});
+    // Online, the server decides (off, no permission, no relay, slow = unavailable, and the cached copy goes); offline, the cached one stays.
+    if (online()) api<{ text?: string; unavailable?: true }>(`/kelly/brief?date=${t}`).then(async (r) => {
+      setKelly(r.text ?? null);
+      if (r.text) await idb.put('meta', { id: `kelly-brief:${t}`, text: r.text, at: new Date().toISOString() }); else await idb.del('meta', `kelly-brief:${t}`);
+    }).catch(() => {});
     void idb.get<{ text: string }>('meta', `brief:${t}`).then((c) => setAi(c?.text ?? null)).catch(() => {});
     // The brief is written by the default provider (worker/routes/ai.ts), so only its key counts.
     Promise.all([loadUsage(), api<Settings>('/settings')]).then(([u, s]) => setCanAsk(providerReady(u, s.default_provider))).catch(() => setCanAsk(false));
@@ -80,9 +87,9 @@ export function Today() {
       }} />
       <AddedStrip onOpen={setOpen} />
       <section className="card brief" aria-label="Today's brief">
-        <div className="eyebrow">{ai ? 'Copilot' : "Compass's summary"}</div>
-        <p>{ai ?? briefText(answer, t)}</p>
-        {!ai && canAsk && online() && <button type="button" className="btn" disabled={writing} onClick={() => void writeIt()}>{writing ? 'Writing…' : 'Write it with the copilot'}</button>}
+        <div className="eyebrow">{kelly ? 'Kelly' : ai ? 'Copilot' : "Compass's summary"}</div>
+        <p className={kelly ? 'kelly-brief' : undefined}>{kelly ?? ai ?? briefText(answer, t)}</p>
+        {!kelly && !ai && canAsk && online() && <button type="button" className="btn" disabled={writing} onClick={() => void writeIt()}>{writing ? 'Writing…' : 'Write it with the copilot'}</button>}
       </section>
       <section aria-labelledby="hz-h">
         <SectionHead id="hz-h" eyebrow="Your horizons" title="Turn the compass, the horizons follow">

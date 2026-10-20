@@ -17,6 +17,9 @@ export interface Env {
   INBOX_SECRET_HOLLOW?: string;
   /** Bearer secret for the agent API (/api/agent/*, Kelly), compared in constant time. Unset = the API answers 401 to everyone. */
   AGENT_SECRET_KELLY?: string;
+  /** Kelly-Cloud's relay for Kelly's brief (GET {url}/brief?date=, header X-Relay-Secret). The URL is a var; the secret is one Vlad puts. Either missing = no Kelly brief. */
+  KELLY_RELAY_URL?: string;
+  KELLY_RELAY_SECRET?: string;
   /** Web Push VAPID keys, base64url (node scripts/gen-vapid.mjs), and the contact subject (mailto:). */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;

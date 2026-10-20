@@ -15,6 +15,8 @@
     "ID_URL": "https://id.knocturnlabs.com",
     "VAPID_SUBJECT": "mailto:vladimir.bigvlad@gmail.com",
     "DEV_LOGIN": "0",
+    // Phase 5: Kelly-Cloud's relay for Kelly's brief on Today. The secret KELLY_RELAY_SECRET is one Vlad puts himself.
+    "KELLY_RELAY_URL": "https://kelly.knocturnlabs.com/api/compass-relay",
     // Phase 4 device push (worker/lib/apns.ts, fcm.ts). Secrets Vlad puts himself: APNS_KEY_P8, APNS_KEY_ID, FCM_SERVICE_ACCOUNT.
     "APPLE_TEAM_ID": "K948BT44PM",
     "APNS_TOPIC": "com.knocturnlabs.compass",
@@ -27,5 +29,5 @@
   // Every 15 minutes: Trash purge (30 days), audit purge (90 days). Later phases add pushes here.
   "triggers": { "crons": ["*/15 * * * *"] },
   "routes": [{ "pattern": "compass.knocturnlabs.com", "custom_domain": true }]
-  // Secrets (wrangler secret put): COMPASS_DATA_KEY; Phase 2: INBOX_SECRET_KELLY/ID/HOLLOW, VAPID_PUBLIC_KEY/PRIVATE_KEY, EMAIL_INBOX_ADDRESS, ALLOWED_FORWARDERS (scripts/setup-phase2.sh).
+  // Secrets (wrangler secret put): COMPASS_DATA_KEY; Phase 5: AGENT_SECRET_KELLY, KELLY_RELAY_SECRET; Phase 2: INBOX_SECRET_KELLY/ID/HOLLOW, VAPID_PUBLIC_KEY/PRIVATE_KEY, EMAIL_INBOX_ADDRESS, ALLOWED_FORWARDERS (scripts/setup-phase2.sh).
 }

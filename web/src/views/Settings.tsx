@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { strToU8, zipSync } from 'fflate';
-import type { ExportBundle, Provider, Settings, Status, PushType } from '../../../shared/types.ts';
+import type { AgentScope, ExportBundle, Provider, Settings, Status, PushType } from '../../../shared/types.ts';
 import { api, logout, online } from '../api.ts';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { Link } from '../router.ts';
@@ -15,6 +15,7 @@ import { Documents } from './project/Documents.tsx';
 import { loadUsage, providerReady, spend, type Usage } from '../copilot.ts';
 import { saveBytes } from '../docs/download.ts';
 import { exportMarkdown } from '../docs/export-md.ts';
+import { SCOPE_LABEL } from '../../../shared/kelly-log.ts';
 
 type Patch = Partial<Omit<Settings, 'wip_limits' | 'push'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']> };
 type Save = (patch: Patch) => Promise<void>;
@@ -74,6 +75,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Rules />
       <Email s={s} save={save} />
       <Ai s={s} save={save} />
+      <KellyCard />
       <ExportCard />
       <div className="card">
         <CardHead icon="doc" title="Documents" desc="Unfiled files that are not in a project. Project files live on the project's Documents tab." />
@@ -213,6 +215,40 @@ function Ai({ s, save }: { s: Settings; save: Save }) {
         <div key={p} className="ai-row"><span>{PROVIDER_NAME[p]}{usage && <span style={{ color: 'var(--text-faint)', fontSize: 12 }}> · {usage.models[p]}</span>}</span>
           <span>{!usage ? '…' : providerReady(usage, p) ? 'Set up' : <>Not set up: run <code>npx wrangler secret put {KEY_NAME[p]}</code> in the Compass folder</>}</span></div>))}
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Work projects are Offline only until you switch them on the project page.</p>
+    </div>
+  );
+}
+
+type KellyState = { enabled: boolean; scopes: AgentScope[]; last_call_at: string | null; calls_today: number; relay: boolean };
+const SCOPES = Object.keys(SCOPE_LABEL) as AgentScope[];
+
+function KellyCard() {
+  const [k, setK] = useState<KellyState | null | undefined>(undefined); // undefined: loading, null: no connection
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api<KellyState>('/kelly').then(setK).catch(() => setK(null)); }, []);
+  // Every change is a passkey step-up: api() asks, then retries. The screen shows what the server kept, never a guess.
+  const put = async (body: { enabled?: boolean; scopes?: AgentScope[] }) => {
+    setBusy(true);
+    try { const r = await api<Pick<KellyState, 'enabled' | 'scopes'>>('/kelly', { method: 'PUT', json: body }); setK((cur) => cur && { ...cur, ...r }); toast('Saved'); }
+    catch (e) { toast((e as Error).message || 'Kelly needs a connection'); }
+    finally { setBusy(false); }
+  };
+  const sw = (label: string, checked: boolean, on: (v: boolean) => void, disabled: boolean) => (
+    <label key={label} className="kelly-row"><span>{label}</span><span className="tog"><input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => on(e.target.checked)} /><i /></span></label>);
+  return (
+    <div className="card kelly-card">
+      <CardHead icon="kelly" title="Kelly" desc="Let your assistant read and add to your tasks. Off until you say so." />
+      {k === undefined ? null : k === null ? <p className="hint">Needs a connection.</p> : <>
+        {sw('Kelly may use Compass', k.enabled, (v) => void put({ enabled: v }), busy)}
+        <div className="kelly-perms" data-off={k.enabled ? undefined : ''}>
+          {SCOPES.map((sc) => sw(SCOPE_LABEL[sc], k.scopes.includes(sc), (v) => void put({ scopes: v ? [...k.scopes, sc] : k.scopes.filter((x) => x !== sc) }), busy || !k.enabled))}
+        </div>
+        <p className="kelly-note">“Shared” means personal tasks, and projects whose data may go to the cloud. Offline-only projects and their tasks stay private; Kelly never sees them, and she can't delete or edit anything.</p>
+        <div className="kelly-row"><span>Last call</span><span>{k.last_call_at ? new Date(k.last_call_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'None yet'}</span></div>
+        <div className="kelly-row"><span>Calls today</span><span>{k.calls_today}</span></div>
+        {!k.relay && <p className="kelly-note">Kelly's brief on Today needs the relay secret: run <code>npx wrangler secret put KELLY_RELAY_SECRET</code> in the Compass folder.</p>}
+        <Link to="/kelly/log" className="btn">See Kelly's activity</Link>
+      </>}
     </div>
   );
 }
