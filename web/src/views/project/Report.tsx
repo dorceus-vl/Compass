@@ -17,7 +17,7 @@ import { useDocs } from './Documents.tsx';
 type Preset = 'week' | 'two' | 'month' | 'custom';
 const PRESETS: [Preset, string][] = [['week', 'This week'], ['two', 'Last 2 weeks'], ['month', 'This month'], ['custom', 'Custom']];
 const REFUSED: Record<string, string> = {
-  offline_boundary: 'Offline only: the copilot never sends this project to Claude or Gemini.',
+  offline_boundary: 'Offline only: Athena never sends this project to Claude or Gemini.',
   no_key: "That provider isn't set up yet. See Settings.", cap_reached: "This month's AI budget is used up. Raise it in Settings.",
   rate_limited: 'Too many questions this hour. Try again in a few minutes.', provider_error: 'The provider could not answer. Try again.',
 };
@@ -114,7 +114,7 @@ export function Report({ project }: { project: Project }) {
   const markdown = (d: TemplateDoc, what: string) => saveText(toMarkdown(d), `${name(what)}.md`);
 
   const writeSummary = async () => {
-    setAi({ busy: true, note: '' }); setLive('The copilot is writing the summary…');
+    setAi({ busy: true, note: '' }); setLive('Athena is writing the summary…');
     try {
       const r = await fetchInput(true);
       if (r.ai_summary) { setSummary({ key, text: r.ai_summary }); setAi({ busy: false, note: '' }); setLive('Summary ready. The preview is updated.'); }
@@ -163,12 +163,12 @@ export function Report({ project }: { project: Project }) {
             {btn('Markdown', () => markdown(doc!, 'status'), { label: 'Download the status report as Markdown' })}
             {btn('PDF', () => setToPrint(doc), { label: 'Print the status report or save it as PDF' })}
             {cloud
-              ? <button type="button" className="btn" disabled={!model || ai.busy || off} onClick={() => void writeSummary()}>{ai.busy ? 'Writing…' : 'Write the summary with the copilot'}</button>
+              ? <button type="button" className="btn" disabled={!model || ai.busy || off} onClick={() => void writeSummary()}>{ai.busy ? 'Writing…' : 'Write the summary with Athena'}</button>
               : <small className="sub">{REFUSED.offline_boundary}</small>}
             <button type="button" className="btn" disabled={off} onClick={() => void refresh()} style={{ marginLeft: 'auto' }}>Refresh data</button>
           </div>
           {ai.note && <div className="sub" style={{ color: 'var(--danger)' }}>{ai.note}</div>}
-          {off && <div className="sub" role="note">Offline: using the last copy{input ? ` from ${input.at.slice(0, 16).replace('T', ' ')}` : ''}. The copilot summary and template files need a connection.</div>}
+          {off && <div className="sub" role="note">Offline: using the last copy{input ? ` from ${input.at.slice(0, 16).replace('T', ' ')}` : ''}. Athena's summary and template files need a connection.</div>}
         </div>
         {doc ? <div className="card report-preview" aria-label="Report preview"><PrintDoc doc={doc} /></div>
           : <p style={{ color: 'var(--text-faint)', margin: 0 }}>{valid ? (offline ? 'No saved copy of this report yet. Open it once while online.' : 'Loading the report…') : ''}</p>}

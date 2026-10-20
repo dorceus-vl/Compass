@@ -27,7 +27,7 @@ export function Lessons({ project }: { project: Project }) {
   };
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <div className="sub">Lessons from personal projects are searchable in the library; the copilot reads a project's lessons when it answers about that project.</div>
+      <div className="sub">Lessons from personal projects are searchable in the library; Athena reads a project's lessons when it answers about that project.</div>
       {offline && <div className="sub" role="status">Offline: showing the last copy. Changes need a connection.</div>}
       <form className="row" onSubmit={add}>
         <input className="field" style={{ flex: '1 1 240px', width: 'auto' }} aria-label="New lesson" placeholder="What did you learn…" maxLength={4000} value={text} onChange={(e) => setText(e.target.value)} />

@@ -36,7 +36,7 @@ The seventh edition of PMI's PMBOK Guide (2021) moved away from a catalogue of p
 - Draw a quick stakeholder map (parties prenantes) and check every name has an owner on your side.
 - For your next cutover, confirm the rollback plan has actually been rehearsed.
 - Restate the project's value in one sentence and check the next milestone still serves it.
-- Ask the copilot to review your plan against these principles and list the gaps.
+- Ask Athena to review your plan against these principles and list the gaps.
 
 ## Related
 

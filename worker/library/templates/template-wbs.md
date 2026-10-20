@@ -39,7 +39,7 @@ When you need a deliverable-based WBS, for a contract, a gate pack or a vendor's
 - Stop breaking down at work packages (lots de travail) one person can own and estimate.
 - Add the estimates; three-point ranges work well here (see [[estimation-techniques]]).
 
-On a project that allows cloud AI, the copilot's "Plan from scope" preset can propose a breakdown to work-package level with three-point estimates, working from the project's scope. Its proposals reach the board only when you choose "Add to the board", and the next outline will include them.
+On a project that allows cloud AI, Athena's "Plan from scope" preset can propose a breakdown to work-package level with three-point estimates, working from the project's scope. Its proposals reach the board only when you choose "Add to the board", and the next outline will include them.
 
 ## In practice
 

@@ -70,7 +70,7 @@ A weak domain drags the others down. Poor stakeholder engagement shows up as lat
 - Check the RAID log has an owner and a response for every open risk.
 - Confirm the customer has agreed acceptance criteria for the next deliverable.
 - Replace one vanity metric in your status report with a measure you would act on.
-- Ask the copilot to review the project against these eight domains.
+- Ask Athena to review the project against these eight domains.
 
 ## Related
 

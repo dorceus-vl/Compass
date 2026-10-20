@@ -59,7 +59,7 @@ Report buffer used against work done: half the buffer gone with a third of the w
 
 ## In Compass
 
-Milestones carry the deliverable dates the customer sees, and tasks carry due dates. The WBS outline template numbers each milestone with the tasks due on or before it and gathers the rest under "Other work". Compass does not draw dependency links, so keep external ones in the RAID log. On a project that allows cloud AI, the copilot's "Plan from scope" preset drafts a WBS with three-point estimates; nothing reaches the board until you tap "Add to the board".
+Milestones carry the deliverable dates the customer sees, and tasks carry due dates. The WBS outline template numbers each milestone with the tasks due on or before it and gathers the rest under "Other work". Compass does not draw dependency links, so keep external ones in the RAID log. On a project that allows cloud AI, Athena's "Plan from scope" preset drafts a WBS with three-point estimates; nothing reaches the board until you tap "Add to the board".
 
 ## In practice
 

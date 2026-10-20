@@ -236,7 +236,7 @@ Bell Business Markets projects run in two languages. A steering committee in Mon
 - Write the meeting's decisions in the language the meeting was held in, and keep the same term for the same thing throughout a document.
 - In emails to Québec colleagues, prefer the (QC) terms: courriel, rencontre, soumission, gabarit.
 - When a vendor's French term differs from yours, agree one term per project and put it in the communication plan.
-- Ask the copilot to write a French version of a status summary, then check its terms here before sending.
+- Ask Athena to write a French version of a status summary, then check its terms here before sending.
 
 ## Related
 

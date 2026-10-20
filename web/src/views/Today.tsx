@@ -27,7 +27,7 @@ export function Today() {
   const [hz, setHz] = useState<Horizon>('short');
   const [finished, onFinish] = useFinished();
   const t = today();
-  const [ai, setAi] = useState<string | null>(null); // the copilot's version of today's brief, kept in `meta` for the rest of the day
+  const [ai, setAi] = useState<string | null>(null); // Athena's version of today's brief, kept in `meta` for the rest of the day
   const [canAsk, setCanAsk] = useState(false);
   const [writing, setWriting] = useState(false);
   const [kelly, setKelly] = useState<string | null>(null); // Kelly's paragraph from Kelly-Cloud, kept in `meta` for the day (plain text, never HTML)
@@ -75,7 +75,7 @@ export function Today() {
       const { text } = await api<{ text: string }>('/ai/brief', { method: 'POST' });
       setAi(text);
       await idb.put('meta', { id: `brief:${t}`, text, at: new Date().toISOString() }).catch(() => {});
-    } catch (e) { toast((e as Error).message || 'The copilot could not write it'); }
+    } catch (e) { toast((e as Error).message || 'Athena could not write it'); }
     finally { setWriting(false); }
   };
   const daysLeft = lineMs ? daysUntil(lineMs.due_at!, t) : 0;
@@ -87,9 +87,9 @@ export function Today() {
       }} />
       <AddedStrip onOpen={setOpen} />
       <section className="card brief" aria-label="Today's brief">
-        <div className="eyebrow">{kelly ? 'Kelly' : ai ? 'Copilot' : "Compass's summary"}</div>
+        <div className="eyebrow">{kelly ? 'Kelly' : ai ? 'Athena' : "Compass's summary"}</div>
         <p className={kelly ? 'kelly-brief' : undefined}>{kelly ?? ai ?? briefText(answer, t)}</p>
-        {!kelly && !ai && canAsk && online() && <button type="button" className="btn" disabled={writing} onClick={() => void writeIt()}>{writing ? 'Writing…' : 'Write it with the copilot'}</button>}
+        {!kelly && !ai && canAsk && online() && <button type="button" className="btn" disabled={writing} onClick={() => void writeIt()}>{writing ? 'Writing…' : 'Write it with Athena'}</button>}
       </section>
       <section aria-labelledby="hz-h">
         <SectionHead id="hz-h" eyebrow="Your horizons" title="Turn the compass, the horizons follow">

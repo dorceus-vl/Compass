@@ -144,7 +144,7 @@ function OfflinePanel({ text, reason, project }: { text: string; reason: string;
       {templates.length ? <div className="row">{templates.map((t) => <Link key={t.key} to={to} className="chip" title={project ? 'Open the Report tab' : 'Pick a project, then open its Report tab'}>{t.name}</Link>)}</div> : <p className="sub" style={{ margin: 0 }}>No template names match.</p>}
       <div className="eyebrow">Saved answers</div>
       {answers.length ? <div className="lib-list">{answers.map((s) => (
-        <Link key={s.id} to={`/copilot/${s.thread_id}`} className="card lib-hit" style={{ padding: 12 }}><b>{s.thread_title}</b><p>{s.content.slice(0, 200)}</p></Link>))}</div>
+        <Link key={s.id} to={`/athena/${s.thread_id}`} className="card lib-hit" style={{ padding: 12 }}><b>{s.thread_title}</b><p>{s.content.slice(0, 200)}</p></Link>))}</div>
         : <p className="sub" style={{ margin: 0 }}>No saved answers match.</p>}
     </div>
   );
@@ -174,8 +174,8 @@ let prefill = '';
 const ASK = 'compass:ask';
 export function askCopilot(text: string) {
   prefill = text;
-  const here = location.pathname.startsWith('/copilot');
-  navigate('/copilot/new');
+  const here = location.pathname.startsWith('/athena');
+  navigate('/athena/new');
   if (here) window.dispatchEvent(new Event(ASK)); // a composer that is already open takes it; a new one reads it on mount
 }
 type Err = { message: string; again: 'send' | Provider };
@@ -235,7 +235,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
     setErr(null); follow.current = true;
     if (project?.data_boundary === 'offline') { showOff('Offline only: nothing leaves Compass for this project.'); refocus(); return; }
     if (!online()) { showOff('No connection: nothing was sent. This is what Compass has on this device.'); refocus(); return; }
-    setOff(null); setBusy(true); setPending(message); follow.current = true; setLive('Copilot is answering…');
+    setOff(null); setBusy(true); setPending(message); follow.current = true; setLive('Athena is answering…');
     try {
       const r = await ask({ thread_id: thread?.id, project_id: thread ? undefined : projSel || undefined, provider: prov, message, preset: preset ?? undefined, page: thread ? undefined : page });
       cur.current = r.thread.id;
@@ -247,7 +247,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
   };
   const askToo = async (p: Provider) => {
     if (!thread || busy) return;
-    setErr(null); setBusy(true); follow.current = true; setLive('Copilot is answering…');
+    setErr(null); setBusy(true); follow.current = true; setLive('Athena is answering…');
     try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true }); setMsgs((x) => [...x, ...r.messages]); onSent(); setLive('Answer ready'); }
     catch (e) { fail(e, p); }
     finally { setBusy(false); refocus(); }
@@ -257,7 +257,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
     catch (e) { toast((e as Error).message); }
   };
 
-  if (missing) return <div className="card"><p style={{ margin: 0 }}>This conversation isn't available. <Link to="/copilot">Back to Copilot</Link></p></div>;
+  if (missing) return <div className="card"><p style={{ margin: 0 }}>This conversation isn't available. <Link to="/athena">Back to Athena</Link></p></div>;
   return (
     <>
       <div className="row cp-top">
@@ -267,7 +267,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
       </div>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{live}</div>
       <div className="cp-msgs" ref={box}>
-        {!thread && !pending && !off && <div className="card"><p style={{ margin: 0 }}>Ask about a situation, a plan or a page of the library. Pick a project to give the copilot its context.</p></div>}
+        {!thread && !pending && !off && <div className="card"><p style={{ margin: 0 }}>Ask about a situation, a plan or a page of the library. Pick a project to give Athena its context.</p></div>}
         {msgs.map((m, i) => m.role === 'user'
           ? <div key={m.id} className="cp-user">{m.content}</div>
           : <Answer key={m.id} m={m} project={project} onSave={() => void save(m)}
@@ -332,10 +332,10 @@ export function CopilotView({ id }: { id?: string }) {
   const page = new URLSearchParams(location.search).get('page') ?? undefined;
   return (
     <>
-      <div className="head"><div><div className="eyebrow">Copilot</div><h1 style={{ marginTop: 6 }}>Think it <b>through</b></h1>
+      <div className="head"><div><div className="eyebrow">Athena</div><h1 style={{ marginTop: 6 }}>Think it <b>through</b></h1>
         <div className="sub">Answers cite the library; nothing reaches the board until you add it.</div></div>
         <SpendChip usage={usage} /></div>
-      <Workspace openId={id ?? null} page={page} usage={usage} refreshUsage={refresh} onOpen={(to, replace) => navigate(to === null ? '/copilot' : `/copilot/${to}`, replace)} />
+      <Workspace openId={id ?? null} page={page} usage={usage} refreshUsage={refresh} onOpen={(to, replace) => navigate(to === null ? '/athena' : `/athena/${to}`, replace)} />
     </>
   );
 }

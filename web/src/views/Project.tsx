@@ -25,7 +25,7 @@ import { projectColor, PROJECT_SWATCHES } from '../ui/colors.ts';
 
 const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
-const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Copilot' };
+const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Athena' };
 
 export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string }) {
   const { projects, tasks, milestones, ready } = useStore();
@@ -139,7 +139,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
             <div className="qcard"><h3>Data boundary</h3>
               <div className="seg" role="group" aria-label="Data boundary" style={{ display: 'flex', width: 'max-content', maxWidth: '100%', flexWrap: 'wrap' }}>
                 {([['cloud', 'Cloud AI allowed'], ['offline', 'Offline only']] as const).map(([v, l]) => <button type="button" key={v} className={p.data_boundary === v ? 'on' : ''} aria-pressed={p.data_boundary === v} disabled={boundaryBusy} onClick={() => void setBoundary(v)}>{l}</button>)}</div>
-              <div className="qnote">Offline only: the copilot never sends this project to Claude or Gemini.</div></div>
+              <div className="qnote">Offline only: Athena never sends this project to Claude or Gemini.</div></div>
             <div className="qcard"><h3>Objectives</h3>{inp('objectives', 'Objectives', 'area')}{inp('success_criteria', 'Success criteria', 'area')}</div>
             <div className="qcard"><h3>Scope</h3>{inp('scope_in', 'In scope', 'area')}{inp('scope_out', 'Out of scope', 'area')}</div>
           </div></section>

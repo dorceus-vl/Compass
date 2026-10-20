@@ -14,9 +14,9 @@ Three fields: the RAG, its reason, and the period.
 
 ## Executive summary
 
-On a project that allows cloud AI, "Write the summary with the copilot" drafts this section from the report's data. Otherwise, Compass prints the progress line: tasks done this period, done out of total with a percentage, and the number overdue.
+On a project that allows cloud AI, "Write the summary with Athena" drafts this section from the report's data. Otherwise, Compass prints the progress line: tasks done this period, done out of total with a percentage, and the number overdue.
 
-- **Good**: three to five sentences: where the project stands, what changed since last time, what you need and from whom. Edit the copilot's draft or the progress line in Word until it says that.
+- **Good**: three to five sentences: where the project stands, what changed since last time, what you need and from whom. Edit Athena's draft or the progress line in Word until it says that.
 - **Mistakes**: sending the bare task count to a sponsor; a summary that ends without the ask.
 
 ## Progress

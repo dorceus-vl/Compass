@@ -49,7 +49,7 @@ Optional, depending on the audience: budget (planned, spent, forecast), change r
 
 ## In Compass
 
-Set the project's RAG and its reason on the project page; the portfolio shows them with % done, the next milestone, open and high risks, and pending changes for every active project. The Report tab builds the status report from the project's own data for a period (this week, the last two weeks, this month or custom dates), with the sections above, and exports it to Word, Markdown or PDF. On a project that allows cloud AI, "Write the summary with the copilot" drafts the executive summary; otherwise the summary is the progress line, which you can edit in Word.
+Set the project's RAG and its reason on the project page; the portfolio shows them with % done, the next milestone, open and high risks, and pending changes for every active project. The Report tab builds the status report from the project's own data for a period (this week, the last two weeks, this month or custom dates), with the sections above, and exports it to Word, Markdown or PDF. On a project that allows cloud AI, "Write the summary with Athena" drafts the executive summary; otherwise the summary is the progress line, which you can edit in Word.
 
 ## In practice
 

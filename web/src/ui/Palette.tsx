@@ -34,7 +34,7 @@ export function Palette({ onClose, prefill, onAdded }: { onClose: () => void; pr
         ...tasks.filter((t) => needle && !t.deleted_at && t.status !== 'done' && t.title.toLowerCase().includes(needle)).slice(0, 6).map((t) => ({ label: t.title, hint: 'Task', color: taskColor(t, projects), run: () => setOpen(t.id) })),
         ...(needle ? find(needle, 5) : []).map(({ page }) => ({ label: `Library · ${page.title}`, hint: 'Library', color: 'var(--accent)', run: () => { navigate(`/library/${page.slug}`); ref.current?.close(); } })),
         ...docs.filter((d) => needle && d.name.toLowerCase().includes(needle)).slice(0, 5).map((d) => ({ label: d.name, hint: 'Document', color: 'var(--text-dim)', run: () => { navigate(d.project_id ? `/projects/${d.project_id}/documents` : '/settings'); ref.current?.close(); } })),
-        ...(q.trim() ? [{ label: `Ask the copilot: ${q.trim()}`, hint: 'Copilot', color: 'var(--accent-dim)', run: () => { askCopilot(q.trim()); ref.current?.close(); } }] : []),
+        ...(q.trim() ? [{ label: `Ask Athena: ${q.trim()}`, hint: 'Athena', color: 'var(--accent-dim)', run: () => { askCopilot(q.trim()); ref.current?.close(); } }] : []),
       ];
   useEffect(() => { document.getElementById(`palette-opt-${sel}`)?.scrollIntoView({ block: 'nearest' }); }, [sel]);
   const onKey = (e: ReactKeyboardEvent) => {

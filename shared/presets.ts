@@ -1,8 +1,16 @@
 import type { AiFeature } from './types.ts';
 
-export type PresetId = 'use_case' | 'plan_from_scope' | 'plan_review' | 'status_report' | 'exception_report' | 'escalation_note' | 'difficult_conversation';
+export type PresetId = 'rephrase_email' | 'executive_version' | 'optimize_spreadsheet' | 'review_document' | 'use_case' | 'plan_from_scope' | 'plan_review' | 'status_report' | 'exception_report' | 'escalation_note' | 'difficult_conversation';
 
 export const PRESETS: { id: PresetId; label: string; feature: AiFeature; wantsProposals: boolean; prompt: string }[] = [
+  { id: 'rephrase_email', label: 'Rephrase email', feature: 'copilot', wantsProposals: false,
+    prompt: "Rephrase the email Vlad gives you so it is clear, firm and friendly. Keep every fact, date and name as written. Return the email only, ready to send, in the language it was written in. Then add at most two lines of advice on tone or on what to watch before he sends it." },
+  { id: 'executive_version', label: 'Executive version', feature: 'copilot', wantsProposals: false,
+    prompt: 'Turn what Vlad gives you into an executive version of under 120 words. Lead with the decision needed. Then the RAG status (red, amber or green) with its reason, the ask with a date, the top risk and the next milestone. End with one line on what you left out and why.' },
+  { id: 'optimize_spreadsheet', label: 'Optimize spreadsheet', feature: 'copilot', wantsProposals: false,
+    prompt: 'Review the spreadsheet below and rank your findings. Tag each one Fix (it changes results), Speed or Tidy. Give the cell or range, and a before and after formula, using functions Excel 365 has (XLOOKUP, LET, FILTER, named cells). Give advice only: never claim to have changed the file, and say when the data was cut.' },
+  { id: 'review_document', label: 'Review a document', feature: 'copilot', wantsProposals: true,
+    prompt: 'Review the document below as a sceptical peer. Find the gaps and risks, the missing acceptance criteria and the unclear owners or dates. Cite the section or page number for each finding. Rank what to fix first, then list the next steps. Propose the tasks, risks and decisions that would close the gaps.' },
   { id: 'use_case', label: 'Work through a situation', feature: 'copilot', wantsProposals: true,
     prompt: 'Work through the situation Vlad describes. Start with a short diagnosis: what is really going on and what is still unknown. Then give two or three options, each with its trade-offs. Recommend one and turn it into a plan of dated tasks. Say who to inform and how (channel, tone, timing). Finish with the risks and issues worth logging.' },
   { id: 'plan_from_scope', label: 'Plan from scope', feature: 'copilot', wantsProposals: true,

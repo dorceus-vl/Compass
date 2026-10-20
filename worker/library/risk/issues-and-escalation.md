@@ -52,7 +52,7 @@ Example, in brief: the vendor has missed the equipment delivery for 18 sites by 
 
 ## In Compass
 
-Log issues in the RAID tab with impact, owner, response and due date, and use "Make a task" for the actions. Record the escalation's outcome in Decisions. On a project that allows cloud AI, the copilot's "Escalation note" preset drafts the ask, the impact, the deadline and the options for you to edit.
+Log issues in the RAID tab with impact, owner, response and due date, and use "Make a task" for the actions. Record the escalation's outcome in Decisions. On a project that allows cloud AI, Athena's "Escalation note" preset drafts the ask, the impact, the deadline and the options for you to edit.
 
 ## In practice
 

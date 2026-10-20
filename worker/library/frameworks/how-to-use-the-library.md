@@ -10,7 +10,7 @@ Open Library and type in the search box. Results appear as you type, ranked by h
 
 ## Ask about this page
 
-Each page has an "Ask about this page" button. It opens the copilot with that page as the starting point, so you can ask how to apply it to a project. The page text goes to the model as reference material, never as instructions.
+Each page has an "Ask about this page" button. It opens Athena with that page as the starting point, so you can ask how to apply it to a project. The page text goes to the model as reference material, never as instructions.
 
 ## What else appears here
 

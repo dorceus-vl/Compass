@@ -80,7 +80,7 @@ A loop opens with `#` and closes with `/`. Inside it, use the row's field names 
 {{#lessons.rows}}{{category}}: {{text}}{{/lessons.rows}}
 ```
 
-For a real Word table, build one row with a field in each cell, and put the opening tag in the first cell and the closing tag in the last cell; the row repeats once per item. `ai.summary` is filled only after you have had the copilot write the summary on the Report tab.
+For a real Word table, build one row with a field in each cell, and put the opening tag in the first cell and the closing tag in the last cell; the row repeats once per item. `ai.summary` is filled only after you have had Athena write the summary on the Report tab.
 
 ## In practice
 

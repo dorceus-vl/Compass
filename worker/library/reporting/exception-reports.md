@@ -56,7 +56,7 @@ Keep it to two pages at most, with the options table on the first. Send it befor
 
 ## In Compass
 
-The exception report template fills the situation from the project's RAG and reason, lists overdue tasks and late milestones under Consequences, and adds the open risks and issues; Cause and Options start blank for you to write. On a project that allows cloud AI, the copilot's "Exception report" preset drafts the cause, impact, options and recommendation for you to check. Record the outcome in Decisions and any approved changes in the Changes tab.
+The exception report template fills the situation from the project's RAG and reason, lists overdue tasks and late milestones under Consequences, and adds the open risks and issues; Cause and Options start blank for you to write. On a project that allows cloud AI, Athena's "Exception report" preset drafts the cause, impact, options and recommendation for you to check. Record the outcome in Decisions and any approved changes in the Changes tab.
 
 ## In practice
 

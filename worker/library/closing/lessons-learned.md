@@ -45,7 +45,7 @@ Each project has a Lessons tab: add a lesson with its text and a category, and e
 
 - **Lessons from personal projects** are searchable in the library, under Lessons, alongside these pages.
 - **Lessons from work projects** stay inside their project and are encrypted with the rest of its work data, so they do not appear in the library.
-- **The copilot** reads a project's lessons when it answers questions about that project, as part of the project's context.
+- **Athena** reads a project's lessons when it answers questions about that project, as part of the project's context.
 - **The lessons learned template** builds a closing document from the project: a project summary, what went well, what to improve, the lessons table with categories, and actions for next time.
 
 Before starting a new project, search the library for the relevant category and read what your past self wrote.

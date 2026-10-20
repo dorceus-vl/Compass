@@ -39,11 +39,11 @@ For a router shortage on a 60-site rollout, the three might be:
 - B: re-sequence, cutting over the 20 sites with equipment in hand first; no cost, 10 days late, more night work.
 - C: accept the slip and negotiate the date with the customer; no cost, 18 days late, contract penalty to be discussed.
 
-On a project that allows cloud AI, the copilot's "Exception report" preset can draft causes, options with trade-offs and a recommendation for you to check and rewrite.
+On a project that allows cloud AI, Athena's "Exception report" preset can draft causes, options with trade-offs and a recommendation for you to check and rewrite.
 
 ## Recommendation
 
-If you had the copilot write the summary on the Report tab, Compass places that text here as a starting point; otherwise the section is blank. Either way, rewrite it as a recommendation.
+If you had Athena write the summary on the Report tab, Compass places that text here as a starting point; otherwise the section is blank. Either way, rewrite it as a recommendation.
 
 - **Good**: which option, why, and the decision you need from whom by when: "Recommend B, with A held in reserve. Decision needed from the sponsor by Thursday to book night crews."
 - **Mistakes**: no deadline, so the decision drifts; a recommendation that is not one of the options.

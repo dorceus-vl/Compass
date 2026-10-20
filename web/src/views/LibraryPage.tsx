@@ -9,7 +9,7 @@ export function LibraryPageView({ slug }: { slug: string }) {
   return (
     <div className="libpage">
       <div className="head"><div><div className="eyebrow">{page.section}</div><h1 style={{ marginTop: 6, overflowWrap: 'anywhere' }}>{page.title}</h1></div>
-        <div className="row"><Link to="/library" className="btn">Library</Link><Link to={`/copilot?page=${encodeURIComponent(page.slug)}`} className="btn primary">Ask about this page</Link></div></div>
+        <div className="row"><Link to="/library" className="btn">Library</Link><Link to={`/athena?page=${encodeURIComponent(page.slug)}`} className="btn primary">Ask about this page</Link></div></div>
       <article className="card reading"><Markdown text={page.body} /></article>
     </div>
   );

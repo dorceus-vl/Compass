@@ -47,7 +47,7 @@ Do not end on "let's keep an eye on it". End with one specific step, an owner an
 
 ## In Compass
 
-On a project that allows cloud AI, the copilot's "Prepare a difficult conversation" preset drafts a goal, an opening line, facts versus stories, likely reactions and the next step to agree. Treat it as preparation, not a script. Log the agreed next step as a task with its date, and any decision in Decisions.
+On a project that allows cloud AI, Athena's "Prepare a difficult conversation" preset drafts a goal, an opening line, facts versus stories, likely reactions and the next step to agree. Treat it as preparation, not a script. Log the agreed next step as a task with its date, and any decision in Decisions.
 
 ## In practice
 
