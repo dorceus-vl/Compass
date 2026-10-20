@@ -9,9 +9,7 @@
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .shell{display:grid;grid-template-columns:84px 1fr;gap:16px;min-height:760px;padding:24px 20px 60px;max-width:1380px;margin:0 auto}
 .rail{background:var(--panel);border:1px solid var(--border-soft);border-radius:26px;padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:6px}
-.rail .logo{width:42px;height:42px;border-radius:999px;border:3px solid var(--accent);background:#000;display:grid;place-items:center;margin-bottom:10px;position:relative}
-.rail .logo i{width:6px;height:6px;border-radius:99px;background:var(--accent);box-shadow:10px 0 0 var(--accent)}
-.rail .logo em{position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border-radius:99px;background:var(--ok);border:2px solid var(--panel)}
+.rail .logo{width:42px;height:42px;border-radius:999px;margin-bottom:10px;display:block}
 .rail a{width:56px;padding:9px 0;border-radius:14px;color:var(--text-faint);font-size:10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
 .rail a svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6}
 .rail a.on{background:rgba(var(--accent-rgb),.12);color:var(--accent)}

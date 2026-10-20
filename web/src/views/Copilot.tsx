@@ -279,8 +279,12 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
       </div>
       <div className="card cp-compose">
         <div className="row">
-          <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={projSel} disabled={!!(projectId || thread)} onChange={(e) => setSel(e.target.value)}>
-            <option value="">None (personal)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          {projectId || thread
+            ? <div className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project">
+                {projects.find((p) => p.id === projSel)?.name ?? 'None (personal)'}
+                <small className="sub"> · {thread ? 'this conversation stays with its project; start a new conversation to pick another' : 'this project'}</small></div>
+            : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={projSel} onChange={(e) => setSel(e.target.value)}>
+                <option value="">None (personal)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
           <div className="seg" role="group" aria-label="Provider">
             {(['claude', 'gemini'] as const).map((p) => <button type="button" key={p} className={prov === p ? 'on' : ''} aria-pressed={prov === p} disabled={!providerReady(usage, p)}
               onClick={() => { picked.current = true; setProvider(p); }}>{NAME[p]}</button>)}</div>

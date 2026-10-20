@@ -14,7 +14,7 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
   return (
     <div className="shell">
       <nav className="rail" aria-label="Main">
-        <div className="logo"><i /><em /></div>
+        <img className="logo" src="/icons/icon-192.png" width={42} height={42} alt="Compass, Knocturn Labs" />
         {NAV.map(([k, to, label]) => k === 'inbox'
           ? <Link key={k} to={to} className={on(k)} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}>Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
           : <Link key={k} to={to} className={on(k)}>{label}</Link>)}
