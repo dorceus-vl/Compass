@@ -57,6 +57,8 @@ function Row({ d, project, off, reload }: { d: DocumentRow; project: Project | n
           onClick={() => void act(() => api(`/documents/${d.id}`, { method: 'PATCH', json: { is_template: d.is_template ? 0 : 1 } }))}>Use as template</button>}
         {lib && (project?.kind === 'work'
           ? <small className="sub">Work documents stay out of the library</small>
+          : project?.data_boundary === 'offline'
+          ? <small className="sub">This project is Offline only, so its files stay out of the library.</small>
           : <button type="button" className="btn" disabled={off || busy} onClick={() => void act(() => api('/library/import', { method: 'POST', json: { document_id: d.id } }), 'Added to the library')}>Add to library</button>)}
         <button type="button" className="btn" style={{ color: 'var(--danger)', marginLeft: 'auto' }} disabled={off || busy}
           onClick={async () => { if (await confirmAction(`Move "${d.name}" to Trash?`, { danger: true })) await act(() => api(`/documents/${d.id}`, { method: 'DELETE' }), 'Moved to Trash'); }}>Trash</button>

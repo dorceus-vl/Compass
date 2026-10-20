@@ -95,7 +95,15 @@ export function Report({ project }: { project: Project }) {
   const statusMake = BUILTINS.find((b) => b.id === 'status_report')!;
   const doc = model ? statusMake.make(model) : null;
 
-  useEffect(() => { if (toPrint) { window.print(); setToPrint(null); } }, [toPrint]);
+  // iOS Safari's print() doesn't block: keep the print copy mounted until afterprint (timeout in case it never fires).
+  useEffect(() => {
+    if (!toPrint) return;
+    const done = () => setToPrint(null);
+    window.addEventListener('afterprint', done, { once: true });
+    window.print();
+    const timer = window.setTimeout(done, 60_000);
+    return () => { window.removeEventListener('afterprint', done); window.clearTimeout(timer); };
+  }, [toPrint]);
 
   const name = (what: string) => fileName(project.name, what, range.to);
   const word = async (d: TemplateDoc, what: string) => {

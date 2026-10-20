@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { TodayAnswer } from '../../../shared/types.ts';
+import type { Settings, TodayAnswer } from '../../../shared/types.ts';
 import { briefText } from '../../../shared/brief.ts';
 import { api, online } from '../api.ts';
 import { idb } from '../store/db.ts';
@@ -23,7 +23,8 @@ export function Today() {
   useEffect(() => {
     setAi(null);
     void idb.get<{ text: string }>('meta', `brief:${t}`).then((c) => setAi(c?.text ?? null)).catch(() => {});
-    loadUsage().then((u) => setCanAsk(providerReady(u, 'claude') || providerReady(u, 'gemini'))).catch(() => setCanAsk(false));
+    // The brief is written by the default provider (worker/routes/ai.ts), so only its key counts.
+    Promise.all([loadUsage(), api<Settings>('/settings')]).then(([u, s]) => setCanAsk(providerReady(u, s.default_provider))).catch(() => setCanAsk(false));
   }, [t]);
   if (!ready) return null;
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && (kind === 'all' || x.kind === kind));

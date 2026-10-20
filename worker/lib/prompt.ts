@@ -34,11 +34,16 @@ export function buildSystem(o: { today: string; pages: LibraryPage[]; project: s
   ].filter(Boolean).join('\n\n');
 }
 
-/** The last n turns, within maxChars, starting with a user turn. */
+/** The last n turns, within maxChars, starting with a user turn; consecutive turns of one role (a rerun's two answers) are merged so roles alternate. */
 export function trimHistory(turns: AiTurn[], n = 20, maxChars = 24000): AiTurn[] {
   const t = turns.slice(-n);
   let total = t.reduce((s, x) => s + x.content.length, 0);
   while (t.length && total > maxChars) total -= t.shift()!.content.length;
   while (t.length && t[0].role === 'assistant') t.shift();
-  return t;
+  return t.reduce<AiTurn[]>((out, x) => {
+    const last = out[out.length - 1];
+    if (last?.role === x.role) last.content += '\n\n' + x.content;
+    else out.push({ ...x });
+    return out;
+  }, []);
 }

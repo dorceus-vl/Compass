@@ -19,11 +19,11 @@ const day = (s: string | null | undefined) => (s ? s.slice(0, 10) : '');
 const section = (title: string, items: string[]) => (items.length ? [`${title}:`, ...items.map((x) => '- ' + x)].join('\n') : '');
 const parts = (...xs: [string, unknown][]) => xs.filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => (k ? `${k} ${v}` : String(v))).join('; ');
 
-/** The project, decrypted, as plain lines for the model. Callers check the boundary first; empty sections are left out. */
-export async function projectContext(env: Env, projectId: string): Promise<string> {
+/** The project, decrypted, as plain lines for the model, or null unless it is a live cloud project (callers check the boundary first; this fails closed too). Empty sections are left out. */
+export async function projectContext(env: Env, projectId: string): Promise<string | null> {
   const q = (sql: string) => env.DB.prepare(sql).bind(projectId);
   const [p, ms, ts, raid, crs, dec, les, mr] = await env.DB.batch([
-    q('SELECT * FROM projects WHERE id = ?1 AND deleted_at IS NULL'),
+    q(`SELECT * FROM projects WHERE id = ?1 AND deleted_at IS NULL AND data_boundary = 'cloud'`),
     q('SELECT * FROM milestones WHERE project_id = ?1 AND done_at IS NULL AND deleted_at IS NULL ORDER BY due_at IS NULL, due_at, sort'),
     q(`SELECT * FROM tasks WHERE project_id = ?1 AND status != 'done' AND deleted_at IS NULL ORDER BY due_at IS NULL, due_at, created_at LIMIT 40`),
     q(`SELECT * FROM raid_items WHERE project_id = ?1 AND status = 'open' AND deleted_at IS NULL ORDER BY COALESCE(probability, 0) * COALESCE(impact, 0) DESC, created_at LIMIT 20`),
@@ -33,7 +33,7 @@ export async function projectContext(env: Env, projectId: string): Promise<strin
     q('SELECT title, summary, received_at, enc_v FROM meeting_reviews WHERE project_id = ?1 ORDER BY received_at DESC LIMIT 3'),
   ]);
   const row = p.results[0] as Project | undefined;
-  if (!row) return '';
+  if (!row) return null;
   const pr = await open(env, 'projects', row);
   const budget = pr.budget_planned !== null || pr.budget_spent !== null ? parts(['planned', pr.budget_planned], ['spent', pr.budget_spent]) : '';
   const record = [

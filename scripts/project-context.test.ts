@@ -12,7 +12,7 @@ const env = (first: unknown) => ({ DB: {
   batch: async () => answers.map((results) => ({ results })),
 } }) as never;
 
-const ctx = await projectContext(env(null), 'p1');
+const ctx = (await projectContext(env(null), 'p1'))!;
 assert.match(ctx, /^Project: Fibre rollout \(personal\)\nStatus: active; phase Execution\nRAG: amber - Vendor late\nSponsor: Ann\nDates: start 2026-09-01\nBudget: planned 1000\nObjectives: Ship it\n/);
 assert.match(ctx, /Open milestones:\n- Go-live; due 2026-11-01; gate/);
 assert.match(ctx, /Open tasks:\n- Call vendor; status waiting; due 2026-10-20; waiting on Bob/);
@@ -27,4 +27,10 @@ assert.equal(await boundaryOf(env({ data_boundary: 'offline' }), 'w1'), 'offline
 assert.deepEqual(await projectAccess(env({ data_boundary: 'cloud', kind: 'work' }), 'w2'), { boundary: 'cloud', kind: 'work' });
 assert.deepEqual(await projectAccess(env(null), null), { boundary: 'cloud', kind: 'personal' }, 'no project → personal');
 assert.equal(await projectAccess(env(null), 'gone'), null, 'trashed → null, not personal');
+// Defence in depth (final review): the project read itself requires a live cloud project, so an Offline switch between the boundary check and this read sends nothing.
+const offlineEnv = { DB: {
+  prepare: (sql: string) => ({ bind: () => ({ sql }) }),
+  batch: async (stmts: { sql: string }[]) => answers.map((results, i) => ({ results: i === 0 && stmts[0].sql.includes(`data_boundary = 'cloud'`) ? [] : results })),
+} } as never;
+assert.equal(await projectContext(offlineEnv, 'p1'), null, 'an Offline (or trashed) project gives no context');
 console.log('project-context: ok');

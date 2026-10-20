@@ -59,6 +59,7 @@ function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null 
   const [ticked, setTicked] = useState(() => new Set(rows.map((r) => r.key)));
   const [added, setAdded] = useState<string[] | null>(null); // null until the saved copy is read, so a reload never offers an add twice
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string[]>([]); // titles of the items the last add could not create
   const mark = `copilot:added:${m.id}`;
   useEffect(() => { void idb.get<{ keys: string[] }>('meta', mark).then((r) => setAdded(r?.keys ?? [])).catch(() => setAdded([])); }, [mark]);
   const gate = !project ? 'Pick a project to log these' : !online() ? 'Log these when you are back online' : '';
@@ -68,23 +69,31 @@ function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null 
   const picked = todo.filter((r) => ticked.has(r.key) && usable(r));
   const add = async () => {
     setBusy(true);
-    const done = [...added];
-    for (const r of picked) {
-      const i = Number(r.key.slice(1));
-      let ok = false;
-      if (r.group === 'task') {
-        const t = pr.tasks[i];
-        await createTask({ title: t.title, horizon: t.horizon, due_at: t.due_at, project_id: project?.id ?? null, kind: project?.kind ?? 'personal' });
-        ok = true;
-      } else if (r.group === 'raid') {
-        const x = pr.raid[i];
-        ok = !!(await govCreate(project!.id, 'raid', { type: x.type, text: x.text, ...(x.probability ? { probability: x.probability } : {}), ...(x.impact ? { impact: x.impact } : {}) }));
-      } else ok = !!(await govCreate(project!.id, 'decisions', { text: pr.decisions[i].text, decided_at: today() }));
-      if (ok) done.push(r.key);
+    const done = [...added], miss: string[] = [];
+    try {
+      for (const r of picked) {
+        const i = Number(r.key.slice(1));
+        let ok = false;
+        try {
+          if (r.group === 'task') {
+            const t = pr.tasks[i];
+            await createTask({ title: t.title, horizon: t.horizon, due_at: t.due_at, project_id: project?.id ?? null, kind: project?.kind ?? 'personal' });
+            ok = true;
+          } else if (r.group === 'raid') {
+            const x = pr.raid[i];
+            ok = !!(await govCreate(project!.id, 'raid', { type: x.type, text: x.text, ...(x.probability ? { probability: x.probability } : {}), ...(x.impact ? { impact: x.impact } : {}) }));
+          } else ok = !!(await govCreate(project!.id, 'decisions', { text: pr.decisions[i].text, decided_at: today() }));
+        } catch { /* counted as failed below */ }
+        if (!ok) { miss.push(r.text); continue; }
+        // Marked as soon as it exists, so a retry after a later failure never adds it twice.
+        done.push(r.key);
+        setAdded([...done]);
+        await idb.put('meta', { id: mark, keys: [...done] }).catch(() => {});
+      }
+    } finally {
+      setFailed(miss);
+      setBusy(false);
     }
-    setAdded(done);
-    await idb.put('meta', { id: mark, keys: done }).catch(() => {});
-    setBusy(false);
   };
   const counts = new Map<string, number>();
   for (const r of rows) if (added.includes(r.key)) counts.set(r.noun, (counts.get(r.noun) ?? 0) + 1);
@@ -101,6 +110,7 @@ function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null 
             <span className="row" style={{ gap: 4 }}>{r.chips.map((c) => <span key={c} className="chip">{c}</span>)}</span>
           </label>))}
         {gate && todo.some((r) => !usable(r)) && <small className="sub" role="note">{gate}</small>}
+        {failed.length > 0 && <small className="sub" role="alert">Not added, try again: {failed.join('; ')}</small>}
         <div><button type="button" className="btn primary" disabled={!picked.length || busy} onClick={() => void add()}>Add to the board</button></div>
       </>}
       {summary && <div className="chip ok" role="status" style={{ justifySelf: 'start' }}>Added: {summary}</div>}

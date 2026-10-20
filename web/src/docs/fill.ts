@@ -6,7 +6,7 @@ import type { ReportModel } from '../../../shared/types.ts';
 export function fillTemplate(bytes: Uint8Array, data: ReportModel): Uint8Array {
   try {
     const doc = new Docxtemplater(new PizZip(bytes), {
-      delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '',
+      delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '', errorLogging: false, // no report model dump in the console
       parser: (tag: string) => ({ get: (scope: unknown) => (tag === '.' ? scope : tag.split('.').reduce<unknown>((o, k) => (o != null && Object.hasOwn(Object(o), k) ? (o as Record<string, unknown>)[k] : undefined), scope)) }),
     });
     doc.render(data);

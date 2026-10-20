@@ -10,7 +10,7 @@ Spec: `docs/superpowers/specs/2026-10-19-compass-design.md`. Everything planned:
 ## What Compass does
 - Tasks, board and three horizons for personal and work, with a timeline and a daily brief.
 - Projects as a portfolio: record, milestones, RAID log, change requests, decisions and lessons per project.
-- Library: 43 bundled project-management pages, searchable offline on the device, plus your own imports.
+- Library: bundled project-management pages, searchable offline on the device, plus your own imports.
 - Copilot on Claude or Gemini: answers with citations from the library and the project, proposals you add to the board yourself, a monthly cap and an Offline only boundary per project.
 - Documents: upload and keep files (work files sealed), generate status reports, minutes and Word documents from your templates, all on the device.
 - Export of everything as JSON, behind your passkey.

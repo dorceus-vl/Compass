@@ -20,6 +20,8 @@ library.get('/', async (c) => {
 // Imports and personal lessons in full, for the device's own search index. Registered before /:slug.
 library.get('/imports', async (c) => c.json({ pages: await extraPages(c.env) }));
 
+const OFFLINE_FILES = 'This project is Offline only, so its files stay out of the library.';
+
 // Document text becomes a library page (personal documents only, ruling R8). Importing the same title again refreshes the page.
 library.post('/import', async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
@@ -28,7 +30,7 @@ library.post('/import', async (c) => {
   const access = await projectAccess(c.env, doc.project_id);
   if (doc.enc_v === 2 || access?.kind === 'work') return c.json({ error: 'Work documents stay out of the library.' }, 403);
   if (!access) return c.json({ error: 'Not found' }, 404); // its project is in Trash
-  if (access.boundary === 'offline') return c.json({ error: 'offline_boundary' }, 409); // an import is model-readable, so an offline project's document never becomes one
+  if (access.boundary === 'offline') return c.json({ error: 'offline_boundary', message: OFFLINE_FILES }, 409); // an import is model-readable, so an offline project's document never becomes one
   if (doc.kind === 'xlsx') return c.json({ error: 'Excel files have no text to import.' }, 400);
   if (body.title !== undefined && (typeof body.title !== 'string' || !body.title.trim() || body.title.trim().length > 120)) return c.json({ error: 'title must be 1-120 characters' }, 400);
   const title = (typeof body.title === 'string' ? body.title : doc.name.replace(/\.[^.]+$/, '')).trim().slice(0, 120) || 'Document';

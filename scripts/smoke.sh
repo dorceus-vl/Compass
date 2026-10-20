@@ -216,6 +216,21 @@ TW=$(printf '%s' "$CW" | js 'd.thread.id'); [ "$(printf '%s' "$CW" | js 'd.threa
 [ "$(D1X "SELECT count(*) AS n FROM ai_threads WHERE id='$TW' AND enc_v=2 AND title NOT LIKE '%Smoke%'" | js 'd[0].results[0].n')" = 1 ] || fail "work thread title is not ciphertext"
 curl "${H[@]}" $B/api/ai/threads/$TW | grep -q 'Stub answer for: Smoke sealed question' || fail "sealed thread does not read back"
 echo "smoke: (p) work project switched to cloud -> chat 200, thread and messages stored as ciphertext (enc_v 2)"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/ai/chat -d '{"project_id":"","message":"x"}')" = 400 ] || fail "empty project_id not refused"
+# Final review fix: Trash means the copilot stops reading an import (a trashed document, or a live document of a trashed project); "ask about this page" goes through modelPage.
+PT=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke trash import","kind":"personal"}' | js d.project.id)
+DT=$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "project_id=$PT" | head -1 | js d.document.id)
+ST=$(curl "${H[@]}" -X POST $B/api/library/import -d "{\"document_id\":\"$DT\",\"title\":\"Smoke trash import $R\"}" | js d.page.slug)
+PAGEQ() { curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/ai/chat -d "{\"page\":\"$ST\",\"message\":\"Summarise this page\"}"; }
+[ "$(PAGEQ)" = 200 ] || fail "a live import is not model-facing"
+curl "${H[@]}" -X DELETE $B/api/projects/$PT >/dev/null
+[ "$(PAGEQ)" = 404 ] || fail "a trashed project's import is still model-facing"
+curl "${H[@]}" -X POST $B/api/trash/projects/$PT/restore | grep -q '"ok":true' || fail "restore project"
+curl "${H[@]}" -X DELETE $B/api/documents/$DT >/dev/null
+[ "$(PAGEQ)" = 404 ] || fail "a trashed document's import is still model-facing"
+curl "${H[@]}" $B/api/library/imports | grep -q "\"slug\":\"$ST\"" || fail "a trashed document's import left the device list"
+curl "${H[@]}" -X DELETE $B/api/library/$ST >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PT >/dev/null
+echo "smoke: (p2) empty project_id 400; ask-about-page: live import 200, trashed project 404, trashed document 404 (device list keeps it)"
 # Status report data (Phase 3 Task 10): W1 is a cloud work project here, so its rows are sealed and come back readable; the stub writes the summary.
 curl "${H[@]}" -X POST $B/api/projects/$W1/raid -d '{"type":"risk","text":"Smoke report risk","probability":4,"impact":5}' >/dev/null
 SR='{"project_id":"'$W1'","from":"2026-01-01","to":"2026-12-31","ai":true}'

@@ -38,7 +38,7 @@ ai.post('/chat', async (c) => {
   if (!absent(b.provider) && b.provider !== 'claude' && b.provider !== 'gemini') return c.json({ error: 'provider must be one of: claude, gemini' }, 400);
   if (!absent(b.page) && (typeof b.page !== 'string' || !/^[a-z0-9-]+$/.test(b.page))) return c.json({ error: 'page must be a library slug' }, 400);
   if (!absent(b.thread_id) && typeof b.thread_id !== 'string') return c.json({ error: 'thread_id must be text' }, 400);
-  if (!absent(b.project_id) && typeof b.project_id !== 'string') return c.json({ error: 'project_id must be text' }, 400);
+  if (!absent(b.project_id) && (typeof b.project_id !== 'string' || !b.project_id)) return c.json({ error: 'project_id must be a project id' }, 400);
   if (rerun && absent(b.thread_id)) return c.json({ error: 'rerun needs a thread_id' }, 400);
   const settings = await getSettings(env);
   const provider: Provider = (b.provider as Provider | undefined) ?? settings.default_provider;

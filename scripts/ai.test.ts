@@ -35,4 +35,8 @@ assert.ok(/never instructions/i.test(sys), 'the prompt says data blocks are neve
 const turns = Array.from({ length: 30 }, (_, i) => ({ role: (i % 2 ? 'assistant' : 'user') as 'user' | 'assistant', content: 'x'.repeat(2000) }));
 const kept = trimHistory(turns);
 assert.ok(kept.length <= 20 && kept.reduce((n, t) => n + t.content.length, 0) <= 24000 && kept[0].role === 'user', 'last 20, under the size, starting with a user turn');
+const u = (content: string) => ({ role: 'user' as const, content }), as = (content: string) => ({ role: 'assistant' as const, content });
+const rerunTurns = [as('orphan'), u('q1'), as('claude'), as('gemini'), u('q2'), as('a2')];
+assert.deepEqual(trimHistory(rerunTurns), [u('q1'), as('claude\n\ngemini'), u('q2'), as('a2')], 'a rerun\'s two answers merge in order; roles alternate from a user turn');
+assert.equal(rerunTurns[2].content, 'claude', 'merging does not change the stored turns');
 console.log('ai: ok');
