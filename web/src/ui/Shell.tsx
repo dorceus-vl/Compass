@@ -1,32 +1,73 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Link, useRoute } from '../router.ts';
 import { useInbox } from '../inbox.ts';
+
+// Inline icons, 24-box, stroke 1.75 (set in CSS), no library.
+const ICONS: Record<string, ReactNode> = {
+  today: <><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /></>,
+  inbox: <><path d="M4 13 6.5 5h11L20 13v6H4z" /><path d="M4 13h4.5l1 2h5l1-2H20" /></>,
+  board: <><rect x="4" y="4" width="4.5" height="16" rx="1.2" /><rect x="10" y="4" width="4.5" height="10" rx="1.2" /><rect x="16" y="4" width="4" height="13" rx="1.2" /></>,
+  list: <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
+  upcoming: <><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 10h16M8.5 3v4M15.5 3v4" /></>,
+  timeline: <path d="M4 7h8M8 12h10M6 17h7" />,
+  projects: <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v7.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z" />,
+  library: <><path d="M5 4.5h10.5A2.5 2.5 0 0 1 18 7v13H7.5A2.5 2.5 0 0 1 5 17.5z" /><path d="M5 17.5A2.5 2.5 0 0 1 7.5 15H18" /></>,
+  copilot: <path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9zM18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,
+  settings: <path d="M5 7h9M18 7h1M5 17h1M10 17h9M14 7a2 2 0 1 0 0 .01M8 17a2 2 0 1 0 0 .01" />,
+  more: <path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth={3} />,
+  plus: <path d="M12 5v14M5 12h14" strokeWidth={2.2} />,
+};
+export const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{ICONS[name]}</svg>;
 
 const NAV = [
   ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'],
   ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['copilot', '/copilot', 'Copilot'],
 ] as const;
 
+/** Slides one absolutely positioned pill (transform only) to the nav's `a.on`; size is set inline and not animated. Hidden when no link is active. */
+function useSlider(nav: { current: HTMLElement | null }, pill: { current: HTMLElement | null }, key: string) {
+  useLayoutEffect(() => {
+    const n = nav.current, p = pill.current;
+    if (!n || !p) return;
+    const place = () => {
+      const a = n.querySelector<HTMLElement>('a.on');
+      if (!a || !a.offsetWidth) { p.style.opacity = '0'; return; } // display:none (the other nav at this width) measures 0
+      p.style.opacity = '1';
+      p.style.width = `${a.offsetWidth}px`; p.style.height = `${a.offsetHeight}px`;
+      p.style.transform = `translate(${a.offsetLeft}px,${a.offsetTop}px)`;
+    };
+    place();
+    const ro = new ResizeObserver(place); ro.observe(n);
+    const t = requestAnimationFrame(() => p.classList.add('ready')); // no slide on first paint
+    return () => { ro.disconnect(); cancelAnimationFrame(t); };
+  }, [nav, pill, key]);
+}
+
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {
   const { path } = useRoute();
   const fresh = useInbox().items.filter((i) => i.state === 'new').length;
   const on = (k: string) => (path === k || (k === 'projects' && path === 'project') || (k === 'library' && path === 'libpage') ? 'on' : '');
+  const rail = useRef<HTMLElement>(null), railPill = useRef<HTMLSpanElement>(null), tab = useRef<HTMLElement>(null), tabPill = useRef<HTMLSpanElement>(null);
+  useSlider(rail, railPill, path); useSlider(tab, tabPill, path);
   return (
     <div className="shell">
-      <nav className="rail" aria-label="Main">
+      <nav className="rail" aria-label="Main" ref={rail}>
+        <span className="slide" ref={railPill} aria-hidden="true" />
         <img className="logo" src="/icons/icon-192.png" width={42} height={42} alt="Compass, Knocturn Labs" />
         {NAV.map(([k, to, label]) => k === 'inbox'
-          ? <Link key={k} to={to} className={on(k)} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}>Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
-          : <Link key={k} to={to} className={on(k)}>{label}</Link>)}
-        <button className="btn" style={{ width: 56, padding: '8px 0', fontSize: 11 }} onClick={onPalette} aria-label="Command palette">⌘K</button>
+          ? <Link key={k} to={to} className={on(k)} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}><Icon name={k} />Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+          : <Link key={k} to={to} className={on(k)}><Icon name={k} />{label}</Link>)}
+        <button className="btn rk" onClick={onPalette} aria-label="Command palette">⌘K</button>
         <div className="spacer" />
-        <Link to="/settings" className={on('settings')}>Settings</Link>
+        <Link to="/settings" className={on('settings')}><Icon name="settings" />Settings</Link>
       </nav>
       <div className="main">{children}</div>
-      <nav className="ptab phone-only" aria-label="Main">
-        <Link to="/" className={on('today')}>Today</Link><Link to="/board" className={on('board')}>Board</Link>
-        <button type="button" onClick={onPalette} aria-label="Quick add">+</button>
-        <Link to="/projects" className={on('projects')}>Projects</Link><Link to="/settings" className={on('settings') || on('inbox')} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}>More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+      <nav className="ptab phone-only" aria-label="Main" ref={tab}>
+        <span className="slide" ref={tabPill} aria-hidden="true" />
+        <Link to="/" className={on('today')}><Icon name="today" />Today</Link><Link to="/board" className={on('board')}><Icon name="board" />Board</Link>
+        <button type="button" className="add" onClick={onPalette} aria-label="Quick add"><Icon name="plus" /></button>
+        <Link to="/projects" className={on('projects')}><Icon name="projects" />Projects</Link>
+        <Link to="/settings" className={on('settings') || on('inbox') || on('library') || on('copilot')} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
       </nav>
     </div>
   );

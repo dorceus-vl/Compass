@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 
 let pushToast: (t: string) => void = () => {};
 export const toast = (t: string) => pushToast(t);
+let toastId = 0;
 export function Toasts() {
-  const [items, set] = useState<string[]>([]);
-  pushToast = (t) => { set((xs) => [...xs, t]); setTimeout(() => set((xs) => xs.slice(1)), 2500); };
-  return <>{items.map((t, i) => <div key={i} className="toast" role="status">{t}</div>)}</>;
+  const [items, set] = useState<{ id: number; t: string }[]>([]);
+  pushToast = (t) => { const id = ++toastId; set((xs) => [...xs, { id, t }]); setTimeout(() => set((xs) => xs.filter((x) => x.id !== id)), 2500); };
+  return <div className="toasts">{items.map((x) => <div key={x.id} className="toast" role="status">{x.t}</div>)}</div>;
 }
 
 let ask: (text: string, danger: boolean) => Promise<boolean> = async () => false;

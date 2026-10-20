@@ -1,8 +1,17 @@
 import { useEffect, useState, createElement, type AnchorHTMLAttributes, type MouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 
 const listeners = new Set<() => void>();
-export function navigate(path: string, replace = false) { history[replace ? 'replaceState' : 'pushState'](null, '', path); listeners.forEach((l) => l()); }
-window.addEventListener('popstate', () => listeners.forEach((l) => l()));
+const notify = () => listeners.forEach((l) => l());
+/** Ruling D6: a route change cross-fades through the View Transitions API when present (styles in app.css). flushSync makes React commit inside the
+ *  callback so the browser snapshots the new page. Reduced motion, `replace` (redirects can run inside effects) and other browsers switch instantly. */
+function change(animate: boolean) {
+  const d = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (animate && d.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) d.startViewTransition(() => flushSync(notify));
+  else notify();
+}
+export function navigate(path: string, replace = false) { history[replace ? 'replaceState' : 'pushState'](null, '', path); change(!replace); }
+window.addEventListener('popstate', () => change(true));
 
 /** Paths: / board list upcoming timeline projects projects/:id projects/:id/:tab inbox meetings meetings/:id review library library/:slug copilot copilot/:id (or copilot/new) settings trash. */
 export function useRoute(): { path: string; params: Record<string, string> } {
