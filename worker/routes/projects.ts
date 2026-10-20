@@ -5,6 +5,7 @@ import { checkAll, text, oneOf, date, num, type Check } from '../lib/validate.ts
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
+import { embedPending, unembedStale } from '../lib/vectors.ts';
 
 const projects = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -71,6 +72,9 @@ projects.get('/:id', async (c) => {
   return c.json({ project, milestones: await openAll(c.env, 'milestones', results) });
 });
 
+// Search already leaves these passages out (worker/lib/knowledge.ts LIVE); a failed vector delete is retried by the cron sweep.
+const sweepLater = (e: unknown) => console.warn(`[knowledge] vector sweep failed, the cron retries: ${(e as Error).name}`);
+
 projects.patch('/:id', async (c) => {
   const project = await loadProject(c.env, c.req.param('id'));
   if (!project) return c.json({ error: 'Not found' }, 404);
@@ -87,6 +91,9 @@ projects.patch('/:id', async (c) => {
     .bind(project.id, ...cols.map((k) => (s as Record<string, unknown>)[k] ?? null)).run();
   await audit(c.env, 'you', 'project.edit', project.id, Object.keys(r.values));
   if (boundaryChanged) await audit(c.env, 'you', 'project.boundary', project.id, { from: project.data_boundary, to: r.values.data_boundary });
+  // Knowledge: an Offline-only project's files lose their vectors now; back to Cloud, they are embedded again.
+  if (boundaryChanged && next.data_boundary === 'offline') await unembedStale(c.env).catch(sweepLater);
+  if (boundaryChanged && next.data_boundary === 'cloud') c.executionCtx.waitUntil(embedPending(c.env, 500).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
   return c.json({ project: next });
 });
 
@@ -95,6 +102,7 @@ projects.delete('/:id', async (c) => {
   const r = await c.env.DB.prepare('UPDATE projects SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL').bind(t, c.req.param('id')).run();
   if (!r.meta.changes) return c.json({ error: 'Not found' }, 404);
   await audit(c.env, 'you', 'project.trash', c.req.param('id'));
+  await unembedStale(c.env).catch(sweepLater); // its files' knowledge passages leave the vector index
   return c.json({ ok: true });
 });
 

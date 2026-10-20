@@ -48,6 +48,11 @@ export interface Env {
   ATHENA_TTS_MODEL: string;
   ATHENA_STT_MODEL: string;
   ELEVENLABS_PRICES: string;
+  /** Phase 6 knowledge (KN1): Workers AI (embeddings, bge-m3) and the Vectorize index compass-knowledge. Both optional: without AI (or with the stub)
+   *  embeddings are hash vectors, without VECTORIZE an in-memory stand-in holds them (worker/lib/vectors.ts). Prices as JSON {"embed_per_1k_tokens":usd} (var). */
+  AI?: Ai;
+  VECTORIZE?: Vectorize;
+  KNOWLEDGE_PRICES: string;
   /** "1" with DEV_LOGIN=1 answers from a canned stub instead of calling a provider (local tests only). */
   AI_STUB?: string;
 }

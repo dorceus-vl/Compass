@@ -1,5 +1,6 @@
-// Phase 6 Knowledge: collections, items and ingest (Task 0; embeddings come in Task 1). Work collections are sealed at rest like other work rows (rule 5).
+// Phase 6 Knowledge: collections, items, ingest, search and Locked passages. Work collections are sealed at rest like other work rows (rule 5).
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env, Variables } from '../types.ts';
 import type { DocKind, KnowledgeCollection, KnowledgeItem, KnowledgeSource } from '../../shared/types.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
@@ -7,7 +8,9 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
 import { chunk, type Passage } from '../lib/chunk.ts';
-import { compatible, needsStepUp, purgeVectors } from '../lib/knowledge.ts';
+import { boundaryChange, compatible, needsStepUp, HOME } from '../lib/knowledge.ts';
+import { embedPending, hybridSearch, remove } from '../lib/vectors.ts';
+import { AiRefused } from '../lib/ai.ts';
 import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
 
@@ -20,7 +23,7 @@ const loadCollection = async (env: Env, id: string): Promise<KnowledgeCollection
 
 /**
  * Stores one item and its passages (sealed when the collection is work). A Locked collection's item is `ready` at once; any other is `indexing` with
- * `embedded = 0` until Task 1's embedder runs. `error` stores a failed item (no passages); it is stored plain, so it must be a fixed message, never document content. Task 3 and 4 call this for text that is not a document.
+ * `embedded = 0` until the embedder runs (callers kick `embedPending(env, …, { item })` in waitUntil; the cron finishes anything left). `error` stores a failed item (no passages); it is stored plain, so it must be a fixed message, never document content. Task 3 and 4 call this for text that is not a document.
  */
 export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: KnowledgeSource; title: string; document_id: string | null; passages: Passage[]; error?: string }): Promise<KnowledgeItem> {
   const id = crypto.randomUUID(), t = now(), failed = !!a.error || a.passages.length === 0;
@@ -88,7 +91,7 @@ knowledge.patch('/collections/:id', async (c) => {
   if ('name' in r.values && !r.values.name) return c.json({ error: 'name is required' }, 400);
   const name = (r.values.name as string | undefined) ?? coll.name, boundary = (r.values.boundary as KnowledgeCollection['boundary'] | undefined) ?? coll.boundary;
   if (coll.scope === 'personal' && boundary === 'locked') return c.json({ error: 'Personal collections are always Cloud AI.' }, 400);
-  const toCloud = coll.boundary === 'locked' && boundary === 'cloud', toLocked = coll.boundary === 'cloud' && boundary === 'locked';
+  const change = boundaryChange(coll.boundary, boundary), toCloud = !!change && !change.purge;
   if (toCloud) {
     const refused = needsStepUp(coll.scope, coll.boundary, boundary) ? await requireStepUp(c) : null; // passkey: Locked passages become readable by a model
     if (refused) return refused;
@@ -97,20 +100,21 @@ knowledge.patch('/collections/:id', async (c) => {
       WHERE i.collection_id = ?1 AND i.deleted_at IS NULL AND p.data_boundary = 'offline' LIMIT 1`).bind(coll.id).first();
     if (off) return c.json({ error: 'offline_boundary', message: 'This collection holds a file from an Offline-only project, so it stays Locked.' }, 409);
   }
-  if (toLocked) { // KN6: the vectors go first, then every passage is un-embedded
-    const { results } = await c.env.DB.prepare('SELECT id FROM knowledge_chunks WHERE collection_id = ?1 AND embedded = 1').bind(coll.id).all<{ id: string }>();
-    await purgeVectors(c.env, results.map((x) => x.id));
-  }
+  // KN6: Cloud AI -> Locked deletes every passage's vector first (an id with none is fine), then un-embeds them.
+  const ids = change?.purge ? (await c.env.DB.prepare('SELECT id FROM knowledge_chunks WHERE collection_id = ?1').bind(coll.id).all<{ id: string }>()).results.map((x) => x.id) : [];
+  await remove(c.env, ids);
   const t = now(), s = await seal(c.env, 'knowledge_collections', { name, enc_v: coll.enc_v }, coll.scope);
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE knowledge_collections SET name = ?2, boundary = ?3, updated_at = ?4, enc_v = ?5 WHERE id = ?1').bind(coll.id, s.name, boundary, t, s.enc_v),
-    ...(toCloud || toLocked ? [
+    ...(change ? [
       c.env.DB.prepare('UPDATE knowledge_chunks SET embedded = 0 WHERE collection_id = ?1').bind(coll.id),
       // Cloud AI items wait for the embedder; Locked ones are searched as they are.
-      c.env.DB.prepare(`UPDATE knowledge_items SET state = ?2, updated_at = ?3 WHERE collection_id = ?1 AND state = ?4`).bind(coll.id, toCloud ? 'indexing' : 'ready', t, toCloud ? 'ready' : 'indexing'),
+      c.env.DB.prepare(`UPDATE knowledge_items SET state = ?2, updated_at = ?3 WHERE collection_id = ?1 AND state = ?4`).bind(coll.id, change.state.to, t, change.state.from),
     ] : []),
   ]);
-  await audit(c.env, 'you', toCloud || toLocked ? 'knowledge.boundary' : 'knowledge.collection.edit', coll.id, toCloud || toLocked ? { boundary } : undefined);
+  await remove(c.env, ids); // again: a batch the embedder upserted between the first delete and the update (it re-checks after the update itself)
+  if (toCloud) c.executionCtx.waitUntil(embedPending(c.env, 500, { collection: coll.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+  await audit(c.env, 'you', change ? 'knowledge.boundary' : 'knowledge.collection.edit', coll.id, change ? { boundary } : undefined);
   return c.json({ collection: { ...coll, name, boundary, updated_at: t } });
 });
 
@@ -153,7 +157,9 @@ knowledge.post('/items', async (c) => {
   let passages: Passage[] = [], error: string | undefined;
   if (doc.kind === 'png' || doc.kind === 'jpg') error = 'Images are not read yet.';
   else try { passages = await passagesOf(doc.kind, bytes); } catch { error = 'That file could not be read.'; }
-  return c.json({ item: await addItem(c.env, coll, { source: 'upload', title: doc.name, document_id: doc.id, passages, error }) }, 201);
+  const item = await addItem(c.env, coll, { source: 'upload', title: doc.name, document_id: doc.id, passages, error });
+  if (item.state === 'indexing') c.executionCtx.waitUntil(embedPending(c.env, 500, { item: item.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+  return c.json({ item }, 201);
 });
 
 knowledge.delete('/items/:id', async (c) => {
@@ -162,6 +168,37 @@ knowledge.delete('/items/:id', async (c) => {
   if (!r.meta.changes) return c.json({ error: 'Not found' }, 404);
   await audit(c.env, 'you', 'knowledge.item.trash', c.req.param('id'));
   return c.json({ ok: true });
+});
+
+/** KN4: meaning and keywords over Cloud AI and personal collections (`collections` = comma-separated ids; none = all of them). Locked ones are never here. */
+knowledge.get('/search', async (c) => {
+  const q = (c.req.query('q') ?? '').trim().slice(0, 500);
+  if (!q) return c.json({ error: 'q is required' }, 400);
+  const ids = c.req.query('collections')?.split(',').map((x) => x.trim()).filter(Boolean);
+  try {
+    return c.json({ passages: await hybridSearch(c.env, q, ids?.length ? ids : null, 10) }, 200, { 'Cache-Control': 'private, no-store' });
+  } catch (e) {
+    if (e instanceof AiRefused) return c.json({ error: e.code, message: e.message }, e.status as ContentfulStatusCode);
+    throw e;
+  }
+});
+
+/**
+ * KN4: a Locked collection's passages, opened, for the device's in-memory search (Vlad's session only: the agent API never routes here). Live items only;
+ * a trashed document or project leaves it, an Offline-only project's file stays (Locked is where it may sit). Never cached.
+ */
+knowledge.get('/locked/:id/passages', async (c) => {
+  const coll = await loadCollection(c.env, c.req.param('id'));
+  if (!coll || coll.scope !== 'work' || coll.boundary !== 'locked') return c.json({ error: 'Not found' }, 404);
+  // ponytail: the whole collection in one answer; page it if a Locked collection outgrows a response.
+  const { results } = await c.env.DB.prepare(`SELECT c.id, c.item_id, c.ord, c.locator, c.text, c.enc_v, i.title AS item_title, i.enc_v AS item_enc_v FROM ${HOME}
+    WHERE c.collection_id = ?1 AND i.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL AND (d.project_id IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL))))
+    ORDER BY i.created_at, c.ord`).bind(coll.id).all<{ id: string; item_id: string; ord: number; locator: string; text: string; enc_v: number; item_title: string; item_enc_v: number }>();
+  const passages = await Promise.all(results.map(async (r) => {
+    const p = await open(c.env, 'knowledge_chunks', { locator: r.locator, text: r.text, enc_v: r.enc_v });
+    return { id: r.id, item_id: r.item_id, ord: r.ord, locator: p.locator, text: p.text, item_title: (await open(c.env, 'knowledge_items', { title: r.item_title, enc_v: r.item_enc_v })).title };
+  }));
+  return c.json({ passages }, 200, { 'Cache-Control': 'private, no-store' });
 });
 
 export default knowledge;

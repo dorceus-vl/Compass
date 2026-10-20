@@ -12,9 +12,10 @@ type Code = 'no_key' | 'cap_reached' | 'rate_limited' | 'offline_boundary' | 'pr
 
 const STATUS: Record<Code, number> = { no_key: 503, cap_reached: 409, rate_limited: 429, offline_boundary: 409, provider_error: 502, voice_off: 409 };
 const NAMES: Record<Provider, string> = { claude: 'Claude', gemini: 'Gemini' };
-/** Ruling A9: model calls and voice calls (ElevenLabs) have their own hourly limits; both count against the monthly cap. */
-const VOICE: readonly AiFeature[] = ['athena_voice', 'athena_listen'];
-const HOURLY = { model: 30, voice: 60 };
+/** Ruling A9: model calls, voice calls (ElevenLabs) and knowledge embeddings (Workers AI, Phase 6) have their own hourly limits; all count against the monthly cap. */
+const GROUPS = { voice: ['athena_voice', 'athena_listen'], knowledge: ['knowledge_embed'] } as const satisfies Record<string, readonly AiFeature[]>;
+const HOURLY = { model: 30, voice: 60, knowledge: 120 };
+const LIMIT = { model: '30 questions an hour is the limit.', voice: '60 voice clips an hour is the limit.', knowledge: 'Knowledge search and indexing are limited to 120 calls an hour.' };
 
 export class AiRefused extends Error {
   code: Code;
@@ -122,7 +123,7 @@ function stubAnswer(call: AiCall): Read {
   return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n[stub: ${call.images?.length ?? 0} image(s)]\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
 }
 
-export type Usage = { provider: Provider | 'elevenlabs'; input_tokens: number; output_tokens: number; cost_micro: number };
+export type Usage = { provider: Provider | 'elevenlabs' | 'workers_ai'; input_tokens: number; output_tokens: number; cost_micro: number };
 
 /**
  * The one metering path (model and voice calls alike): the monthly cap (with this call's estimate, when known) and the hourly limit of
@@ -133,12 +134,11 @@ export async function meter(env: Env, feature: AiFeature, estimateMicro = 0): Pr
   const s = await getSettings(env);
   const spent = await monthCost(env, s.tz);
   if (spent >= s.ai_monthly_cap_micro || spent + estimateMicro > s.ai_monthly_cap_micro) throw new AiRefused('cap_reached', "This month's AI budget is used up. Raise it in Settings → AI.");
-  const voice = VOICE.includes(feature);
-  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${voice ? 'IN' : 'NOT IN'} (${VOICE.map((_, i) => `?${i + 2}`).join(',')})`)
-    .bind(new Date(Date.now() - 3600_000).toISOString(), ...VOICE).first<{ n: number }>();
-  if ((hour?.n ?? 0) >= HOURLY[voice ? 'voice' : 'model']) {
-    throw new AiRefused('rate_limited', voice ? '60 voice clips an hour is the limit. Try again in a few minutes.' : '30 questions an hour is the limit. Try again in a few minutes.');
-  }
+  const group = (Object.keys(GROUPS) as (keyof typeof GROUPS)[]).find((g) => (GROUPS[g] as readonly AiFeature[]).includes(feature)) ?? 'model';
+  const list: readonly AiFeature[] = group === 'model' ? Object.values(GROUPS).flat() : GROUPS[group]; // the model count is everything outside the other groups
+  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${group === 'model' ? 'NOT IN' : 'IN'} (${list.map((_, i) => `?${i + 2}`).join(',')})`)
+    .bind(new Date(Date.now() - 3600_000).toISOString(), ...list).first<{ n: number }>();
+  if ((hour?.n ?? 0) >= HOURLY[group]) throw new AiRefused('rate_limited', `${LIMIT[group]} Try again in a few minutes.`);
   return async (u) => {
     await env.DB.prepare('INSERT INTO ai_usage (id, at, feature, provider, input_tokens, output_tokens, cost_micro) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
       .bind(crypto.randomUUID(), now(), feature, u.provider, u.input_tokens, u.output_tokens, u.cost_micro).run();

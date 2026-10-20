@@ -754,7 +754,7 @@ KIW=$(kitem $KW $KDW); [ "$(kst "$KIW")" = 201 ] || fail "a work-project pdf int
 [ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$KIWI' AND enc_v=2 AND text NOT LIKE '%Hello%'" | js 'd[0].results[0].n')" -ge 1 ] || fail "the work pdf's passages are not ciphertext"
 KIP=$(kitem $KP $KDP); [ "$(kst "$KIP")" = 201 ] || fail "a personal pdf into the personal collection: $KIP"
 KIPI=$(kbody "$KIP" | js d.item.id); [ "$(kbody "$KIP" | js d.item.state)" = indexing ] || fail "a Cloud AI item is not indexing"
-[ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$KIPI' AND enc_v=0 AND embedded=0 AND locator='p. 1' AND text LIKE '%Hello Compass%'" | js 'd[0].results[0].n')" = 1 ] || fail "personal passage: plain text, locator p. 1, embedded 0"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$KIPI' AND enc_v=0 AND locator='p. 1' AND text LIKE '%Hello Compass%'" | js 'd[0].results[0].n')" = 1 ] || fail "personal passage: plain text, locator p. 1" # embedded at once since Task 1 (k1)
 [ "$(kst "$(kitem $KP $KDU)")" = 201 ] || fail "an unfiled plain docx into the personal collection"
 [ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$KP' AND locator='§ Zebrafish budget risks'" | js 'd[0].results[0].n')" = 1 ] || fail "a Word heading is not the locator"
 echo "smoke: (k0) work collection sealed (name, title, passages) and Locked by default; the sealed upload (row and R2 bytes); work file -> work only, personal file -> personal only, unfiled plain -> personal only (409 knowledge_boundary); personal passages plain with p. N / § locators"
@@ -764,7 +764,7 @@ echo "smoke: (k0) work collection sealed (name, title, passages) and Locked by d
 kj -X PATCH $B/api/knowledge/collections/$KW -d '{"boundary":"cloud"}' | grep -q '"error":"offline_boundary"' || fail "an Offline-only project's file in a collection made Cloud AI"
 curl "${H[@]}" -X PATCH $B/api/projects/$KPW -d '{"data_boundary":"cloud"}' | grep -q '"data_boundary":"cloud"' || fail "project boundary switch"
 curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$KW -d '{"boundary":"cloud"}' | grep -q '"boundary":"cloud"' || fail "Locked -> Cloud AI"
-[ "$(D1X "SELECT count(*) AS n FROM knowledge_items WHERE collection_id='$KW' AND state='indexing'" | js 'd[0].results[0].n')" = 2 ] || fail "Cloud AI did not put the work items back to indexing"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_items WHERE collection_id='$KW' AND state IN ('indexing','ready')" | js 'd[0].results[0].n')" = 2 ] || fail "Cloud AI items lost" # indexing, then ready once embedded (k1 checks the embedding)
 curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$KW -d '{"boundary":"locked","name":"Smoke zebrafish renamed"}' | grep -q '"boundary":"locked"' || fail "Cloud AI -> Locked"
 [ "$(D1X "SELECT count(*) AS n FROM knowledge_items WHERE collection_id='$KW' AND state='ready'" | js 'd[0].results[0].n')" = 2 ] || fail "Locked did not make the items ready"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action='knowledge.boundary' AND target='$KW'" | js 'd[0].results[0].n')" = 2 ] || fail "boundary changes were not audited"
@@ -788,5 +788,85 @@ KE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$
 [ "$(D1X "SELECT (SELECT count(*) FROM knowledge_collections WHERE id IN ('$KW','$KP'))+(SELECT count(*) FROM knowledge_items WHERE collection_id IN ('$KW','$KP'))+(SELECT count(*) FROM knowledge_chunks WHERE collection_id IN ('$KW','$KP')) AS n" | js 'd[0].results[0].n')" = 0 ] || fail "knowledge rows survived Empty Trash"
 rm -rf $KS
 echo "smoke: (k0) export opens work passages; Trash lists and restores items and collections; Empty Trash purges chunks, items, collections, then the documents"
+# (k1) Knowledge, Task 1 (AI_STUB=1: hash vectors; no VECTORIZE binding: the in-memory store, KN10): ingest -> embedded -> ready; search by meaning
+# and keywords within the allowed collections only; Locked never embedded, its passages opened for the session; Cloud AI <-> Locked; a project
+# going Offline-only or to Trash takes its files out of the index; the cron sweep; metering as knowledge_embed / workers_ai.
+KS=$(mktemp -d)
+mkdocx() { node -e 'const f=require("fflate");const x=s=>f.strToU8(s);require("fs").writeFileSync(process.argv[1],f.zipSync({"word/document.xml":x("<w:document xmlns:w=\"x\"><w:body><w:p><w:r><w:t>"+process.argv[2]+"</w:t></w:r></w:p></w:body></w:document>")}))' "$1" "$2"; }
+mkdocx $KS/axo.docx "The axolotl grant renewal is due in March, and the forms go to the city."
+mkdocx $KS/menu.docx "Friday lunch menu: soup, bread and a green salad."
+mkdocx $KS/zeb.docx "The vendor will slip the zebrafish milestone by two weeks."
+mkdocx $KS/pang.docx "Pangolin contract terms stay on this laptop."
+mkdocx $KS/proj.docx "The narwhal garden plan needs new soil in April."
+kid() { kbody "$1" | js "d.$2.id"; }
+kstate() { curl "${H[@]}" $B/api/knowledge/collections/$1/items | js "(d.items.find(i=>i.id==='$2')||{}).state"; }
+kwait() { for _ in $(seq 1 60); do [ "$(kstate $1 $2)" = "$3" ] && return 0; sleep 0.25; done; return 1; }
+kn() { D1X "$1" | js 'd[0].results[0].n'; }
+ks() { curl "${H[@]}" "$B/api/knowledge/search?q=$1&collections=$2"; }
+KUSE=$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND provider='workers_ai'")
+K1P=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k1 personal","scope":"personal"}')" collection)
+K1O=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k1 other","scope":"personal"}')" collection)
+K1C=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k1 cloud","scope":"work","boundary":"cloud"}')" collection)
+K1L=$(kid "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke k1 locked","scope":"work"}')" collection)
+DAXO=$(kid "$(up "@$KS/axo.docx;filename=axo.docx;type=$DOCX")" document); DMENU=$(kid "$(up "@$KS/menu.docx;filename=menu.docx;type=$DOCX")" document)
+DZEB=$(kid "$(up "@$KS/zeb.docx;filename=zeb.docx;type=$DOCX" -F knowledge_work=1)" document); DPANG=$(kid "$(up "@$KS/pang.docx;filename=pang.docx;type=$DOCX" -F knowledge_work=1)" document)
+IAXO=$(kid "$(kitem $K1P $DAXO)" item); IMENU=$(kid "$(kitem $K1O $DMENU)" item); IZEB=$(kid "$(kitem $K1C $DZEB)" item); IPANG=$(kid "$(kitem $K1L $DPANG)" item)
+# ingest -> embedded in waitUntil -> ready
+kwait $K1P $IAXO ready && kwait $K1O $IMENU ready && kwait $K1C $IZEB ready || fail "Cloud AI items did not become ready after embedding"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id IN ('$K1P','$K1O','$K1C') AND embedded=0")" = 0 ] || fail "Cloud AI passages left unembedded"
+[ "$(kstate $K1L $IPANG)" = ready ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$K1L' AND embedded=1")" = 0 ] || fail "a Locked passage was embedded"
+[ "$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND provider='workers_ai' AND output_tokens=0 AND input_tokens>0")" -ge $((KUSE + 3)) ] || fail "embedding batches were not metered as knowledge_embed / workers_ai"
+# search: the right passage, from the allowed collection only; opened work text; never cached
+ks "axolotl+grant" $K1P | grep -q '"item_title":"axo.docx"' || fail "search did not find the passage"
+[ "$(ks "axolotl+grant" $K1P | js 'd.passages[0].text.includes("axolotl")&&d.passages[0].collection.id==="'$K1P'"&&d.passages.every(p=>p.collection.id==="'$K1P'")')" = true ] || fail "search: wrong top passage or collection"
+[ "$(ks "axolotl+grant" $K1O | js 'd.passages.some(p=>p.text.includes("axolotl"))')" = false ] || fail "search leaked a passage from a collection not asked for"
+[ "$(ks "zebrafish+milestone" "$K1C" | js 'd.passages[0].text.includes("zebrafish")&&d.passages[0].collection.scope==="work"&&d.passages[0].collection.name==="Smoke k1 cloud"&&d.passages[0].locator==="part 1"')" = true ] || fail "work Cloud AI passage not found opened"
+[ "$(ks "pangolin+contract" "" | js 'd.passages.some(p=>p.text.includes("Pangolin")||p.collection.id==="'$K1L'")')" = false ] || fail "a Locked passage came out of search"
+[ "$(ks "pangolin" $K1L | js 'd.passages.length')" = 0 ] || fail "a Locked collection was searched by meaning"
+curl -s -D - -o /dev/null -b $J -H "Origin: $B" "$B/api/knowledge/search?q=axolotl" | grep -qi '^cache-control: private, no-store' || fail "search answer is cacheable"
+[ "$(kst "$(kj "$B/api/knowledge/search?q=")")" = 400 ] || fail "empty q"
+# the Locked passages: opened, for the session, never cached; only for a Locked work collection
+[ "$(curl "${H[@]}" $B/api/knowledge/locked/$K1L/passages | js 'd.passages.length===1&&d.passages[0].text.includes("Pangolin")&&d.passages[0].item_title==="pang.docx"&&d.passages[0].locator==="part 1"')" = true ] || fail "locked passages not opened"
+curl -s -D - -o /dev/null -b $J -H "Origin: $B" $B/api/knowledge/locked/$K1L/passages | grep -qi '^cache-control: private, no-store' || fail "locked passages are cacheable"
+[ "$(kst "$(kj $B/api/knowledge/locked/$K1C/passages)")" = 404 ] && [ "$(kst "$(kj $B/api/knowledge/locked/$K1P/passages)")" = 404 ] || fail "locked passages served for a Cloud AI collection"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $B" $B/api/knowledge/locked/$K1L/passages)" = 401 ] || fail "locked passages without a session"
+echo "smoke: (k1) ingest -> embedded (metered knowledge_embed/workers_ai) -> ready; search finds the passage in the allowed collection only, work text opened, no-store; Locked never embedded nor searched by meaning, its passages opened for the session only"
+# Cloud AI -> Locked: vectors deleted, passages un-embedded, out of search; Locked -> Cloud AI (step-up in the dev session) embeds again
+curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$K1C -d '{"boundary":"locked"}' | grep -q '"boundary":"locked"' || fail "Cloud AI -> Locked"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$K1C' AND embedded=1")" = 0 ] || fail "Cloud AI -> Locked left embedded passages"
+[ "$(ks "zebrafish" "" | js 'd.passages.some(p=>p.collection.id==="'$K1C'")')" = false ] || fail "a Locked collection's passage is still searchable"
+KUSE=$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed'")
+curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$K1C -d '{"boundary":"cloud"}' | grep -q '"boundary":"cloud"' || fail "Locked -> Cloud AI"
+kwait $K1C $IZEB ready || fail "Locked -> Cloud AI did not embed again"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$K1C' AND embedded=0")" = 0 ] && [ "$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed'")" -gt $KUSE ] || fail "re-embedding not done or not metered"
+ks "zebrafish" $K1C | grep -q zebrafish || fail "search after Locked -> Cloud AI"
+echo "smoke: (k1) Cloud AI -> Locked removes vectors (embedded 0, out of search); Locked -> Cloud AI embeds again (metered)"
+# a project going Offline-only or to Trash takes its files' passages out of the index; back to Cloud, they are embedded again
+K1PP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke k1 project","kind":"personal"}' | js d.project.id)
+DPROJ=$(kid "$(up "@$KS/proj.docx;filename=proj.docx;type=$DOCX" -F "project_id=$K1PP")" document); IPROJ=$(kid "$(kitem $K1P $DPROJ)" item)
+kwait $K1P $IPROJ ready && ks "narwhal+garden" $K1P | grep -q narwhal || fail "a project file was not searchable"
+curl "${H[@]}" -X PATCH $B/api/projects/$K1PP -d '{"data_boundary":"offline"}' | grep -q '"data_boundary":"offline"' || fail "project -> Offline only"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IPROJ' AND embedded=1")" = 0 ] && ! ks "narwhal+garden" $K1P | grep -q narwhal || fail "an Offline-only project's file kept its vectors or stayed searchable"
+curl "${H[@]}" -X PATCH $B/api/projects/$K1PP -d '{"data_boundary":"cloud"}' >/dev/null
+for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IPROJ' AND embedded=0")" = 0 ] && break; sleep 0.25; done
+ks "narwhal+garden" $K1P | grep -q narwhal || fail "back to Cloud, the project file was not embedded again"
+curl "${H[@]}" -X DELETE $B/api/projects/$K1PP | grep -q '"ok":true' || fail "project trash"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IPROJ' AND embedded=1")" = 0 ] && ! ks "narwhal+garden" $K1P | grep -q narwhal || fail "a trashed project's file kept its vectors or stayed searchable"
+# an item in Trash leaves search at once; the cron sweep takes its vectors; restored, the cron embeds it again
+curl "${H[@]}" -X DELETE $B/api/knowledge/items/$IAXO | grep -q '"ok":true' || fail "item trash"
+! ks "axolotl" $K1P | grep -q axolotl || fail "a trashed item is still searchable"
+cron() { curl -s -X POST "$B/cdn-cgi/local/explorer/api/local/scheduled?worker=compass" -H 'Content-Type: application/json' -d '{"cron":"*/15 * * * *"}' | grep -q '"outcome":"ok"' || fail "cron run"; }
+cron; for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IAXO' AND embedded=1")" = 0 ] && break; sleep 0.25; done
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IAXO' AND embedded=1")" = 0 ] || fail "the cron sweep left a trashed item's vectors"
+curl "${H[@]}" -X POST $B/api/trash/knowledge_items/$IAXO/restore | grep -q '"ok":true' || fail "restore item"
+cron; for _ in $(seq 1 40); do ks "axolotl" $K1P | grep -q axolotl && break; sleep 0.25; done
+ks "axolotl" $K1P | grep -q axolotl || fail "the cron did not embed the restored item again"
+echo "smoke: (k1) project Offline only / Trash -> its files' vectors go, out of search; back to Cloud -> embedded again; item Trash -> out of search, cron sweep un-embeds, restore -> cron embeds"
+# clean up: everything to Trash and purged (vectors deleted with the passages)
+for x in $K1P $K1O $K1C $K1L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
+for x in $DAXO $DMENU $DZEB $DPANG $DPROJ; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
+[ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)")" = 200 ] || fail "Empty Trash after k1"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id IN ('$K1P','$K1O','$K1C','$K1L')")" = 0 ] || fail "k1 passages survived Empty Trash"
+rm -rf $KS
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

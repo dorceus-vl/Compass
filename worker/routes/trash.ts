@@ -4,7 +4,7 @@ import type { Task, Project, Milestone } from '../../shared/types.ts';
 import { open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
-import { purgeVectors } from '../lib/knowledge.ts';
+import { remove } from '../lib/vectors.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
 const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items' } as const;
@@ -105,7 +105,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email'))));
   await Promise.all((docs.results as { r2_key: string }[]).map(({ r2_key }) => env.FILES.delete(r2_key).catch(() => console.warn('[trash] could not delete a document file'))));
   await Promise.all((clips.results as { r2_key: string }[]).map(({ r2_key }) => env.FILES.delete(r2_key).catch(() => console.warn('[trash] could not delete an Athena clip'))));
-  await purgeVectors(env, (kchunks.results as { id: string }[]).map(({ id }) => id)).catch(() => console.warn('[trash] could not delete knowledge vectors'));
+  await remove(env, (kchunks.results as { id: string }[]).map(({ id }) => id)).catch(() => console.warn('[trash] could not delete knowledge vectors'));
   const tts = (messages.results as { id: string }[]).map(({ id }) => `athena-tts/${id}`); // R2 deletes up to 1,000 keys a call; a missing key is fine
   for (let i = 0; i < tts.length; i += 1000) await env.FILES.delete(tts.slice(i, i + 1000)).catch(() => console.warn('[trash] could not delete an answer\'s audio'));
   return {

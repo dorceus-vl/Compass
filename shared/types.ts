@@ -108,8 +108,8 @@ export interface KnowledgeItem {
 export interface KnowledgeChunk { id: string; item_id: string; collection_id: string; ord: number; locator: string; text: string; embedded: number; created_at: string; enc_v: number }
 export interface LibraryPage { slug: string; section: string; title: string; body: string; source: 'bundled' | 'import' | 'lesson' }
 export type Provider = 'claude' | 'gemini';
-/** Model features, and Athena's voice (ElevenLabs text-to-speech) and listening (speech-to-text), metered the same way. */
-export type AiFeature = 'copilot' | 'status_report' | 'plan_review' | 'brief' | 'athena_voice' | 'athena_listen';
+/** Model features, Athena's voice (ElevenLabs text-to-speech) and listening (speech-to-text), and knowledge embeddings (Workers AI), metered the same way. */
+export type AiFeature = 'copilot' | 'status_report' | 'plan_review' | 'brief' | 'athena_voice' | 'athena_listen' | 'knowledge_embed';
 export interface ProposedTask { title: string; horizon: Horizon; due_at: string | null }
 /** One task Athena proposes from a forwarded email (Task 4b); lives in the client until Vlad accepts it. */
 export interface SplitProposal { title: string; due_at: string | null; horizon: Horizon; notes: string | null }

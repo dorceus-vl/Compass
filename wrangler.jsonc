@@ -10,6 +10,11 @@
   "d1_databases": [{ "binding": "DB", "database_name": "compass-db", "database_id": "3820b4a9-ed77-4cea-915c-9c1c2af40491", "migrations_dir": "worker/migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "compass-files" }],
   "services": [{ "binding": "ID", "service": "knocturn-id" }],
+  // Phase 6 knowledge (KN1): Workers AI for embeddings (bge-m3) and the Vectorize index compass-knowledge (1024 dims, cosine, a metadata index on
+  // collection_id), created only at deploy with Vlad's word. Both are optional in the code: locally the embeddings are hash vectors (AI_STUB=1) and an
+  // in-memory stand-in holds the vectors (worker/lib/vectors.ts).
+  "ai": { "binding": "AI" },
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "compass-knowledge" }],
   "vars": {
     "COMPASS_USERS": "7cad1bd5-760b-4423-9b02-406c74d5a6e4,ab39fa67-0a88-40b6-824b-9718500e5f47",
     "ID_URL": "https://id.knocturnlabs.com",
@@ -28,7 +33,9 @@
     // Phase 5b Athena's voice (worker/lib/voice.ts). The key ELEVENLABS_API_KEY is a secret Vlad puts himself. Prices in USD; update when ElevenLabs changes them.
     "ATHENA_TTS_MODEL": "eleven_turbo_v2_5",
     "ATHENA_STT_MODEL": "scribe_v1",
-    "ELEVENLABS_PRICES": "{\"tts_per_1k_chars\":0.18,\"stt_per_minute\":0.40}"
+    "ELEVENLABS_PRICES": "{\"tts_per_1k_chars\":0.18,\"stt_per_minute\":0.40}",
+    // Phase 6 knowledge embeddings (Workers AI bge-m3), USD per 1,000 tokens ($0.012 per million); update when Cloudflare changes it.
+    "KNOWLEDGE_PRICES": "{\"embed_per_1k_tokens\":0.000012}"
   },
   // Every 15 minutes: Trash purge (30 days), audit purge (90 days). Later phases add pushes here.
   "triggers": { "crons": ["*/15 * * * *"] },
