@@ -60,7 +60,7 @@ export function MilestonePath({ milestones, today }: { milestones: Milestone[]; 
       raf = requestAnimationFrame(travel);
     };
     kick.current = () => { if (!raf && seen && pp.current > 0) raf = requestAnimationFrame(travel); };
-    const io = new IntersectionObserver(([e]) => { seen = e.isIntersecting; kick.current(); });
+    const io = new IntersectionObserver((es) => { seen = es[es.length - 1].isIntersecting; kick.current(); });
     io.observe(el);
     return () => { io.disconnect(); cancelAnimationFrame(raf); kick.current = () => {}; };
   }, [samples, reduce]);

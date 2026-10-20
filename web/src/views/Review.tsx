@@ -7,11 +7,13 @@ import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { toast, confirmAction } from '../ui/dialogs.tsx';
 import { InboxView } from './Inbox.tsx';
 import { confetti } from '../motion.ts';
+import { taskColor, projectColor, accent } from '../ui/colors.ts';
+import { appLabel } from '../ui/sources.ts';
 
 const STEPS = ['Inbox to zero', 'Overdue', 'The next 7 days', 'Horizons', 'Waiting on'];
 
 export function ReviewView() {
-  const { tasks, ready } = useStore();
+  const { tasks, projects, ready } = useStore();
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -26,16 +28,25 @@ export function ReviewView() {
     catch (e) { toast((e as Error).message || 'Could not finish the review'); }
     setBusy(false);
   };
-  const row = (x: Task, actions: [string, () => void | Promise<void>][], note?: string) => (
-    <div className="task rv-row" key={x.id}>
-      <div style={{ minWidth: 0 }}>
-        <button type="button" className="tt" onClick={() => setOpen(x.id)}>{x.title}</button>
-        <div className="meta">{x.kind === 'work' && <span className="chip work">Work</span>}{note ? <span className="chip">{note}</span> : x.due_at && <span className={`chip ${fmtDue(x.due_at).tone}`}>{fmtDue(x.due_at).text}</span>}</div>
+  const row = (x: Task, actions: [string, () => void | Promise<void>][], note?: string) => {
+    const color = taskColor(x, projects), p = x.project_id ? projects.find((q) => q.id === x.project_id) : undefined, due = fmtDue(x.due_at);
+    return (
+      <div className="acard rv-row" key={x.id} style={accent(color)}>
+        <div style={{ minWidth: 0 }}>
+          <button type="button" className="tt" onClick={() => setOpen(x.id)}>{x.title}</button>
+          <div className="m">
+            {p && <span className="chip" style={{ ['--sc' as string]: projectColor(p) }}><i />{p.name}</span>}
+            {x.source_app !== 'manual' && <span className="chip" style={{ ['--sc' as string]: color }}><i />{appLabel(x.source_app)}</span>}
+            {x.kind === 'work' && <span className="chip" style={{ ['--sc' as string]: 'var(--accent)' }}><i />Work</span>}
+            {note ? <span className="chip" style={{ ['--sc' as string]: 'var(--text-dim)' }}><i />{note}</span>
+              : due.text && <span className="chip" style={{ ['--sc' as string]: due.tone === 'over' ? 'var(--danger)' : due.tone === 'due' ? 'var(--accent)' : 'var(--text-dim)' }}><i />{due.text}</span>}
+          </div>
+        </div>
+        <div className="act">{actions.map(([label, fn]) => <button type="button" key={label} onClick={() => void fn()}>{label}</button>)}</div>
       </div>
-      <div className="act">{actions.map(([label, fn]) => <button type="button" key={label} onClick={() => void fn()}>{label}</button>)}</div>
-    </div>
-  );
-  const list = (xs: Task[], empty: string, render: (x: Task) => React.ReactNode) => xs.length ? <div className="hz">{xs.map(render)}</div> : <div className="card"><p style={{ margin: 0 }}>{empty}</p></div>;
+    );
+  };
+  const list = (xs: Task[], empty: string, render: (x: Task) => React.ReactNode) => xs.length ? <div className="mlist">{xs.map(render)}</div> : <div className="card"><p style={{ margin: 0 }}>{empty}</p></div>;
 
   let body: React.ReactNode;
   if (step === 0) body = <InboxView embedded />;

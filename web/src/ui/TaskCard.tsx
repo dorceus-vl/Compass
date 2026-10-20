@@ -34,7 +34,7 @@ export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
     confetti(x, y, color);
     void completeTask(task.id);
   };
-  const swipe = useSwipe<HTMLElement>({ right: true, skip: '.check, a', onSwipe: (_d, x, y) => finish(x, y) });
+  const swipe = useSwipe<HTMLElement>({ right: !done, skip: '.check, a', onSwipe: (_d, x, y) => finish(x, y) });
 
   return (
     <article

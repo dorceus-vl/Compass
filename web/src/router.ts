@@ -11,7 +11,8 @@ function change(animate: boolean) {
   else notify();
 }
 export function navigate(path: string, replace = false) { history[replace ? 'replaceState' : 'pushState'](null, '', path); change(!replace); }
-window.addEventListener('popstate', () => change(true));
+// iOS Safari swipe-back and Android predictive back already animate (hasUAVisualTransition); ours would play on top of theirs.
+window.addEventListener('popstate', (e) => change(!(e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition));
 
 /** Paths: / board list upcoming timeline projects projects/:id projects/:id/:tab inbox meetings meetings/:id review library library/:slug copilot copilot/:id (or copilot/new) settings trash. */
 export function useRoute(): { path: string; params: Record<string, string> } {

@@ -6,7 +6,7 @@ let toastId = 0;
 export function Toasts() {
   const [items, set] = useState<{ id: number; t: string }[]>([]);
   pushToast = (t) => { const id = ++toastId; set((xs) => [...xs, { id, t }]); setTimeout(() => set((xs) => xs.filter((x) => x.id !== id)), 2500); };
-  return <div className="toasts">{items.map((x) => <div key={x.id} className="toast" role="status">{x.t}</div>)}</div>;
+  return <div className="toasts" role="status" aria-live="polite">{items.map((x) => <div key={x.id} className="toast">{x.t}</div>)}</div>;
 }
 
 let ask: (text: string, danger: boolean) => Promise<boolean> = async () => false;

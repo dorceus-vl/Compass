@@ -143,8 +143,10 @@ button.cb{cursor:pointer;background:transparent}
 .rail .badge,.ptab .badge{margin-left:4px;min-width:16px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;line-height:16px;text-align:center}
 
 .rv-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.rv-row .m{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.rv-row .tt{background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit;font:inherit;font-weight:650;font-size:15px;line-height:1.35;overflow-wrap:anywhere}
 .rv-row .act{display:flex;gap:6px;flex-wrap:wrap}
-.rv-row .act button{padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}
+.rv-row .act button{padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);background:none;color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}
 
 /* Phase 3: project tabs, governance logs, portfolio */
 .tabs{position:relative;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
@@ -295,8 +297,8 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 .tcard .t::after{content:"";position:absolute;inset:0;border-radius:inherit} /* the whole card opens the task */
 .tcard .m{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
 .tcard .m:empty{display:none}
-.tcard .chip,.kc .chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 11px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-dim);background:rgba(255,255,255,.035);border:1px solid var(--border-soft);border-radius:999px;padding:4px 9px}
-.tcard .chip i,.kc .chip i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--sc)}
+.tcard .chip,.kc .chip,.rv-row .chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 11px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-dim);background:rgba(255,255,255,.035);border:1px solid var(--border-soft);border-radius:999px;padding:4px 9px}
+.tcard .chip i,.kc .chip i,.rv-row .chip i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--sc)}
 .tcard a.chip,.tcard .check{position:relative;z-index:1}
 .tcard .m .when{display:none}
 .tcard .due{margin-left:auto;display:flex;gap:12px;align-items:center;flex:none}
@@ -542,7 +544,8 @@ dialog.pal{padding:10px;margin-top:12vh;width:min(640px,calc(100vw - 32px));max-
 .inbox-list{display:grid;gap:12px;min-width:0}
 .inbox-list[hidden]{display:none}
 .icard,.acard{--tc:var(--ac)}
-.icard{--ac:var(--text-dim);position:relative;border-radius:18px;touch-action:pan-y;will-change:transform;-webkit-user-select:none;user-select:none;min-width:0}
+.icard{--ac:var(--text-dim);position:relative;border-radius:18px;touch-action:pan-y;will-change:transform;min-width:0}
+.icard[data-drag]{-webkit-user-select:none;user-select:none}
 .icard .reveal.keep{padding-left:22px;opacity:var(--sr,0)}
 .icard .reveal.drop{justify-content:flex-end;padding-right:22px;background:linear-gradient(270deg,rgba(169,167,184,.5),rgba(169,167,184,.08));color:var(--text);opacity:var(--sl,0)}
 .icard .body{align-items:flex-start;padding:14px 16px 14px 20px}
