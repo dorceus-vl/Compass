@@ -23,3 +23,26 @@
 - Live copilot check: one question on a personal project; then "Ask Gemini too" and a follow-up in the same thread (alternating history fix). If Claude answers `provider_error` for `claude-sonnet-5-5`, switch the var to `claude-sonnet-5` and redeploy (ruling R6).
 - One status-report PDF from the iPhone (print on `afterprint`).
 - Per Bell project: whether it may use cloud AI (passkey to switch).
+
+## Decisions made during the build
+
+Each one was decided by Claude Code to keep the build moving; the cost column is what it costs if it was wrong.
+
+| Decision | Cost if wrong |
+| --- | --- |
+| A decision's date is required (the database column never allowed it empty). | None |
+| The copilot's library search never includes lessons from projects set to Offline only; the device's own library search still shows them. | None |
+| Library imports refuse files from Offline-only projects, and an import whose project later goes Offline only drops out of the copilot's reach. | None |
+| Work files are capped at 10 MB (encrypted), other files at 20 MB. | Large Bell files must be split or kept elsewhere |
+| Uploads without a declared size are refused (browsers always declare it). | None |
+| Status reports count a task as done on the local day it was finished (Toronto time), not the UTC day. | None |
+| Your own Word templates can only read real report fields, never hidden object properties. | None |
+| Milestones gained a Gate toggle (the flag existed but nothing set it). | One small screen change |
+| The library describes a gate milestone as a marker; the go / no-go outcome is recorded as a decision. | None |
+| Uploads larger than the caps, or Word files that inflate past safe limits, are refused instead of processed. | None |
+| The copilot's conversation history merges back-to-back answers so Gemini always sees alternating turns. | None |
+| The status-report PDF waits for the print dialog to finish before clearing its print copy (iPhone). | None |
+| A trashed document's library import stops being visible to the copilot at once. | None |
+| "Add to the board" records each added item as it goes, so a retry never adds duplicates. | None |
+| The real-session passkey prompt on the boundary switch was checked by code review, not by a live test. | A missing prompt would go unnoticed until used |
+| Model tiers: faster models for most code, the strongest for the copilot boundary, the library content and every security review. | Spend only |
