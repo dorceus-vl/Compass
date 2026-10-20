@@ -14,6 +14,7 @@ interface Hit { key: string; document_id: string | null; locator: string; title:
 interface Found { id: string; document_id: string | null; text: string; locator: string; item_title: string; collection: { id: string }; score: number }
 
 const SOURCE_ICON: Record<string, string> = { upload: 'doc', meeting: 'meetings', email: 'mail', athena: 'athena', 'app:compass': 'today', 'app:finance': 'bars', 'app:health': 'review', 'app:home': 'upcoming', 'app:hollow': 'sheet' };
+const APP_ORDER = ['app:compass', 'app:finance', 'app:health', 'app:home', 'app:hollow']; // From my apps always lists its five in this order
 const kindLabel = (c: Coll) => (c.system ? 'From my apps' : c.scope === 'personal' ? 'Personal' : c.boundary === 'locked' ? 'Locked' : 'Cloud AI');
 /** The collection's chip: Cloud AI, Locked (with the lock), Personal or From my apps. The word always shows, so colour never carries it alone. */
 const Kind = ({ c }: { c: Coll }) => <span className={`chip kn-chip${c.boundary === 'locked' && c.scope === 'work' ? ' locked' : ''}`}>{c.boundary === 'locked' && c.scope === 'work' && <Icon name="lock" />}{kindLabel(c)}</span>;
@@ -126,6 +127,22 @@ function CollectionList({ colls }: { colls: Coll[] }) {
     </section>))}</>;
 }
 
+/** "Refresh now" for From my apps: the Worker pulls Kelly-Cloud and rebuilds Compass's part (at most once every 10 minutes: it says so otherwise). Each app's item then shows its own result. */
+function RefreshNow({ onDone }: { onDone: () => Promise<void> | void }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api<{ errors: Record<string, string> }>('/knowledge/apps/refresh', { method: 'POST' });
+      const bad = Object.keys(r.errors).length;
+      toast(bad ? `Refreshed. ${plural(bad, 'app')} couldn’t be read.` : 'Refreshed');
+      await onDone();
+    } catch (e) { if (!(e instanceof SignedOut)) toast((e as Error).message || 'Could not refresh.'); } finally { setBusy(false); }
+  };
+  return <button type="button" className="btn primary" disabled={busy || !online()} onClick={() => void run()}>{busy ? 'Refreshing…' : 'Refresh now'}</button>;
+}
+
 function ItemRow({ it, coll, onRemove }: { it: KnowledgeItem; coll: Coll; onRemove: (i: KnowledgeItem) => void }) {
   const note = it.state === 'ready' && it.search === 'excluded' ? 'Not searched by meaning: its project is Offline-only or its file is in Trash.' : null;
   return (
@@ -136,11 +153,13 @@ function ItemRow({ it, coll, onRemove }: { it: KnowledgeItem; coll: Coll; onRemo
         <div className="kn-meta">
           {it.state === 'indexing' || it.search === 'reindexing' ? <span className="kn-state"><i className="kn-spin" aria-hidden="true" />{it.state === 'indexing' ? 'Indexing' : 'Re-indexing'}</span>
             : it.state === 'failed' ? <span className="kn-state bad"><Icon name="warn" />Failed</span>
+            : it.error ? <span className="kn-state bad"><Icon name="warn" />Out of date</span>
             : <span className="kn-state ok"><Icon name="review" />Ready</span>}
           <span className="sub">{it.created_at.slice(0, 10)}</span>
           {it.state !== 'failed' && <span className="sub">{plural(it.chunk_count, 'passage')}</span>}
         </div>
         {it.state === 'failed' && it.error && <div className="kn-note">{it.error}</div>}
+        {it.state === 'ready' && it.error && <div className="kn-note" role="status">{it.error} Showing the copy from {it.created_at.slice(0, 10)}.</div>}
         {note && <div className="sub">{note}</div>}
       </div>
       <div className="kn-item-acts">
@@ -221,6 +240,7 @@ function CollectionPage({ coll, reloadColls, searching }: { coll: Coll; reloadCo
     catch (e) { if (!(e instanceof SignedOut)) toast((e as Error).message); }
   };
   const editable = !coll.system;
+  const refreshedAt = items?.filter((i) => i.state !== 'failed').map((i) => i.created_at).sort().pop(); // each refresh adds new items, so the newest says when
   return (
     <div className="kn-page" hidden={searching}>
       <div className="kn-top">
@@ -228,6 +248,7 @@ function CollectionPage({ coll, reloadColls, searching }: { coll: Coll; reloadCo
           : <h2 className="kn-name-ro">{coll.name}</h2>}
         <Kind c={coll} /><span className="sub">{plural(items?.length ?? coll.item_count ?? 0, 'item')}</span>
         {editable && <button type="button" className="btn" style={{ color: 'var(--danger)', marginLeft: 'auto' }} disabled={off} onClick={() => void trash()}>Move to Trash</button>}
+        {coll.system && <span style={{ marginLeft: 'auto' }}><RefreshNow onDone={async () => { await load(); await reloadColls(); }} /></span>}
       </div>
       {work && editable && (
         <div className="kn-bound">
@@ -237,7 +258,7 @@ function CollectionPage({ coll, reloadColls, searching }: { coll: Coll; reloadCo
           <span className="sub kn-line">{BOUNDARY_LINE[coll.boundary]}</span>
         </div>)}
       {coll.system
-        ? <div className="sub">Filled automatically from your apps, and replaced each time it refreshes.</div>
+        ? <div className="sub">Filled from your apps once a day, and replaced each time it refreshes. {refreshedAt ? `Last refreshed ${new Date(refreshedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.` : items ? 'Not refreshed yet.' : ''}</div>
         : <>
           <div className={`drop kn-drop${over ? ' over' : ''}`} onDragOver={(e) => { e.preventDefault(); if (!off) setOver(true); }} onDragLeave={() => setOver(false)} onDrop={off ? (e) => e.preventDefault() : drop}>
             <label className="btn primary" aria-disabled={off}>Add files
@@ -253,7 +274,7 @@ function CollectionPage({ coll, reloadColls, searching }: { coll: Coll; reloadCo
         </>}
       {off && <div className="sub" role="note">Offline: uploads and changes need a connection.</div>}
       {loadErr && <div className="kn-note" role="alert">The items couldn't be loaded. <button type="button" className="btn" onClick={() => void load()}>Try again</button></div>}
-      <div className="kn-items">{items?.map((it) => <ItemRow key={it.id} it={it} coll={coll} onRemove={remove} />)}</div>
+      <div className="kn-items">{(coll.system && items ? [...items].sort((a, b) => APP_ORDER.indexOf(a.source) - APP_ORDER.indexOf(b.source)) : items)?.map((it) => <ItemRow key={it.id} it={it} coll={coll} onRemove={remove} />)}</div>
       {items && !items.length && !loadErr && <p className="sub" style={{ margin: 0 }}>Nothing in this collection yet.</p>}
     </div>
   );
@@ -285,7 +306,13 @@ export function KnowledgeView({ id }: { id?: string }) {
       {coll && <CollectionPage key={coll.id} coll={coll} reloadColls={reload} searching={searching} />}
       {!id && colls && (
         <div hidden={searching}>
-          {colls.length ? <CollectionList colls={colls} /> : <div className="card"><p style={{ margin: 0 }}>No collections yet. A collection holds files you want to search together: a client’s contracts, a manual, your notes.</p></div>}
+          {!colls.some((c) => c.system) && (
+            <section aria-label="From my apps" className="kn-group"><div className="kn-grid"><div className="card kn-coll static">
+              <span className="secico"><Icon name="knowledge" /></span>
+              <span className="kn-coll-body"><b>From my apps</b><span className="sub">Your tasks and projects, Finance, Health, Home and Hollow, kept up to date once a day. Not refreshed yet.</span></span>
+              <RefreshNow onDone={reload} />
+            </div></div></section>)}
+          {colls.length ? <CollectionList colls={colls} /> : colls.some((c) => c.system) ? null : <div className="card"><p style={{ margin: 0 }}>No collections yet. A collection holds files you want to search together: a client’s contracts, a manual, your notes.</p></div>}
         </div>)}
       {creating && <NewCollection onClose={() => setCreating(false)} onMade={(c) => { void reload(); navigate(`/knowledge/${c.id}`); }} />}
     </>

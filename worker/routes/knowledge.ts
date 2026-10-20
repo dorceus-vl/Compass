@@ -18,6 +18,7 @@ import { loadItem as loadInboxItem, emailText } from './inbox.ts';
 import { projectAccess } from '../lib/project-context.ts';
 import { minutesDoc } from '../../shared/doc-model.ts';
 import { toMarkdown } from '../../shared/to-md.ts';
+import { claimRefresh, lastAttempt, refreshApps, waitMinutes } from '../lib/digest.ts';
 
 const knowledge = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -97,6 +98,7 @@ knowledge.post('/collections', async (c) => {
 knowledge.patch('/collections/:id', async (c) => {
   const coll = await loadCollection(c.env, c.req.param('id'));
   if (!coll) return c.json({ error: 'Not found' }, 404);
+  if (coll.system) return c.json({ error: 'system_collection', message: 'This collection is filled by your apps and can’t be changed.' }, 409);
   const r = checkAll(await body(c), CHECKS);
   if ('error' in r) return c.json({ error: r.error }, 400);
   if ('name' in r.values && !r.values.name) return c.json({ error: 'name is required' }, 400);
@@ -132,6 +134,7 @@ knowledge.patch('/collections/:id', async (c) => {
 knowledge.delete('/collections/:id', async (c) => {
   const coll = await loadCollection(c.env, c.req.param('id'));
   if (!coll) return c.json({ error: 'Not found' }, 404);
+  if (coll.system) return c.json({ error: 'system_collection', message: 'This collection is filled by your apps and can’t be deleted.' }, 409);
   const refused = await requireStepUp(c); // passkey, like Empty Trash
   if (refused) return refused;
   const t = now();
@@ -161,6 +164,7 @@ knowledge.post('/items', async (c) => {
   if (typeof b.collection_id !== 'string' || typeof b.document_id !== 'string') return c.json({ error: 'collection_id and document_id are required' }, 400);
   const coll = await loadCollection(c.env, b.collection_id), doc = await loadDoc(c.env, b.document_id);
   if (!coll || !doc) return c.json({ error: 'Not found' }, 404);
+  if (coll.system) return c.json({ error: 'knowledge_boundary', message: 'That collection is filled by your apps.' }, 409);
   let projectKind: 'work' | 'personal' | null = null, offline = false;
   if (doc.project_id) {
     const p = await c.env.DB.prepare('SELECT kind, data_boundary, deleted_at FROM projects WHERE id = ?1').bind(doc.project_id).first<{ kind: 'work' | 'personal'; data_boundary: string; deleted_at: string | null }>();
@@ -234,10 +238,24 @@ knowledge.post('/items/from-inbox/:id', async (c) => {
 
 knowledge.delete('/items/:id', async (c) => {
   const t = now();
+  // an app digest item is replaced by the next refresh, never removed by hand
+  if (await c.env.DB.prepare('SELECT 1 FROM knowledge_items i JOIN knowledge_collections k ON k.id = i.collection_id WHERE i.id = ?1 AND k.system = 1').bind(c.req.param('id')).first()) return c.json({ error: 'system_collection', message: 'This item is replaced each time your apps refresh.' }, 409);
   const r = await c.env.DB.prepare('UPDATE knowledge_items SET deleted_at = ?2, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NULL').bind(c.req.param('id'), t).run();
   if (!r.meta.changes) return c.json({ error: 'Not found' }, 404);
   await audit(c.env, 'you', 'knowledge.item.trash', c.req.param('id'));
   return c.json({ ok: true });
+});
+
+/**
+ * "Refresh now" for From my apps (KN7): Compass's personal digest and Kelly-Cloud's four sections, each replacing its item. At most once every 10 minutes
+ * (the cron's daily refresh counts); the answer says which apps worked and why the others didn't. Embedding carries on after the answer.
+ */
+knowledge.post('/apps/refresh', async (c) => {
+  if (!(await claimRefresh(c.env, 'you'))) {
+    const min = waitMinutes(await lastAttempt(c.env));
+    return c.json({ error: 'rate_limited', message: `Your apps were refreshed a moment ago. You can refresh again in ${min} minute${min === 1 ? '' : 's'}.` }, 429);
+  }
+  return c.json(await refreshApps(c.env, (p) => c.executionCtx.waitUntil(p), 'you'), 200, { 'Cache-Control': 'private, no-store' });
 });
 
 /** KN4: meaning and keywords over Cloud AI and personal collections (`collections` = comma-separated ids; none = all of them). Locked ones are never here. */

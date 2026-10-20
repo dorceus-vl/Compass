@@ -881,6 +881,7 @@ dialog.split-sheet{max-width:640px;max-height:min(86vh,760px);overflow-y:auto}
 .kn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
 .kn-coll{display:flex;align-items:center;gap:12px;min-height:76px;background:var(--card);color:inherit;min-width:0;transition:border-color var(--dur-quick),transform var(--dur-quick) var(--ease-out)}
 .kn-coll:hover{border-color:rgba(var(--accent-rgb),.4);transform:translateY(-1px)}
+.kn-coll.static{grid-column:1/-1}.kn-coll.static:hover{transform:none;border-color:var(--border-soft)}
 .kn-coll-body{flex:1;min-width:0;display:grid;gap:6px}
 .kn-coll-body b{font-size:15.5px;font-weight:800;letter-spacing:-.2px;overflow-wrap:anywhere}
 .kn-coll .chev{color:var(--text-faint);display:flex}.kn-coll .chev svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
@@ -925,7 +926,7 @@ dialog.kn-dlg{max-width:520px}
 .kn-opt:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18)}
 @media (prefers-reduced-motion:reduce){.kn-coll:hover{transform:none}.kn-spin{animation:none;border-top-color:rgba(var(--accent-rgb),.25);background:radial-gradient(circle,var(--accent) 0 28%,transparent 30%)}}
 @media (max-width:760px),(pointer:coarse){
-  .kn-search,.kn-name,.kn-lbl .field,.kn-hit .btn,.kn-item .btn,.kn-up .btn,.kn-top .btn,.kn-drop .btn,.kn-note .btn,.head .btn{min-height:44px}
+  .kn-search,.kn-name,.kn-lbl .field,.kn-hit .btn,.kn-item .btn,.kn-up .btn,.kn-top .btn,.kn-drop .btn,.kn-note .btn,.kn-coll .btn,.head .btn{min-height:44px}
   .kn-opt{min-height:44px}.kn-opt input{width:22px;height:22px}
 }
 @media (max-width:760px){.kn-item{flex-wrap:wrap}.kn-item-acts{flex:1 1 100%;justify-content:flex-start}}

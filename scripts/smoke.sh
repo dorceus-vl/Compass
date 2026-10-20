@@ -1007,5 +1007,75 @@ for x in $D3P $D3W $D3L; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/n
 curl "${H[@]}" -X DELETE $B/api/projects/$K3WP >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$K3PP >/dev/null
 [ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty)")" = 200 ] || fail "Empty Trash after k3"
 rm -rf $KS
+# (k4) Knowledge, Task 4: "From my apps" against the stub relay (/apps-digest): five items, a second refresh replaces them, a failing source keeps yesterday's item
+# with its error, the system collection is out of every save path, Refresh now at most every 10 minutes, and the cron refreshes once a day after digest_hour.
+node "$(dirname "$0")/relay-stub.mjs" "$RS" 8791 & STUB=$!; trap 'kill $STUB 2>/dev/null' EXIT; sleep 1 # the (z) stub was stopped above
+stub() { curl -s "localhost:8791/digest-set$1" >/dev/null; }; stub ''
+arm() { D1X "DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null; } # a refresh (the cron may have made one already) starts the 10-minute window; local only
+refresh() { arm; kj -X POST $B/api/knowledge/apps/refresh; }
+SYSQ="SELECT i.id, i.source, i.state, i.error FROM knowledge_items i JOIN knowledge_collections k ON k.id=i.collection_id WHERE k.system=1"
+sysn() { kn "SELECT count(*) AS n FROM knowledge_items i JOIN knowledge_collections k ON k.id=i.collection_id WHERE k.system=1 AND i.deleted_at IS NULL${1:+ AND $1}"; }
+SYSEMB() { for _ in $(seq 1 60); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1 AND c.embedded=0")" = 0 ] && return 0; sleep 0.25; done; return 1; }
+K4WP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke k4 work","kind":"work"}' | js d.project.id)
+K4T1=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke k4 pelican personal $R\",\"kind\":\"personal\",\"due_at\":\"2000-01-01\"}" | js d.task.id)
+K4T2=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke k4 WORKONLY $R\",\"project_id\":\"$K4WP\"}" | js d.task.id)
+KR1=$(refresh); [ "$(kst "$KR1")" = 200 ] && [ "$(kbody "$KR1" | js 'd.ok.join()+"|"+Object.keys(d.errors).length')" = "compass,finance,health,home,hollow|0" ] || fail "first apps refresh: $KR1"
+SYS=$(curl "${H[@]}" $B/api/knowledge/collections | js "d.collections.filter(c=>c.system===1&&c.name==='From my apps'&&c.scope==='personal'&&c.boundary==='cloud').map(c=>c.id).join()"); [ -n "$SYS" ] && [ "${SYS#*,}" = "$SYS" ] || fail "no single From my apps collection ($SYS)"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections | js 'd.collections[0].system')" = 1 ] || fail "From my apps is not listed first"
+A1=$(curl -s localhost:8791/digest-hits | js d.hits); SYSEMB || fail "the digest passages were not embedded"
+[ "$(sysn "i.state='ready'")" = 5 ] && [ "$(sysn "i.source IN ('app:compass','app:finance','app:health','app:home','app:hollow')")" = 5 ] || fail "not five ready items after the first refresh"
+OLDI=$(D1X "$SYSQ" | js 'd[0].results.map(r=>r.id).sort().join()'); OLDC=$(D1X "SELECT c.id FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1" | js 'd[0].results.map(r=>r.id).sort().join()')
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_items i ON i.id=c.item_id WHERE i.source='app:compass' AND c.text LIKE '%pelican personal $R%'")" -ge 1 ] || fail "the Compass digest lacks the personal task"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1 AND (c.text LIKE '%WORKONLY%' OR c.text LIKE '%$K4WP%')")" = 0 ] || fail "a work task reached the Compass digest"
+ks "Stubhealth" $SYS | grep -q 'refills due' || fail "the digest is not searchable by meaning/words"
+ks "Stubhealth" $SYS | grep -qi 'Medications' || fail "the Health passage did not come back with its heading"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1 AND c.enc_v != 0")" = 0 ] || fail "personal digest passages are sealed"
+# Refresh now: at most once every 10 minutes (the refresh above counts)
+KR2=$(kj -X POST $B/api/knowledge/apps/refresh); [ "$(kst "$KR2")" = 429 ] && kbody "$KR2" | grep -q 'You can refresh again in' || fail "a second refresh within 10 minutes was not a plain 429: $KR2"
+[ "$(sysn)" = 5 ] || fail "the refused refresh changed items"
+# a second refresh REPLACES (no second set), the old passages and rows are deleted, the new text is in
+KR3=$(refresh); A2=$(curl -s localhost:8791/digest-hits | js d.hits); [ "$A2" = $((A1 + 1)) ] || fail "the second refresh did not call the relay once ($A1 -> $A2)"
+[ "$(kst "$KR3")" = 200 ] || fail "second refresh: $KR3"
+SYSEMB || fail "the second digest was not embedded"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_items i JOIN knowledge_collections k ON k.id=i.collection_id WHERE k.system=1")" = 5 ] || fail "the second refresh added items instead of replacing"
+NEWI=$(D1X "$SYSQ" | js 'd[0].results.map(r=>r.id).sort().join()'); [ "$NEWI" != "$OLDI" ] || fail "items were not replaced"
+for x in $(echo $OLDI | tr , ' '); do [ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE id='$x'")" = 0 ] || fail "an old item row survived"; done
+for x in $(echo $OLDC | tr , ' '); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE id='$x'")" = 0 ] || fail "an old passage survived"; done
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1")" -ge 5 ] || fail "no passages after the second refresh"
+ks "Stubfinance" $SYS | grep -q "Stubfinance answer $A2\\." && ! ks "Stubfinance" $SYS | grep -q "Stubfinance answer $A1\\." || fail "the old Finance answer is still searchable, or the new one isn't"
+# the system collection can't be deleted, switched, renamed, filled by hand or emptied by hand
+[ "$(kst "$(kj -X DELETE $B/api/knowledge/collections/$SYS)")" = 409 ] && [ "$(kst "$(kj -X PATCH $B/api/knowledge/collections/$SYS -d '{"name":"x"}')")" = 409 ] && [ "$(kst "$(kj -X PATCH $B/api/knowledge/collections/$SYS -d '{"boundary":"locked"}')")" = 409 ] || fail "the system collection was deleted or changed"
+KSI=$(D1X "$SYSQ" | js 'd[0].results[0].id'); [ "$(kst "$(kj -X DELETE $B/api/knowledge/items/$KSI)")" = 409 ] || fail "an app item was removed by hand"
+printf 'Pelican notes\n' > /tmp/compass-smoke-k4.md; KD4=$(kid "$(up "@/tmp/compass-smoke-k4.md;filename=k4.md;type=text/markdown")" document)
+[ "$(kst "$(kitem $SYS $KD4)")" = 409 ] || fail "a document went into From my apps"
+curl "${H[@]}" -X DELETE $B/api/documents/$KD4 >/dev/null; rm -f /tmp/compass-smoke-k4.md
+# a source that can't be read keeps yesterday's item with its error; the others refresh
+stub '?null=finance,hollow'
+KR4=$(refresh); [ "$(kst "$KR4")" = 200 ] && [ "$(kbody "$KR4" | js 'd.ok.join()+"|"+d.errors.finance+"|"+d.errors.hollow')" = "compass,health,home|Finance could not be read.|Hollow could not be read." ] || fail "partial refresh: $KR4"
+SYSEMB; [ "$(sysn)" = 5 ] && [ "$(sysn "i.state='ready' AND i.source='app:finance' AND i.error='Finance could not be read.'")" = 1 ] || fail "a failed source did not keep its item with the reason"
+ks "Stubfinance" $SYS | grep -q "Stubfinance answer $A2\\." || fail "yesterday's Finance text is gone"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$SYS/items | js "d.items.filter(i=>i.state==='ready'&&i.error).length")" = 2 ] || fail "the items list does not carry the errors"
+stub '?status=502'
+KR5=$(refresh); [ "$(kbody "$KR5" | js 'd.ok.join()+"|"+d.errors.finance')" = "compass|Kelly-Cloud answered with an error." ] || fail "relay down: $KR5"
+[ "$(sysn)" = 5 ] || fail "the relay being down removed items"
+stub ''; KR6=$(refresh); [ "$(kbody "$KR6" | js 'Object.keys(d.errors).length')" = 0 ] && [ "$(sysn "i.error IS NOT NULL")" = 0 ] || fail "a good refresh did not clear the errors: $KR6"
+# the cron: once a day after digest_hour (Toronto), not before it, not twice
+SET0=$(curl "${H[@]}" $B/api/settings | js d.digest_hour); HRNOW=$(TZ=America/Toronto date +%-H)
+SYSEMB; stub ''
+donen() { kn "SELECT count(*) AS n FROM audit_log WHERE action='knowledge.apps.done'"; }
+if [ "$HRNOW" -lt 23 ]; then # before the hour: nothing, even with no attempt on record
+  arm; curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$((HRNOW + 1))}" >/dev/null; cron; sleep 2
+  [ "$(donen)" = 0 ] || fail "the cron refreshed before digest_hour"
+fi
+arm; curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$HRNOW}" >/dev/null
+cron; for _ in $(seq 1 40); do [ "$(donen)" = 1 ] && break; sleep 0.25; done
+[ "$(donen)" = 1 ] || fail "the cron did not refresh once digest_hour had come"
+cron; sleep 2; [ "$(donen)" = 1 ] || fail "the cron refreshed twice in one day"
+curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$SET0}" >/dev/null
+echo "smoke: (k4) From my apps: five items (compass, finance, health, home, hollow) personal and plain, embedded and searchable, no work task in the Compass part; Refresh now -> 429 within 10 minutes; a second refresh replaces (old rows, passages and answers gone); a failing source keeps yesterday's item with its error, a down relay keeps them all, a good refresh clears the errors; the system collection can't be deleted, changed, filled or emptied by hand; the cron refreshes once after digest_hour"
+# clean up (local D1 only): the system rows, the test tasks and project
+D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
+kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
+for x in $K4T1 $K4T2; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$K4WP >/dev/null
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"
