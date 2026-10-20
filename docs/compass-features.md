@@ -80,10 +80,10 @@ through the Mac app, later). Work projects default to Offline only until you cha
 
 | Feature | From | Tier |
 | --- | --- | --- |
-| Today: three horizons, Added-by-your-apps strip, Kelly brief, overdue, stats | Things, Todoist | v1 |
+| Today: three horizons, Added-by-your-apps strip, Kelly brief, overdue, stats | Things, Todoist | v1 (Kelly brief done, Phase 5) |
 | Board: New / In progress / On hold / Waiting on / Done, drag and drop, WIP limits, swimlanes by project or kind | Trello, Jira, Kanban | v1 |
 | List / table with sort, group, filter and saved views ("Work, due this week, by project") | Asana, ClickUp | v1 |
-| Calendar: month and week, drag to reschedule, Kelly's calendar events overlaid | Asana, Notion | v1 |
+| Calendar: month and week, drag to reschedule, Kelly's calendar events overlaid | Asana, Notion | v1 (done, Phase 5) |
 | Timeline / Gantt (section 1) | MS Project, Asana, Smartsheet | v1 basic, v2 full |
 | Upcoming: the next 14 days as a scrolling list | Things | v1 |
 | Workload: hours per week vs capacity you set, across projects | Asana, monday | v2 |
@@ -168,14 +168,14 @@ through the Mac app, later). Work projects default to Offline only until you cha
 
 | App | What flows | Tier |
 | --- | --- | --- |
-| Kelly | Reads and writes tasks (agent scopes), daily brief, meeting prep, email triage → tasks, sends minutes and emails with confirm | v1 |
+| Kelly | Reads and writes tasks (agent scopes), daily brief, meeting prep, email triage → tasks, sends minutes and emails with confirm | v1 (agent scopes, brief, calendar and document hand-off done, Phase 5; the rest follows) |
 | Finance | Subscription review, bill due, budget breach → tasks with deep link | v1 |
 | Health | Refill, appointment due, preventive care, lab results to follow up → tasks | v1 |
 | Hollow | New files to sort, backup overdue, disk warning → tasks; task attachments can be Hollow links | v1 (needs a small "new files" signal in Hollow if absent) |
 | Aura | Device battery low, maintenance reminders (filters, smoke detector test) → tasks; Compass "today" kiosk card on the wall tablet | v1 tasks, v2 kiosk |
 | SonarFlow / Knocturn ID | Meeting notes ready → review; dictation into any field | v1 |
 | NightOwl | Nothing automatic; optional "watch later" is not a task | none |
-| Calendar (Google, personal) | Events on the calendar view, meeting prep | v1 |
+| Calendar (Google, personal) | Events on the calendar view (done, Phase 5), meeting prep | v1 |
 | Email (Gmail, personal Outlook) | Needs-reply and commitments → tasks | v1 |
 | Bell M365 (work) | Forward-to address only, unless Bell allows consent | v1 |
 | Jira / Planner / Teams at Bell | Not in v1. If Bell allows an API token: import of your assigned Jira issues into the work board, read-only | later |

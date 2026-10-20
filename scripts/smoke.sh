@@ -244,10 +244,14 @@ echo "smoke: (r) status report data readable for a work project; cloud -> stub s
 # Task 12: today's brief on the stub (an offline project's task title must never reach the model input), the export, AI settings, a gate milestone.
 BO=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke brief offline","kind":"work"}' | js d.project.id)
 BC=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke brief cloud","kind":"personal"}' | js d.project.id)
-curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke offline secret $R\",\"project_id\":\"$BO\",\"due_at\":\"2026-01-01\"}" | grep -q '"task"' || fail "brief offline task"
-curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke cloud visible $R\",\"project_id\":\"$BC\",\"due_at\":\"2026-01-02\"}" | grep -q '"task"' || fail "brief cloud task"
-curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke loose personal $R\",\"kind\":\"personal\",\"due_at\":\"2026-01-03\"}" | grep -q '"task"' || fail "brief loose task"
-curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke loose work $R\",\"kind\":\"work\",\"due_at\":\"2026-01-04\"}" | grep -q '"task"' || fail "brief loose work task"
+KTO=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke offline secret $R\",\"project_id\":\"$BO\",\"due_at\":\"2026-01-01\"}" | js d.task.id)
+[ -n "$KTO" ] || fail "brief offline task"
+KTC=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke cloud visible $R\",\"project_id\":\"$BC\",\"due_at\":\"2026-01-02\"}" | js d.task.id)
+[ -n "$KTC" ] || fail "brief cloud task"
+KTP=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke loose personal $R\",\"kind\":\"personal\",\"due_at\":\"2026-01-03\"}" | js d.task.id)
+[ -n "$KTP" ] || fail "brief loose task"
+KTW=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke loose work $R\",\"kind\":\"work\",\"due_at\":\"2026-01-04\"}" | js d.task.id)
+[ -n "$KTW" ] || fail "brief loose work task"
 BR=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/ai/brief); [ "$(printf '%s' "$BR" | tail -1)" = 200 ] || fail "brief: $BR"
 BT=$(printf '%s' "$BR" | head -1 | js d.text)
 case "$BT" in "Stub answer for:"*) ;; *) fail "brief text: $BT";; esac
@@ -258,6 +262,7 @@ case "$BT" in *"Smoke loose work"*) fail "work task without a project reached th
 printf '%s' "$BT" | grep -Eq '\+[0-9]+ items from offline projects' || fail "no offline count line: $BT"
 printf '%s' "$BT" | grep -Eq '\+[0-9]+ work items without a project' || fail "no no-project count line: $BT"
 [ "$(D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='brief'" | js 'd[0].results[0].n')" -ge 1 ] || fail "brief not counted in ai_usage"
+for T in $KTO $KTC $KTP $KTW; do curl "${H[@]}" -X DELETE $B/api/tasks/$T >/dev/null; done # soft delete: the next run's counts must not include these
 echo "smoke: (s) brief on the stub: cloud and personal titles in, offline-project and no-project work titles out, both count lines present"
 EX=$(curl "${H[@]}" -D $J.h -X GET $B/api/export -w '\n%{http_code}' ); [ "$(printf '%s' "$EX" | tail -1)" = 200 ] || fail "export: $(printf '%s' "$EX" | tail -1)"
 curl "${H[@]}" -X POST $B/api/projects/$BO/raid -d "{\"type\":\"risk\",\"text\":\"Smoke export risk $R\",\"probability\":2,\"impact\":2}" | grep -q '"item"' || fail "export raid create"

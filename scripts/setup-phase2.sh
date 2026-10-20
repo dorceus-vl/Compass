@@ -16,7 +16,7 @@ add() {
   printf '%s=%s\n' "$1" "$2" >> "$F"; echo "generated $1"
 }
 
-for N in INBOX_SECRET_KELLY INBOX_SECRET_ID INBOX_SECRET_HOLLOW; do
+for N in INBOX_SECRET_KELLY INBOX_SECRET_ID INBOX_SECRET_HOLLOW AGENT_SECRET_KELLY KELLY_RELAY_SECRET; do # Phase 5: the last two are also Kelly-Cloud's COMPASS_AGENT_SECRET and COMPASS_RELAY_SECRET (same values)
   if [ -z "$(val $N)" ]; then v=$(node scripts/gen-secret.mjs); add $N "$v"; fi
 done
 if [ -z "$(val VAPID_PUBLIC_KEY)" ] || [ -z "$(val VAPID_PRIVATE_KEY)" ]; then # the pair belongs together: regenerate both
@@ -37,7 +37,7 @@ fi
 
 if [ "${1:-}" = "--put" ]; then
   LISTED=$(npx wrangler secret list)
-  for N in INBOX_SECRET_KELLY INBOX_SECRET_ID INBOX_SECRET_HOLLOW VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY EMAIL_INBOX_ADDRESS ALLOWED_FORWARDERS; do
+  for N in INBOX_SECRET_KELLY INBOX_SECRET_ID INBOX_SECRET_HOLLOW AGENT_SECRET_KELLY KELLY_RELAY_SECRET VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY EMAIL_INBOX_ADDRESS ALLOWED_FORWARDERS; do
     V=$(val $N)
     if [ -z "$V" ]; then echo "skip $N (empty)"; continue; fi
     if printf '%s' "$LISTED" | grep -q "\"$N\""; then echo "skip $N (already set)"; continue; fi

@@ -74,7 +74,7 @@ curl -s -X POST https://compass.knocturnlabs.com/api/inbox \
 
 Kelly reads and adds to Compass through `/api/agent/*`, a separate door from the inbox. It is off until Vlad switches it on (Settings JSON `kelly`: `{ enabled, scopes }`; both off by default, changed only through the passkey-guarded Kelly route, never `PATCH /api/settings`, which answers 400 `use_kelly_route`).
 
-Auth: `Authorization: Bearer <AGENT_SECRET_KELLY>` (a Worker secret; local value in `.dev.vars`), compared in constant time; unset never matches. No cookie. A bad or missing secret is a plain 401: no audit row, not counted against the limits.
+Auth: `Authorization: Bearer <AGENT_SECRET_KELLY>` (a Worker secret, Kelly-Cloud's `COMPASS_AGENT_SECRET`, same value; local value in `.dev.vars`), compared in constant time; unset never matches. No cookie. A bad or missing secret is a plain 401: no audit row, not counted against the limits.
 
 Scopes (all off by default; there is no delete scope, and Kelly never edits titles, trashes or reopens):
 
@@ -94,6 +94,20 @@ Audit: every authenticated call writes one `audit_log` row: actor `kelly`, actio
 
 Only top-level tasks are visible: a subtask is never listed and `done` on one is a 404 (subtasks do not inherit their parent's project or kind).
 
-## Kelly's relay (Compass → Kelly-Cloud)
+## Relay (Compass → Kelly)
 
-Compass calls Kelly-Cloud's `KELLY_RELAY_URL` (`/api/compass-relay`) server to server with `X-Relay-Secret` (`KELLY_RELAY_SECRET` here, `COMPASS_RELAY_SECRET` there); redirects are never followed. `GET /brief?date=` and `GET /calendar?from=&to=` feed Today (worker/routes/kelly.ts). `POST /documents` (raw bytes, `X-File-Name` URI-encoded, up to 20 MB, answers `{ id }`) is the document hand-off: `POST /api/library/import` with `also_kelly: true` sends the file to Kelly's own document search, only for a personal document with no project or in a live cloud-boundary project, and only after the library import itself succeeded. A failed hand-off never fails the import (the answer carries `kelly: "failed"`); each attempt is one `kelly.document` audit row with no content. Work, Offline-only and trashed documents are never sent.
+The other direction: Compass's Worker calls Kelly-Cloud's relay (`KELLY_RELAY_URL`, `https://kelly.knocturnlabs.com/api/compass-relay`) server to server with `X-Relay-Secret: <KELLY_RELAY_SECRET>` (Kelly-Cloud's `COMPASS_RELAY_SECRET`; same value). A browser never calls it and never sees the secret. Redirects are never followed, calls time out (5 s; 60 s for a document), and a missing URL or secret, a non-2xx answer, a bad body or a timeout all mean "unavailable": Today and Calendar simply show nothing from Kelly. Everything that comes back is data: it is trimmed, capped and rendered as plain text only, never as HTML or an instruction.
+
+Compass only calls the relay while Kelly is switched on and `compass:read.tasks` is granted (Settings → Kelly, `GET`/`PUT /api/kelly`; `PUT` needs the passkey step-up).
+
+| Relay route | Compass side | Answer | Kept |
+|---|---|---|---|
+| `GET /brief?date=YYYY-MM-DD` | `GET /api/kelly/brief` (Today) | `{ text, generated_at }`; text at most 1200 characters, control characters removed | cached 1 hour |
+| `GET /calendar?from=&to=` (at most 62 days) | `GET /api/kelly/calendar` (Calendar view, read-only) | `{ events: [{ title, start, end, all_day, location, source }] }`; at most 500, text capped, a bad date drops the event | cached 5 minutes |
+| `POST /documents` (raw bytes, `X-File-Name` URI-encoded, up to 20 MB) | `POST /api/library/import` with `also_kelly: true` | `{ id }` | not cached |
+
+The Compass routes answer `{ unavailable: true }` (200, `Cache-Control: private, no-store`) when the relay can't answer, and 400 for a bad `date`, `from` or `to`.
+
+The document hand-off ("Also let Kelly search it") sends the file only for a personal document with no project or one in a live cloud-boundary project, and only after the library import itself succeeded. A failed hand-off never fails the import (the answer carries `kelly: "failed"`); each attempt is one `kelly.document` audit row with no content. Work, Offline-only and trashed documents are never sent.
+
+Vlad's own view of Kelly: `GET /api/kelly` (switches, last call, calls today, whether the relay is configured) and `GET /api/kelly/log` (her calls and changes to her access, newest first; `limit` 1 to 100, `before` is the `next` cursor).
