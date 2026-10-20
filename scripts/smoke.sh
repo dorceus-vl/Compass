@@ -400,10 +400,31 @@ kset '{"enabled":true,"scopes":["compass:write.tasks"]}'; LT=$(agb POST /tasks "
 curl "${H[@]}" "$B/api/kelly/log?limit=5" | js "d.rows.some(r=>r.target==='$LT'&&r.action==='agent.tasks.create'&&r.task_live===true)" | grep -q true || fail "log does not show the live task"
 curl "${H[@]}" -X DELETE $B/api/tasks/$LT >/dev/null
 curl "${H[@]}" "$B/api/kelly/log?limit=5" | js "d.rows.some(r=>r.target==='$LT'&&r.task_live===false)" | grep -q true || fail "log still links a trashed task"
+# The calendar proxy: validated before anything else, gated, capped, cached.
+kset '{"enabled":true,"scopes":["compass:read.tasks"]}'
+kc() { curl "${H[@]}" "$B/api/kelly/calendar?from=$1&to=$2"; }
+code() { curl "${H[@]}" -o /dev/null -w '%{http_code}' "$1"; }
+CM=$(printf %02d $((RANDOM % 12 + 1))); CF=2033-$CM-01; CT=2033-$CM-28 # a range nobody asked for in the last 5 minutes: the Worker caches per range
+[ "$(code "$B/api/kelly/calendar?to=$CT")" = 400 ] || fail "calendar without from not 400"
+[ "$(code "$B/api/kelly/calendar?from=$CT&to=$CF")" = 400 ] || fail "calendar from > to not 400"
+[ "$(code "$B/api/kelly/calendar?from=2033-02-30&to=2033-03-02")" = 400 ] || fail "calendar accepted 2033-02-30"
+[ "$(code "$B/api/kelly/calendar?from=2033-01-01&to=2033-03-04")" = 400 ] || fail "calendar accepted 63 days"
+[ "$(code "$B/api/kelly/brief?date=2033-13-01")" = 400 ] || fail "brief accepted a bad date"
+C0=$(curl -s localhost:8791/cal-hits | js d.hits)
+CR=$(kc $CF $CT)
+[ "$(echo "$CR" | js 'd.events.length===2 && d.events[0].title.length===200 && d.events[0].start.startsWith("'$CF'") && d.events[1].all_day===true && Object.keys(d).join()==="events"')" = true ] || fail "calendar did not come through capped and cleaned"
+kc $CF $CT >/dev/null; [ "$(curl -s localhost:8791/cal-hits | js d.hits)" = $((C0 + 1)) ] || fail "second calendar call was not served from the Worker cache"
+[ "$(kc 2000-01-02 2000-01-30 | js d.events.length)" = 500 ] || fail "calendar events not capped at 500"
+kc 2000-01-03 2000-01-30 | grep -q '"unavailable":true' || fail "relay 500 is not unavailable (calendar)"
+kset '{"enabled":true,"scopes":["compass:write.tasks"]}'
+kc $CF $CT | grep -q '"unavailable":true' || fail "calendar served without compass:read.tasks (cache not behind the gate)"
+kset '{"enabled":false,"scopes":["compass:read.tasks"]}'
+kc $CF $CT | grep -q '"unavailable":true' || fail "cached calendar served after Kelly was switched off"
+[ "$(code "$B/api/kelly/calendar?from=$CT&to=$CF")" = 400 ] || fail "calendar validation skipped while off"
 kput '{"enabled":false}' >/dev/null; kb 2026-10-21 | grep -q '"unavailable":true' || fail "brief answered after Kelly was switched off"
 kb $BD | grep -q '"unavailable":true' || fail "cached brief served after Kelly was switched off"
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
-echo "smoke: (z) kelly: PUT validated + audited, brief gated (off / no scope), via the relay, capped, cached, log shows tasks while they exist"
+echo "smoke: (z) kelly: PUT validated + audited, brief and calendar gated (off / no scope), via the relay, capped, cached, log shows tasks while they exist"
 kset '{"enabled":false,"scopes":[]}'; D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

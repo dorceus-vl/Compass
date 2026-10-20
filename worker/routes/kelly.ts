@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
-import type { AgentScope } from '../../shared/types.ts';
+import type { AgentScope, Settings } from '../../shared/types.ts';
 import { AGENT_SCOPES, allowed } from '../lib/agent.ts';
-import { cleanBrief } from '../lib/kelly.ts';
+import { cleanBrief, cleanEvents, isYmd, rangeError } from '../lib/kelly.ts';
 import { now, audit, getSettings, patchSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
 import { requireStepUp } from '../lib/step-up.ts';
@@ -48,22 +48,45 @@ kelly.get('/log', async (c) => {
   return c.json({ rows: results.map((r) => ({ ...r, detail: parse(r.detail), task_live: !!r.target && live.has(r.target) })), next: results.length === limit ? results[results.length - 1].at : null });
 });
 
+type Gate = { relay: string; secret: string } | null;
+/** Kelly on, compass:read.tasks granted, and a relay configured; checked before any cache read or relay call so turning her off ends it at once. */
+function gate(env: Env, s: Settings): Gate {
+  return allowed(s.kelly, 'compass:read.tasks') && env.KELLY_RELAY_URL && env.KELLY_RELAY_SECRET ? { relay: env.KELLY_RELAY_URL.replace(/\/$/, ''), secret: env.KELLY_RELAY_SECRET } : null;
+}
+/** One relay GET, cached in the Worker's own cache (not D1) under `name`. `clean` turns the body into what we keep (null = unusable). 3xx counts as unavailable, never followed. */
+async function relayGet<T>(g: NonNullable<Gate>, name: string, path: string, maxAge: number, clean: (body: unknown) => T | null): Promise<T | null> {
+  const key = new Request(`https://compass.invalid/${name}`), cache = caches.default;
+  const hit = await cache.match(key);
+  if (hit) return (await hit.json()) as T;
+  try {
+    const r = await fetch(`${g.relay}${path}`, { headers: { 'X-Relay-Secret': g.secret }, redirect: 'manual', signal: AbortSignal.timeout(5000) });
+    const out = r.ok ? clean(await r.json().catch(() => null)) : null;
+    if (out) await cache.put(key, new Response(JSON.stringify(out), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${maxAge}` } }));
+    return out;
+  } catch (e) { console.error('kelly relay', name, e); return null; }
+}
+
 /** Kelly's paragraph for today from Kelly-Cloud's relay; `{ unavailable: true }` for anything else (off, no read permission, no relay, slow, bad answer). */
 kelly.get('/brief', async (c) => {
-  const env = c.env, s = await getSettings(env), un = () => c.json({ unavailable: true }, 200, { 'Cache-Control': 'private, no-store' });
-  if (!allowed(s.kelly, 'compass:read.tasks') || !env.KELLY_RELAY_URL || !env.KELLY_RELAY_SECRET) return un();
-  const q = c.req.query('date'), date = q && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : localDate(s.tz);
-  // Cached per date for an hour in the Worker's own cache (not D1). The switch and the scope were checked first, so turning her off ends it at once.
-  const key = new Request(`https://compass.invalid/kelly-brief/${date}`), cache = caches.default;
-  const hit = await cache.match(key);
-  if (hit) return c.json(await hit.json(), 200, { 'Cache-Control': 'private, no-store' });
-  try {
-    const r = await fetch(`${env.KELLY_RELAY_URL.replace(/\/$/, '')}/brief?date=${date}`, { headers: { 'X-Relay-Secret': env.KELLY_RELAY_SECRET }, redirect: 'manual', signal: AbortSignal.timeout(5000) });
-    const out = r.ok ? cleanBrief(await r.json().catch(() => null), now()) : null;
-    if (!out) return un();
-    await cache.put(key, new Response(JSON.stringify(out), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=3600' } }));
-    return c.json(out, 200, { 'Cache-Control': 'private, no-store' });
-  } catch (e) { console.error("kelly brief", e); return un(); }
+  const q = c.req.query('date');
+  if (q !== undefined && !isYmd(q)) return c.json({ error: 'date must be like 2026-10-20' }, 400);
+  const un = () => c.json({ unavailable: true }, 200, { 'Cache-Control': 'private, no-store' });
+  const s = await getSettings(c.env), g = gate(c.env, s);
+  if (!g) return un();
+  const date = q ?? localDate(s.tz);
+  const out = await relayGet(g, `kelly-brief/${date}`, `/brief?date=${date}`, 3600, (b) => cleanBrief(b, now()));
+  return out ? c.json(out, 200, { 'Cache-Control': 'private, no-store' }) : un();
+});
+
+/** Kelly's calendar events for from..to (YYYY-MM-DD, at most 62 days) from the relay: `{ events }`, read-only, or `{ unavailable: true }` like the brief. Cached 5 minutes. */
+kelly.get('/calendar', async (c) => {
+  const from = c.req.query('from'), to = c.req.query('to'), bad = rangeError(from, to);
+  if (bad) return c.json({ error: bad }, 400);
+  const un = () => c.json({ unavailable: true }, 200, { 'Cache-Control': 'private, no-store' });
+  const g = gate(c.env, await getSettings(c.env));
+  if (!g) return un();
+  const events = await relayGet(g, `kelly-cal/${from}/${to}`, `/calendar?from=${from}&to=${to}`, 300, (b) => { const e = cleanEvents(b); return e && { events: e }; });
+  return events ? c.json(events, 200, { 'Cache-Control': 'private, no-store' }) : un();
 });
 
 export default kelly;

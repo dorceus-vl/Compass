@@ -20,7 +20,7 @@ import { SCOPE_LABEL } from '../../../shared/kelly-log.ts';
 type Patch = Partial<Omit<Settings, 'wip_limits' | 'push'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']> };
 type Save = (patch: Patch) => Promise<void>;
 const MORE = [['inbox', '/inbox', 'Inbox'], ['meetings', '/meetings', 'Meetings'], ['review', '/review', 'Weekly review'], ['library', '/library', 'Library'], ['copilot', '/copilot', 'Copilot'],
-  ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['timeline', '/timeline', 'Timeline'], ['trash', '/trash', 'Trash']] as const;
+  ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'], ['timeline', '/timeline', 'Timeline'], ['trash', '/trash', 'Trash']] as const;
 const WIP_LABELS: Partial<Record<Status, string>> = { new: 'New', progress: 'In progress', hold: 'On hold', waiting: 'Waiting on' };
 
 export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {

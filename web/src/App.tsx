@@ -8,6 +8,7 @@ import { Today } from './views/Today.tsx';
 import { Board } from './views/Board.tsx';
 import { List } from './views/List.tsx';
 import { Upcoming } from './views/Upcoming.tsx';
+import { Calendar } from './views/Calendar.tsx';
 import { Timeline } from './views/Timeline.tsx';
 import { Projects } from './views/Projects.tsx';
 import { ProjectPage } from './views/Project.tsx';
@@ -61,7 +62,7 @@ export function App() {
     ? <p className="quick-out">Open Compass and sign in first.</p>
     : <><Palette onClose={closeQuickAdd} onAdded={() => void replay().finally(closeQuickAdd)} /><Toasts /><ConfirmDialog /></>;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
-  const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, timeline: <Timeline />, projects: <Projects />,
+  const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, calendar: <Calendar />, timeline: <Timeline />, projects: <Projects />,
     project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, kelly: <KellyLog />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, copilot: <CopilotView id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
   return (
     <>

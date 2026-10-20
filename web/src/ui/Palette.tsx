@@ -10,7 +10,7 @@ import { useDocs } from '../views/project/Documents.tsx';
 import { askCopilot } from '../views/Copilot.tsx';
 import { taskColor, projectColor } from './colors.ts';
 
-const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/settings', 'Settings'], ['/trash', 'Trash']];
+const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/calendar', 'Calendar'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/settings', 'Settings'], ['/trash', 'Trash']];
 
 export function Palette({ onClose, prefill, onAdded }: { onClose: () => void; prefill?: { title: string; notes: string | null }; onAdded?: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
