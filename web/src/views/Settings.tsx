@@ -6,6 +6,7 @@ import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { Link } from '../router.ts';
 import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
+import { shell, nativeDevice } from '../native.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
 import { CardHead } from '../ui/CardHead.tsx';
@@ -101,7 +102,7 @@ const STATUS_TEXT: Record<PushState, string> = {
   on: 'On for this device.', off: 'Off for this device.', blocked: 'Blocked by the browser. Allow notifications for Compass in the browser or system settings, then come back.',
   'home-screen': 'Add Compass to your Home Screen, then turn notifications on here.', unsupported: 'This browser can\'t receive notifications.',
 };
-type Device = { id: string; device_name: string | null; created_at: string; last_ok_at: string | null };
+type Device = { id: string; device_name: string | null; kind?: string; platform?: string; created_at: string; last_ok_at: string | null };
 
 function Notifications({ s, save }: { s: Settings; save: Save }) {
   const [state, setState] = useState<PushState | null>(null);
@@ -124,21 +125,23 @@ function Notifications({ s, save }: { s: Settings; save: Save }) {
     toast('Device removed');
   });
   const canAsk = state === 'off' || state === 'on';
+  const app = nativeDevice(); // "This iPhone", "This Mac": in an app shell only
+  const status = !state ? 'Checking...' : app && (state === 'on' || state === 'off') ? `${state === 'on' ? 'On' : 'Off'} for this ${app.label}.` : app && state === 'unsupported' ? `This ${app.label} can't receive notifications yet.` : STATUS_TEXT[state];
   return (
     <div className="card">
       <CardHead icon="bell" title="Notifications" desc="What reaches this device, and when it stays quiet." />
-      <p style={{ margin: '0 0 10px' }} role="status">{state ? STATUS_TEXT[state] : 'Checking...'}</p>
+      <p style={{ margin: '0 0 10px' }} role="status">{status}</p>
       <div className="row">
         {canAsk && (state === 'on'
           ? <button type="button" className="btn" disabled={busy} onClick={turnOff}>Turn off</button>
           : <button type="button" className="btn primary" disabled={busy} onClick={turnOn}>Turn on</button>)}
-        <button type="button" className="btn" disabled={busy || devices.length === 0} onClick={test}>Send a test</button>
+        <button type="button" className="btn" disabled={busy || (devices.length === 0 && shell() !== 'mac')} onClick={test}>Send a test</button>
       </div>
       {devices.length > 0 && <div style={{ marginTop: 10 }}>
         <div className="eyebrow" style={{ margin: '4px 0' }}>Devices</div>
         {devices.map((d) => (
           <div key={d.id} className="row" style={{ justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 }}>
-            <span>{d.device_name || 'Unnamed device'}{d.id === thisDeviceId() ? ' (this device)' : ''}</span>
+            <span>{d.device_name || (d.kind === 'apns' ? 'iPhone or iPad app' : d.kind === 'fcm' ? 'Android app' : 'Unnamed device')}{d.id === thisDeviceId() ? ' (this device)' : ''}</span>
             <button type="button" className="btn" disabled={busy} onClick={() => remove(d)}>Remove</button>
           </div>))}
       </div>}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useRoute } from './router.ts';
+import { useRoute, navigate } from './router.ts';
 import { api, SignedOut } from './api.ts';
 import { SignIn } from './views/SignIn.tsx';
 import { Shell } from './ui/Shell.tsx';
@@ -22,15 +22,24 @@ import { LibraryPageView } from './views/LibraryPage.tsx';
 import { CopilotView } from './views/Copilot.tsx';
 import { Palette } from './ui/Palette.tsx';
 import { startSync } from './store/sync.ts';
+import { shell, startShell, sharedToQuickAdd } from './native.ts';
+import { enablePush, thisDeviceId } from './push.ts';
 
 export function App() {
   const { path, params } = useRoute();
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking');
   const [palette, setPalette] = useState(false);
+  const [shared, setShared] = useState<{ n: number; title: string; notes: string | null } | null>(null);
   useEffect(() => {
     api('/auth/me').then(() => setAuth('in')).catch((e) => setAuth(e instanceof SignedOut ? 'out' : 'in'));
   }, []);
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
+  // In an app shell: shared text opens quick add prefilled, links and notification taps move inside Compass, and the push token is kept fresh.
+  useEffect(() => {
+    if (auth !== 'in' || !shell()) return;
+    if (thisDeviceId()) void enablePush().catch(() => {}); // already allowed, so no prompt; the token may have changed
+    return startShell({ onSharedText: (t) => { setShared((s) => ({ n: (s?.n ?? 0) + 1, ...sharedToQuickAdd(t) })); setPalette(true); }, onPath: (p) => navigate(p) });
+  }, [auth]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); } };
     window.addEventListener('keydown', onKey);
@@ -43,7 +52,7 @@ export function App() {
   return (
     <>
       <Shell onPalette={() => setPalette(true)}>{view}</Shell>
-      {palette && <Palette onClose={() => setPalette(false)} />}
+      {palette && <Palette key={shared?.n ?? 0} prefill={shared ?? undefined} onClose={() => { setPalette(false); setShared(null); }} />}
       <Toasts /><ConfirmDialog />
     </>
   );

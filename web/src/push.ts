@@ -1,4 +1,5 @@
 import { api } from './api.ts';
+import { shell, registerNativePush } from './native.ts';
 
 export type PushState = 'unsupported' | 'home-screen' | 'blocked' | 'on' | 'off';
 const ID_KEY = 'compass.push.id';
@@ -10,7 +11,7 @@ const store = {
 const ua = () => navigator.userAgent;
 const isIOS = () => /iPhone|iPad|iPod/.test(ua()) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 /** iPhone/iPad Safari delivers Web Push only to a web app on the Home Screen (navigator.standalone is true there). */
-export const needsHomeScreen = () => isIOS() && (navigator as Navigator & { standalone?: boolean }).standalone !== true;
+export const needsHomeScreen = () => !shell() && isIOS() && (navigator as Navigator & { standalone?: boolean }).standalone !== true;
 const supported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
 /** "Safari on iPhone", "Chrome on Mac"... */
@@ -25,6 +26,7 @@ export function deviceName(): string {
 const readyReg = () => Promise.race([navigator.serviceWorker.ready, new Promise<null>((r) => setTimeout(() => r(null), 5000))]);
 
 export async function pushState(): Promise<PushState> {
+  if (shell()) return store.get() ? 'on' : 'off'; // in an app the device token is the subscription; this device registered it if an id is kept
   if (needsHomeScreen()) return 'home-screen';
   if (!supported()) return 'unsupported';
   if (Notification.permission === 'denied') return 'blocked';
@@ -41,6 +43,7 @@ const keyBytes = (b64u: string) => {
 
 /** Call from a tap: the permission prompt only appears for a user gesture. Throws with a message to show when the server refuses. */
 export async function enablePush(): Promise<'enabled' | 'denied' | 'unsupported'> {
+  if (shell()) { const r = await registerNativePush(store.set); return r === 'granted' ? 'enabled' : r; }
   if (needsHomeScreen() || !supported()) return 'unsupported';
   if ((await Notification.requestPermission()) !== 'granted') return 'denied';
   const { publicKey } = await api<{ publicKey: string | null }>('/push/key');
@@ -58,11 +61,11 @@ export async function enablePush(): Promise<'enabled' | 'denied' | 'unsupported'
 }
 
 export async function disablePush(): Promise<void> {
-  const sub = await (await readyReg())?.pushManager.getSubscription();
+  const sub = shell() ? null : await (await readyReg())?.pushManager.getSubscription();
   await sub?.unsubscribe().catch(() => {});
   const id = store.get();
   store.set(null);
-  if (id) await api(`/push/${id}`, { method: 'DELETE' }).catch(() => {}); // offline: the Devices list can remove it later
+  if (id && id !== 'local') await api(`/push/${id}`, { method: 'DELETE' }).catch(() => {}); // offline: the Devices list can remove it later
 }
 
 export const thisDeviceId = store.get;

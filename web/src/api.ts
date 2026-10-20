@@ -1,5 +1,8 @@
 export class SignedOut extends Error {}
-export class ApiError extends Error { constructor(public status: number, message: string, public stepUp = false, public code = '') { super(message); } }
+export class ApiError extends Error {
+  status: number; stepUp: boolean; code: string; // spelled out (no parameter properties) so the self-checks can load this file with Node's type stripping
+  constructor(status: number, message: string, stepUp = false, code = '') { super(message); this.status = status; this.stepUp = stepUp; this.code = code; }
+}
 
 /** One per browser, kept for life (Knocturn ID INTEGRATION.md §2). */
 export function deviceId(): string {
@@ -16,8 +19,8 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   if (init.json !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(init.json); }
   if (stepUpAnswer) headers['X-Step-Up'] = stepUpAnswer;
   const r = await fetch(`/api${path}`, { ...init, headers, body, credentials: 'same-origin' });
-  // Login's own 401 is "wrong password", not "session ended": it falls through to ApiError with Knocturn ID's message.
-  if (r.status === 401 && path !== '/auth/login') throw new SignedOut();
+  // Login's (and native sign-in's) own 401 is "wrong password", not "session ended": it falls through to ApiError with Knocturn ID's message.
+  if (r.status === 401 && path !== '/auth/login' && path !== '/auth/native') throw new SignedOut();
   const data = (await r.json().catch(() => ({}))) as { error?: string; message?: string; step_up?: boolean };
   if (r.status === 403 && data.step_up && !stepUpAnswer) return api<T>(path, init, await passkeyAnswer());
   if (!r.ok) throw new ApiError(r.status, data.message ?? data.error ?? `Request failed (${r.status})`, !!data.step_up, data.error);

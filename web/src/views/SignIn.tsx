@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { api, deviceId, login } from '../api.ts';
 import { CursorCompass, FloatingShapes } from '../ui/Hero.tsx';
+import { shell, nativeSignIn } from '../native.ts';
 
 // Sign in with Knocturn ID, as Health and Finance do: username + password, then Touch ID / Face ID on the options it
 // sends back (the same body again plus the passkey's answer). A device with no passkey yet: "New device?" opens
@@ -22,6 +23,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [busy, setBusy] = useState(false);
   const pending = useRef<Record<string, unknown> | null>(null);
   const options = useRef<unknown>(null);
+  const sh = shell();
+  const [pw, setPw] = useState(false); // Android only: its web view can use a passkey, so the password form stays one tap away
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -72,6 +75,16 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     setError(message);
   }
 
+  // In an app: Knocturn ID's own page in the system sheet (a passkey can't run in the app's web view on iOS); the page reloads signed in.
+  async function appSignIn() {
+    setError('');
+    setBusy(true);
+    try { await nativeSignIn(); } catch (err: any) {
+      if (!/cancel/i.test(`${err?.code ?? ''} ${err?.message ?? ''}`)) setError(err?.message || 'Sign-in failed. Try again.'); // closing the sheet is a choice, not an error
+      setBusy(false);
+    }
+  }
+
   // wrangler dev only (the Worker answers 404 anywhere else): a session without Knocturn ID.
   async function devSignIn() {
     setError('');
@@ -89,7 +102,17 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           <b>Compass</b>
         </div>
 
-        {step === 'password' ? (
+        {sh && !pw ? (
+          <section className="stack">
+            <div>
+              <h1>Where to next</h1>
+              <p className="lede">Sign in with your Knocturn ID, the same account as all your Knocturn apps.</p>
+            </div>
+            <button className="btn primary" type="button" onClick={appSignIn} disabled={busy}>Sign in with Knocturn ID</button>
+            <p className="error" role="alert">{error}</p>
+            {sh === 'android' && <button className="link" type="button" onClick={() => { setError(''); setPw(true); }}>Use password instead</button>}
+          </section>
+        ) : step === 'password' ? (
           <form className="stack" onSubmit={submit}>
             <div>
               <h1>Where to next</h1>

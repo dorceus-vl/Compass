@@ -1,0 +1,184 @@
+// The web side of Compass's native shells (Phase 4): iPhone/iPad/Android (Capacitor, mobile/) and the Mac (Tauri, mac/).
+// The page is the same one a browser gets, so nothing from @capacitor/* or @tauri-apps/* is bundled: the shells inject
+// `window.Capacitor` (plugin CompassNative) or `window.__TAURI_INTERNALS__` / `window.__TAURI__` (withGlobalTauri), and this file
+// calls them. In a browser none of that exists and every function here does nothing. The contract the native side implements:
+//
+//   Capacitor plugin CompassNative (iOS and Android)        args                          result
+//     signIn          system sheet / Custom Tab               { url, callbackScheme }       { url }  (the callback URL; reject with code "cancelled" if the user closes it)
+//     registerPush    ask permission, return the token        {}                            { kind: 'apns'|'fcm', token, env? } | { unsupported: true } | { denied: true }
+//     takeSharedText  the text a share left; clears it        {}                            { text: string | null }
+//     openExternal    open in the system browser              { url }                       {}
+//     event sharedText { text }       event notificationTap { url }
+//   Tauri (Mac): command open_external { url }; command notify_permission → 'granted' | 'denied'; event compass-auth { url } (payload)
+//
+// The native side refuses any sign-in url not on id.knocturnlabs.com and any callbackScheme other than `compass`.
+import { api, deviceId } from './api.ts';
+
+export type Shell = 'ios' | 'android' | 'mac';
+type Json = Record<string, unknown>;
+interface CapacitorBridge {
+  isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
+  nativePromise?: (plugin: string, method: string, options: object) => Promise<unknown>;
+  nativeCallback?: (plugin: string, method: string, options: object, cb: (data: any) => void) => unknown;
+  Plugins?: { CompassNative?: Record<string, ((...a: any[]) => any) | undefined> };
+}
+interface TauriGlobals {
+  __TAURI_INTERNALS__?: { invoke: (cmd: string, args?: object) => Promise<unknown> };
+  __TAURI__?: { event?: { listen: (name: string, cb: (e: { payload: any }) => void) => Promise<() => void> } };
+}
+const g = () => globalThis as unknown as { Capacitor?: CapacitorBridge } & TauriGlobals;
+
+export function shell(): Shell | null {
+  const c = g().Capacitor;
+  if (c?.isNativePlatform?.()) { const p = c.getPlatform?.(); return p === 'ios' || p === 'android' ? p : null; }
+  return g().__TAURI_INTERNALS__ ? 'mac' : null;
+}
+
+/** What this device is called to the person: "This iPhone", "This Mac". The platform is what /api/push/device records. */
+export function nativeDevice(sh = shell(), ua = navigator.userAgent, touch = navigator.maxTouchPoints): { platform: 'ios' | 'ipados' | 'android' | 'mac'; label: string } | null {
+  if (sh === 'android') return { platform: 'android', label: 'Android device' };
+  if (sh === 'mac') return { platform: 'mac', label: 'Mac' };
+  if (sh !== 'ios') return null;
+  return /iPad/.test(ua) || (/Macintosh/.test(ua) && touch > 1) ? { platform: 'ipados', label: 'iPad' } : { platform: 'ios', label: 'iPhone' };
+}
+
+// ---- Sign-in: Knocturn ID's own page in the system sheet, PKCE, code back at compass://auth ----
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+export async function pkce(): Promise<{ verifier: string; challenge: string; state: string }> {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32))); // 43 characters
+  const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  return { verifier, challenge, state: b64url(crypto.getRandomValues(new Uint8Array(16))) };
+}
+
+export function signInUrl(o: { challenge: string; state: string; deviceId: string; deviceName: string; platform: string }): string {
+  const q = new URLSearchParams({ app: 'compass', redirect_uri: 'compass://auth', code_challenge: o.challenge, code_challenge_method: 'S256', state: o.state, device_id: o.deviceId, device_name: o.deviceName, platform: o.platform });
+  return `https://id.knocturnlabs.com/?${q}`;
+}
+
+/** The one-time code in the callback url, or an error to show. */
+export function callbackCode(back: unknown, state: string): string {
+  let u: URL | null = null;
+  try { u = new URL(String(back)); } catch { /* not a url */ }
+  const code = u?.searchParams.get('code');
+  if (!u || u.protocol !== 'compass:' || u.searchParams.get('state') !== state || !code) throw new Error('Sign-in didn’t finish. Try again.');
+  return code;
+}
+
+const cap = () => { const c = g().Capacitor; return c?.isNativePlatform?.() ? c : undefined; };
+const callCap = (method: string, args: object = {}): Promise<any> => {
+  const c = cap()!;
+  const fn = c.Plugins?.CompassNative?.[method];
+  if (fn) return Promise.resolve(fn.call(c.Plugins!.CompassNative, args));
+  return c.nativePromise ? (c.nativePromise('CompassNative', method, args) as Promise<any>) : Promise.reject(new Error('This app build can’t do that yet.'));
+};
+const invoke = (cmd: string, args: object = {}) => g().__TAURI_INTERNALS__!.invoke(cmd, args);
+
+async function tauriSignIn(url: string): Promise<string> {
+  const listen = g().__TAURI__?.event?.listen;
+  if (!listen) throw new Error('This app build can’t sign in yet.');
+  let done!: (u: string) => void;
+  const got = new Promise<string>((r) => { done = r; });
+  const off = await listen('compass-auth', (e) => done(String(e.payload?.url ?? ''))); // listening before the browser opens, so the callback can't be missed
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await invoke('open_external', { url });
+    return await Promise.race([got, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('Sign-in didn’t finish. Try again.')), 10 * 60_000); })]);
+  } finally { off(); clearTimeout(timer); }
+}
+
+/** Signs in through Knocturn ID, trades the code for the session cookie, and reloads signed in. Throws a message to show; a closed sheet throws one matching /cancel/i. */
+export async function nativeSignIn(): Promise<void> {
+  const sh = shell();
+  const dev = nativeDevice(sh);
+  if (!sh || !dev) throw new Error('Not in the app.');
+  const p = await pkce();
+  const url = signInUrl({ challenge: p.challenge, state: p.state, deviceId: deviceId(), deviceName: `Compass · ${dev.label} app`, platform: sh });
+  const back = sh === 'mac' ? await tauriSignIn(url) : (await callCap('signIn', { url, callbackScheme: 'compass' }))?.url;
+  await api('/auth/native', { method: 'POST', json: { code: callbackCode(back, p.state), code_verifier: p.verifier } });
+  location.replace('/');
+}
+
+// ---- Push ----
+/** Asks permission (from a tap) and registers this device. `remember` gets the server's id for the device ('local' on the Mac, which reads the outbox instead). */
+export async function registerNativePush(remember: (id: string) => void = () => {}): Promise<'granted' | 'denied' | 'unsupported'> {
+  const sh = shell();
+  const dev = nativeDevice(sh);
+  if (!sh || !dev) return 'unsupported';
+  if (sh === 'mac') {
+    if ((await invoke('notify_permission')) !== 'granted') return 'denied';
+    remember('local');
+    return 'granted';
+  }
+  const r = (await callCap('registerPush')) as Json | null;
+  if (r?.denied) return 'denied';
+  if (!r || r.unsupported || (r.kind !== 'apns' && r.kind !== 'fcm') || typeof r.token !== 'string') return 'unsupported';
+  const body: Json = { kind: r.kind, token: r.token, platform: dev.platform, device_name: `${dev.label} app` };
+  if (r.kind === 'apns') body.env = r.env;
+  remember((await api<{ id: string }>('/push/device', { method: 'POST', json: body })).id);
+  return 'granted';
+}
+
+// ---- Shared text -> quick add ----
+/** A shared text or URL as a task: the first line (120 characters at most) is the title; a URL in it also goes in the notes. */
+export function sharedToQuickAdd(text: string): { title: string; notes: string | null } {
+  const first = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const url = text.match(/https?:\/\/[^\s<>]+/)?.[0].replace(/[).,;!?]+$/, '') ?? null;
+  return { title: first.slice(0, 120).trim(), notes: url };
+}
+
+// ---- Links ----
+const HOME = 'compass.knocturnlabs.com';
+/** What a click on a link does in a shell: open in the system browser, move inside Compass (a deep link or a new-tab link to Compass), or nothing special. */
+export function linkAction(href: string, target: string | null | undefined, here: string): { to: 'external'; url: string } | { to: 'path'; path: string } | null {
+  let u: URL;
+  try { u = new URL(href); } catch { return null; }
+  if (u.protocol === 'mailto:' || u.protocol === 'tel:') return { to: 'external', url: href };
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (u.host !== here && u.host !== HOME) return { to: 'external', url: u.href };
+  if (u.pathname.startsWith('/api/') || (u.host === here && target !== '_blank')) return null;
+  return { to: 'path', path: u.pathname + u.search + u.hash };
+}
+
+export function openExternal(url: string): void {
+  if (!/^(https?:|mailto:|tel:)/.test(url)) return;
+  const sh = shell();
+  if (sh === 'mac') void invoke('open_external', { url }).catch(() => {});
+  else if (sh) callCap('openExternal', { url }).catch(() => window.open(url, '_blank', 'noopener'));
+  else window.open(url, '_blank', 'noopener');
+}
+
+function listenCap(name: string, cb: (data: any) => void) {
+  const c = cap()!;
+  const add = c.Plugins?.CompassNative?.addListener;
+  if (add) void Promise.resolve(add.call(c.Plugins!.CompassNative, name, cb)).catch(() => {});
+  else c.nativeCallback?.('CompassNative', 'addListener', { eventName: name }, cb);
+}
+
+/** Text shared to the app (a share sheet) and notification taps, plus link handling. Does nothing outside a shell. Returns the stop function. */
+export function startShell(h: { onSharedText: (text: string) => void; onPath: (path: string) => void }): () => void {
+  const sh = shell();
+  if (!sh) return () => {};
+  const onClick = (e: MouseEvent) => {
+    const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (!a || e.defaultPrevented || a.hasAttribute('download')) return;
+    const act = linkAction(a.href, a.target, location.host);
+    if (!act) return;
+    e.preventDefault();
+    if (act.to === 'external') openExternal(act.url); else h.onPath(act.path);
+  };
+  document.addEventListener('click', onClick);
+  const tap = (url: string) => { const act = linkAction(new URL(url, location.href).href, null, location.host); if (act?.to === 'path') h.onPath(act.path); else if (act?.to === 'external') openExternal(act.url); else h.onPath(new URL(url, location.href).pathname); };
+  let stop = () => {};
+  if (sh !== 'mac') {
+    const take = () => callCap('takeSharedText').then((r) => { if (r?.text) h.onSharedText(r.text); }).catch(() => {});
+    const onShow = () => { if (document.visibilityState === 'visible') void take(); }; // iOS keeps a share in the app group until the app is next in front
+    listenCap('sharedText', (d) => { if (d?.text) h.onSharedText(String(d.text)); });
+    listenCap('notificationTap', (d) => { if (d?.url) tap(String(d.url)); });
+    document.addEventListener('visibilitychange', onShow);
+    void take();
+    stop = () => document.removeEventListener('visibilitychange', onShow);
+  }
+  return () => { document.removeEventListener('click', onClick); stop(); };
+}

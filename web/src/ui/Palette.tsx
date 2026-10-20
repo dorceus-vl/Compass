@@ -12,10 +12,11 @@ import { taskColor, projectColor } from './colors.ts';
 
 const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/settings', 'Settings'], ['/trash', 'Trash']];
 
-export function Palette({ onClose }: { onClose: () => void }) {
+export function Palette({ onClose, prefill }: { onClose: () => void; prefill?: { title: string; notes: string | null } }) {
   const ref = useRef<HTMLDialogElement>(null);
   const { tasks, projects } = useStore();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(prefill?.title ?? '');
+  const [notes, setNotes] = useState(prefill?.notes ?? null); // from a shared text: kept for the next Add only
   const [sel, setSel] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const { find } = useLibrary();
@@ -28,7 +29,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const items: { label: string; hint: string; color: string; run: () => void | Promise<void> }[] = jump
     ? JUMPS.filter(([, l]) => l.toLowerCase().includes(needle)).map(([to, l]) => ({ label: l, hint: 'Go', color: 'var(--accent-dim)', run: () => { navigate(to); ref.current?.close(); } }))
     : [
-        ...(parsed.title ? [{ label: `Add "${parsed.title}"`, hint, color: 'var(--accent)', run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, tags: JSON.stringify(parsed.tags) }); toast('Added'); } }] : []),
+        ...(parsed.title ? [{ label: `Add "${parsed.title}"`, hint, color: 'var(--accent)', run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, notes, tags: JSON.stringify(parsed.tags) }); setNotes(null); toast('Added'); } }] : []),
         ...projects.filter((p) => needle && p.name.toLowerCase().includes(needle)).slice(0, 3).map((p) => ({ label: p.name, hint: 'Project', color: projectColor(p), run: () => { navigate(`/projects/${p.id}`); ref.current?.close(); } })),
         ...tasks.filter((t) => needle && !t.deleted_at && t.status !== 'done' && t.title.toLowerCase().includes(needle)).slice(0, 6).map((t) => ({ label: t.title, hint: 'Task', color: taskColor(t, projects), run: () => setOpen(t.id) })),
         ...(needle ? find(needle, 5) : []).map(({ page }) => ({ label: `Library · ${page.title}`, hint: 'Library', color: 'var(--accent)', run: () => { navigate(`/library/${page.slug}`); ref.current?.close(); } })),
