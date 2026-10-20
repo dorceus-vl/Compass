@@ -46,6 +46,7 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
             </> : item.state === 'added' ? <>
               {item.task_id && <button type="button" className="p" onClick={() => void openTask(item.task_id!, onOpen)}>Open</button>}
               {item.task_id && btn('Undo', () => void undo())}
+              {item.kind === 'email' && <button type="button" className="split" disabled={off} title={tip} onClick={() => setSplitting(true)}>Split into tasks</button>}
             </> : <>
               {btn('Keep', () => void inbox.keep(item.id), true)}
               {item.kind === 'email' && <button type="button" className="split" disabled={off} title={tip} onClick={() => setSplitting(true)}>Split into tasks</button>}

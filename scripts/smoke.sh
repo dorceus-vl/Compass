@@ -657,7 +657,7 @@ SNI=$(post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"notification\",\"title\":\"Sm
 [ "$(sapi $SNI/split '{}')" = 400 ] || fail "a notification was split"
 [ "$(sapi nope/split '{}')" = 404 ] || fail "split of a missing item"
 TASKS='[{"title":"Send the budget","due_at":"2033-01-14","horizon":"short","notes":"From Ann."},{"title":"Book the room","due_at":null,"horizon":"medium","notes":null}]'
-ACC0="{\"project_id\":null,\"tasks\":$TASKS}"; ACCW="{\"project_id\":\"$SWP2\",\"tasks\":$TASKS}"
+ACC0="{\"project_id\":null,\"tasks\":$TASKS}"; ACCT="{\"project_id\":null,\"trash_original\":true,\"tasks\":$TASKS}"; ACCW="{\"project_id\":\"$SWP2\",\"tasks\":$TASKS}"
 [ "$(sapi $SPE/split/accept '{"tasks":[]}')" = 400 ] && [ "$(sapi $SPE/split/accept '{"tasks":[{"title":"x","due_at":"soon"}]}')" = 400 ] || fail "accept validation"
 [ "$(sapi $SWE/split/accept "$ACC0")" = 409 ] || fail "work accept without a project"
 [ "$(SE)" = "$SE0" ] || fail "a refused accept made tasks"
@@ -666,14 +666,38 @@ SPT=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); SPT1=${SPT%% *}
 [ "$(task $SPT1 due_at)" = 2033-01-14 ] && [ "$(task $SPT1 kind)" = personal ] || fail "split task fields"
 [ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').state")" = added ] || fail "the email was not marked added"
 [ "$(D1X "SELECT count(*) AS n FROM task_events WHERE type='created' AND task_id IN ('$(echo $SPT | sed "s/ /','/")')" | js 'd[0].results[0].n')" = 2 ] || fail "split tasks have no created events"
-[ "$(sapi $SPE/split/accept "$ACC0")" = 409 ] && grep -q not_open $AV/s || fail "a second accept was not refused"
-[ "$(sapi $SPE/split '{}')" = 409 ] || fail "an added email was split again"
+[ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').task_id")" = "$SPT1" ] || fail "the added email does not point at the first new task"
+[ "$(sapi $SPE/split '{}')" = 200 ] || fail "an added email could not be split again: $(cat $AV/s)"
+[ "$(sapi $SPE/split/accept "$ACCT")" = 201 ] && [ "$(js d.trashed < $AV/s)" = "$SPT1" ] || fail "a second accept (an added email may be split again, trashing its first task): $(cat $AV/s)"
+SPT="$SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s)"
 [ "$(sapi $SWE/split/accept "$ACCW")" = 201 ] || fail "work accept: $(cat $AV/s)"
 SWT=$(js 'd.tasks[0].id' < $AV/s)
 [ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$SWT' AND enc_v=2 AND title NOT LIKE '%budget%'" | js 'd[0].results[0].n')" = 1 ] || fail "a split work task is not ciphertext"
 for x in $SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 for x in $SWP2 $SPP2; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
 curl "${H[@]}" -X POST $B/api/inbox/$SNI/dismiss >/dev/null; curl "${H[@]}" -X DELETE $B/api/rules/$SRID >/dev/null; rm -rf $AV
-echo "smoke: (a5) email split: proposals for personal and cloud-work email; work without a cloud work project, Offline-only, personal-kind refused (409, not billed); accept 2 of 3 -> 2 tasks, item added, events written, second accept 409; work tasks sealed"
+echo "smoke: (a5) email split: proposals for personal and cloud-work email; work without a cloud work project, Offline-only, personal-kind refused (409, not billed); accept 2 of 3 -> 2 tasks, item added, events written, an added email can be split again (trashing its first task); work tasks sealed"
+# (a6) An email the default rule already turned into a task (Task 4b fix, ruling A18): split it, with the original moved to Trash or left, or refused when the original is done.
+AV=$(mktemp -d)
+dmail() { post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke default $R $1\",\"ref\":\"smoke:default:$R:$1\",\"body\":\"Send the budget by Friday and book the room.\",\"payload\":{\"from\":\"Ann\",\"account\":\"me@gmail.com\"}}"; }
+DM1=$(dmail one); DI1=$(printf '%s' "$DM1" | js d.id); DO1=$(printf '%s' "$DM1" | js d.task_id)
+[ "$(printf '%s' "$DM1" | js d.state)" = added ] && [ -n "$DO1" ] && [ "$DO1" != null ] || fail "the default rule did not make a task from the email: $DM1"
+[ "$(sapi $DI1/split '{}')" = 200 ] && [ "$(js d.proposals.length < $AV/s)" = 3 ] || fail "split of an email already made a task: $(cat $AV/s)"
+[ "$(sapi $DI1/split/accept "$ACCT")" = 201 ] || fail "accept with the original to Trash: $(cat $AV/s)"
+DN1=$(js 'd.tasks[0].id' < $AV/s); DN2=$(js 'd.tasks[1].id' < $AV/s)
+[ "$(js 'd.tasks.length+","+d.item.state+","+(d.item.task_id===d.tasks[0].id)+","+(d.trashed==="'$DO1'")' < $AV/s)" = "2,added,true,true" ] || fail "accept answer: $(cat $AV/s)"
+[ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$DO1' AND deleted_at IS NOT NULL" | js 'd[0].results[0].n')" = 1 ] || fail "the original task is not in Trash"
+[ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$DI1').task_id")" = "$DN1" ] || fail "the item does not point at the first new task"
+[ "$(curl "${H[@]}" $B/api/inbox/by-task/$DN1 | js d.item.id)" = "$DI1" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' -b $J -H "Origin: $B" $B/api/inbox/by-task/$DO1)" = 404 ] || fail "by-task lookup"
+curl "${H[@]}" -X POST $B/api/trash/tasks/$DO1/restore | grep -q '"ok":true' || fail "the trashed original could not be restored"
+DM2=$(dmail two); DI2=$(printf '%s' "$DM2" | js d.id); DO2=$(printf '%s' "$DM2" | js d.task_id)
+[ "$(sapi $DI2/split/accept "$ACC0")" = 201 ] && DT2=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s) && [ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$DO2' AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 1 ] || fail "accept without the checkbox touched the original"
+DM3=$(dmail three); DI3=$(printf '%s' "$DM3" | js d.id); DO3=$(printf '%s' "$DM3" | js d.task_id)
+curl "${H[@]}" -X POST $B/api/tasks/$DO3/done | grep -q '"status":"done"' || fail "done"
+[ "$(sapi $DI3/split '{}')" = 409 ] && grep -q '"error":"original_done"' $AV/s || fail "split of an email whose task is done: $(cat $AV/s)"
+[ "$(sapi $DI3/split/accept "$ACCT")" = 409 ] || fail "accept for an email whose task is done"
+for x in $DO1 $DO2 $DO3 $DN1 $DN2 $DT2; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+rm -rf $AV
+echo "smoke: (a6) split an email already made a task: original to Trash (restorable), item added and pointing at the first new task, by-task lookup; without the checkbox the original stays; a done original is refused (split and accept)"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

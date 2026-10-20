@@ -3,6 +3,9 @@ import type { Task, Horizon, Status } from '../../../shared/types.ts';
 import { useStore, updateTask, trashTask, resolveId } from '../store/useStore.ts';
 import { idb } from '../store/db.ts';
 import { confirmAction, toast } from './dialogs.tsx';
+import { api } from '../api.ts';
+import { SplitSheet } from './SplitSheet.tsx';
+import type { InboxItem } from '../../../shared/types.ts';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
   ['{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}', 'Weekdays'], ['{"freq":"monthly","interval":1}', 'Every month'], ['{"freq":"weekly","interval":2,"after_completion":true}', 'Two weeks after done']];
@@ -17,6 +20,15 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
   const tagsRef = useRef<HTMLInputElement>(null);
   const trashed = useRef(false);
   const has = !!task;
+  const [mail, setMail] = useState<InboxItem | null>(null); // the forwarded email this task came from, if any
+  const [splitting, setSplitting] = useState(false);
+  const fromMail = task?.source_kind === 'email';
+  useEffect(() => {
+    if (!fromMail || !navigator.onLine) return;
+    let live = true;
+    void api<{ item: InboxItem }>(`/inbox/by-task/${taskId}`).then((r) => live && setMail(r.item)).catch(() => {});
+    return () => { live = false; };
+  }, [fromMail, taskId]);
   useEffect(() => { if (ref.current && !ref.current.open) ref.current.showModal(); }, [has]);
   // The task is gone (trashed elsewhere, purged): follow a tmp- id to its real one, otherwise tell the parent to close.
   useEffect(() => {
@@ -72,9 +84,13 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
       {field('Notes', <textarea ref={notesRef} className="field" rows={5} defaultValue={v.notes ?? ''} onBlur={(e) => save({ notes: e.target.value || null })} />)}
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>
+        <span className="row" style={{ gap: 8 }}>
+        {mail && <button className="btn" disabled={!navigator.onLine} title={navigator.onLine ? undefined : 'Needs a connection'} onClick={() => setSplitting(true)}>Split into tasks</button>}
         <button className="btn" style={{ color: 'var(--danger)' }} onClick={async () => { if (await confirmAction('Move this task to Trash? It stays there 30 days.')) { trashed.current = true; await trashTask(task.id); toast('Moved to Trash'); ref.current?.close(); } }}>Trash</button>
+        </span>
         <button className="btn primary" onClick={() => ref.current?.close()}>Done</button>
       </div>
+      {splitting && mail && <SplitSheet item={mail} onClose={() => setSplitting(false)} />}
     </dialog>
   );
 }

@@ -24,6 +24,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
   const [rows, setRows] = useState<Row[]>([]);
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
+  const [trash, setTrash] = useState(true); // the email already became a task: move that one to Trash when the new ones are added
   const [offline, setOffline] = useState(!navigator.onLine);
   const live = useRef(true);
   useEffect(() => () => { live.current = false; }, []);
@@ -56,7 +57,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
     if (busy || offline || !ticked.length) return;
     setBusy(true);
     try {
-      await api(`/inbox/${item.id}/split/accept`, { method: 'POST', json: { project_id: project || null,
+      await api(`/inbox/${item.id}/split/accept`, { method: 'POST', json: { project_id: project || null, trash_original: !!item.task_id && trash,
         tasks: ticked.map((r) => ({ title: r.title.trim().slice(0, 120), due_at: r.due || null, horizon: r.horizon, notes: r.notes })) } });
       toast(`Added ${ticked.length} task${ticked.length === 1 ? '' : 's'}`);
       await pull().catch(() => {});
@@ -125,6 +126,8 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
               <option value="">No project</option>
               {choices.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select></label>)}
+        {item.task_id && (
+          <label className="row split-trash"><span className="tog"><input type="checkbox" checked={trash} disabled={busy} onChange={(e) => setTrash(e.target.checked)} /><i /></span>Also move the original task to Trash</label>)}
         <div className="row split-actions">
           <button type="button" className="btn" disabled={busy} onClick={() => ref.current?.close()}>Cancel</button>
           <button type="button" className="btn primary" disabled={busy || offline || !ticked.length} title={tip} onClick={() => void accept()}>Add {ticked.length} task{ticked.length === 1 ? '' : 's'}</button>

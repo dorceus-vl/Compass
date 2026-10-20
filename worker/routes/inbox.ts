@@ -205,6 +205,12 @@ inbox.get('/', async (c) => {
   return c.json({ items: await openAll(c.env, 'inbox_items', results) });
 });
 
+/** The email item a task came from (the task sheet's Split button needs it). */
+inbox.get('/by-task/:taskId', async (c) => {
+  const row = await c.env.DB.prepare(`SELECT * FROM inbox_items WHERE task_id = ?1 AND kind = 'email' ORDER BY received_at DESC LIMIT 1`).bind(c.req.param('taskId')).first<InboxItem>();
+  return row ? c.json({ item: await open(c.env, 'inbox_items', row) }) : c.json({ error: 'Not found' }, 404);
+});
+
 inbox.post('/:id/keep', async (c) => {
   const item = await loadItem(c.env, c.req.param('id'));
   if (!item) return c.json({ error: 'Not found' }, 404);
@@ -262,10 +268,13 @@ const SPLIT_MSG: Record<SplitRefusal, string> = {
 async function splitGate(env: Env, item: InboxItem | null, projectId: string | null): Promise<{ status: ContentfulStatusCode; body: { error: string; message?: string } } | null> {
   if (!item) return { status: 404, body: { error: 'Not found' } };
   if (item.kind !== 'email') return { status: 400, body: { error: 'Only a forwarded email can be split' } };
-  if (item.state !== 'new' && item.state !== 'kept') return { status: 409, body: { error: 'not_open', message: 'This email has already been handled.' } };
+  if (!['new', 'kept', 'added'].includes(item.state)) return { status: 409, body: { error: 'not_open', message: 'This email has already been handled.' } };
+  if ((await originalTask(env, item))?.status === 'done') return { status: 409, body: { error: 'original_done', message: 'The task made from this email is already done, so there is nothing left to split.' } };
   const why = splitRefusal(!!item.work, projectId, projectId ? await projectAccess(env, projectId) : null);
   return why ? { status: why === 'unknown_project' ? 400 : 409, body: { error: why, message: SPLIT_MSG[why] } } : null;
 }
+/** The live task an email already became (by a rule, Keep or an earlier split), if any; trashed tasks don't count. */
+const originalTask = (env: Env, item: InboxItem): Promise<Task | null> => (item.task_id ? loadTask(env, item.task_id) : Promise.resolve(null));
 const projectIdOf = (b: unknown): string | null | undefined => {
   const v = (b as { project_id?: unknown } | null)?.project_id;
   return v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : undefined; // undefined: not a string
@@ -313,8 +322,12 @@ inbox.post('/:id/split/accept', async (c) => {
   const item = await loadItem(c.env, c.req.param('id'));
   const no = await splitGate(c.env, item, projectId);
   if (no) return c.json(no.body, no.status);
+  const original = await originalTask(c.env, item!);
+  const trash = (body as { trash_original?: unknown }).trash_original === true && !!original;
   const t = now();
-  const guard = c.env.DB.prepare(`SELECT CASE WHEN (SELECT state FROM inbox_items WHERE id = ?1) IN ('new','kept') THEN 1 ELSE json('not json') END`).bind(item!.id); // errors, rolling the batch back, when two accepts race
+  // Errors (rolling the batch back) when the item was handled meanwhile, or, when the original is being trashed, when it was trashed or finished meanwhile: two accepts racing make one set of tasks.
+  const guard = c.env.DB.prepare(`SELECT CASE WHEN (SELECT state FROM inbox_items WHERE id = ?1) IN ('new','kept','added') AND (?2 IS NULL OR (SELECT 1 FROM tasks WHERE id = ?2 AND deleted_at IS NULL AND status != 'done')) THEN 1 ELSE json('not json') END`)
+    .bind(item!.id, trash ? original!.id : null);
   const writes: D1PreparedStatement[] = [guard];
   const made: Task[] = [];
   for (const r of rows) {
@@ -326,15 +339,17 @@ inbox.post('/:id/split/accept', async (c) => {
     writes.push(c.env.DB.prepare('INSERT INTO task_events (id, task_id, at, actor, type, data, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7)').bind(s.id, s.task_id, s.at, s.actor, s.type, s.data, s.enc_v));
     made.push(task);
   }
-  writes.push(c.env.DB.prepare(`UPDATE inbox_items SET state = 'added', updated_at = ?2 WHERE id = ?1 AND state IN ('new','kept')`).bind(item!.id, t));
+  if (trash) writes.push(c.env.DB.prepare('UPDATE tasks SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL').bind(t, original!.id)); // the normal Trash path: Restore undoes it
+  writes.push(c.env.DB.prepare(`UPDATE inbox_items SET state = 'added', task_id = ?3, updated_at = ?2 WHERE id = ?1`).bind(item!.id, t, made[0].id)); // the card gets Open and Undo back, on the first new task
   try { await c.env.DB.batch(writes); }
   catch (e) {
-    const cur = await loadItem(c.env, item!.id);
-    if (cur && cur.state !== 'new' && cur.state !== 'kept') return c.json({ error: 'not_open', message: 'This email has already been handled.' }, 409);
+    const cur = await loadItem(c.env, item!.id), orig = trash ? await c.env.DB.prepare('SELECT deleted_at, status FROM tasks WHERE id = ?1').bind(original!.id).first<{ deleted_at: string | null; status: string }>() : null;
+    if (!cur || !['new', 'kept', 'added'].includes(cur.state) || (orig && (orig.deleted_at || orig.status === 'done'))) return c.json({ error: 'not_open', message: 'This email has already been handled.' }, 409);
     throw e;
   }
-  await audit(c.env, 'you', 'inbox.split', item!.id, { tasks: made.length });
-  return c.json({ item: { ...item!, state: 'added', updated_at: t }, tasks: made }, 201);
+  if (trash) await audit(c.env, 'you', 'task.trash', original!.id);
+  await audit(c.env, 'you', 'inbox.split', item!.id, { tasks: made.length, trashed_original: trash });
+  return c.json({ item: { ...item!, state: 'added', task_id: made[0].id, updated_at: t }, tasks: made, trashed: trash ? original!.id : null }, 201);
 });
 
 // ---- Rules: configuration, not user content, so DELETE is a real delete (no trash). ----

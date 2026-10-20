@@ -872,3 +872,4 @@ dialog.split-sheet{max-width:640px;max-height:min(86vh,760px);overflow-y:auto}
 .split-sheet .btn,.split-sheet .field,.split-sheet .tog{min-height:44px}
 .split-actions{justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
 .split-sheet[data-phase=review] .split-actions{margin-bottom:-20px;padding:12px 0 20px;position:sticky;bottom:-20px;background:var(--card)}
+.split-trash{gap:8px;margin-top:14px;font-size:13px;color:var(--text-dim);min-height:44px}
