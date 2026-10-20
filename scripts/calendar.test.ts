@@ -43,4 +43,8 @@ assert.equal(placeEvents([E('x', '2026-10-21T02:00:00Z', '2026-10-21T03:00:00Z')
 assert.equal(eventTime(E('x', '2026-10-21T14:30:00-04:00', '2026-10-21T15:00:00-04:00'), 'America/Toronto'), '14:30');
 assert.equal(eventTime(E('x', '2026-10-21', '2026-10-22', true)), '');
 assert.equal(eventLabel(E('x', '', '')), 'Kelly · Google');
+assert.equal(eventLabel({ ...E('x', '', ''), source: 'Google Calendar' }), 'Kelly · Google', "Kelly's own source names, short");
+assert.equal(eventLabel({ ...E('x', '', ''), source: 'Outlook Calendar' }), 'Kelly · Outlook');
+const span = placeEvents([E('long', '2026-10-15', '2026-10-21', true)], week, 'America/Toronto');
+assert.deepEqual(week.filter((d) => span[d].length), ['2026-10-19', '2026-10-20'], 'a multi-day event that began before the days shown sits on those it covers');
 console.log('calendar.test: ok');

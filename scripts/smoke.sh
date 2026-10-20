@@ -395,11 +395,13 @@ BR=$(kb $BD); echo "$BR" | grep -q 'water-bill' || fail "brief did not come thro
 [ "$(hits)" = $((H0 + 1)) ] || fail "relay not called once"
 kb $BD | grep -q 'water-bill' || fail "cached brief lost"
 [ "$(hits)" = $((H0 + 1)) ] || fail "second brief call was not served from the Worker cache"
+kput '{"scopes":["compass:read.tasks","compass:read.projects"]}' | grep -q 200 || fail "PUT scopes (2)"
+kb $BD | grep -q 'water-bill' && [ "$(hits)" = $((H0 + 2)) ] || fail "a change to Kelly's access did not start the brief cache afresh"
 [ "$(kb 2000-01-02 | js 'd.text.length<=1200 && d.text.startsWith("<script>")')" = true ] || fail "long relay text not capped (or HTML interpreted)"
 kb 2000-01-03 | grep -q '"unavailable":true' || fail "relay 500 is not unavailable"
 curl "${H[@]}" -o /dev/null -w '%{http_code}' "$B/api/kelly/log?limit=0" | grep -q 400 || fail "log limit 0 not 400"
 LG=$(curl "${H[@]}" "$B/api/kelly/log?limit=100")
-[ "$(echo "$LG" | js 'd.rows.length>=1 && d.rows.length<=100 && d.rows.every((r,i)=>r.actor==="kelly"||r.action==="kelly.scopes")')" = true ] || fail "log rows"
+[ "$(echo "$LG" | js 'd.rows.length>=1 && d.rows.length<=100 && d.rows.every((r,i)=>r.actor==="kelly"||r.action==="kelly.scopes"||r.action==="kelly.document")')" = true ] || fail "log rows"
 [ "$(echo "$LG" | js 'd.rows.some(r=>r.action==="kelly.scopes"&&r.detail&&r.detail.after)')" = true ] || fail "log has no kelly.scopes row with before/after"
 kset '{"enabled":true,"scopes":["compass:write.tasks"]}'; LT=$(agb POST /tasks "{\"title\":\"Smoke kelly log $R\"}" | js d.task.id)
 curl "${H[@]}" "$B/api/kelly/log?limit=5" | js "d.rows.some(r=>r.target==='$LT'&&r.action==='agent.tasks.create'&&r.task_live===true)" | grep -q true || fail "log does not show the live task"
@@ -461,6 +463,7 @@ R6=$(kimp $KD6 ',"also_kelly":true'); [ "$(printf '%s' "$R6" | tail -1)" = 201 ]
 for x in $KD1 $KD2 $KD3 $KD4 $KD6 $KD7; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
 for x in $(curl "${H[@]}" $B/api/library/imports | js "d.pages.filter(p=>p.title.startsWith('hello')||p.title.startsWith('kelly-refuse')).map(p=>p.slug).join(' ')"); do curl "${H[@]}" -X DELETE $B/api/library/$x >/dev/null; done
 for x in $KPR $KWK $KOF; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+curl "${H[@]}" "$B/api/kelly/log?limit=100" | js "d.rows.some(r=>r.action==='kelly.document'&&r.target==='$KD1'&&r.detail.ok===true)" | grep -q true || fail "Kelly's activity does not show the document given to her"
 D1X "DELETE FROM audit_log WHERE action='kelly.document'" >/dev/null
 echo "smoke: (z2) kelly document hand-off: personal and unfiled reach the stub; plain, work, offline, trashed never; Kelly off sends nothing; a refusing relay leaves the import done"
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

@@ -1,6 +1,6 @@
 import type { AgentScope } from './types.ts';
 
-// Words for Kelly's calls and for changes to her access: used by Settings and the activity log, and by scripts/kelly.test.ts. Plain text only.
+// Words for Kelly's calls, the documents given to her and changes to her access: used by Settings and the activity log, and by scripts/kelly.test.ts. Plain text only.
 export const SCOPE_LABEL: Record<AgentScope, string> = {
   'compass:read.tasks': 'See your shared tasks', 'compass:write.tasks': 'Add and complete tasks', 'compass:read.projects': 'See your shared projects',
 };
@@ -22,6 +22,10 @@ export function kellyLine(action: string, detail: unknown): { title: string; sub
     const allowed = scopes(d.after).map((s) => SCOPE_LABEL[s]);
     if (was !== now) return { title: `You turned Kelly ${now ? 'on' : 'off'}`, sub: null };
     return { title: "You changed what Kelly may do", sub: allowed.length ? `Allowed: ${allowed.join(', ')}` : 'Nothing allowed' };
+  }
+  if (action === 'kelly.document') {
+    const ok = (detail as { ok?: unknown } | null)?.ok === true;
+    return ok ? { title: 'Gave Kelly a document', sub: 'She keeps her copy; remove it in Kelly' } : { title: "Kelly couldn't take a document", sub: null };
   }
   const what = ACTION[action] ?? 'Made a call';
   if (typeof d.refused === 'string') return { title: `Refused: ${REFUSED[d.refused] ?? 'not allowed'}`, sub: what };

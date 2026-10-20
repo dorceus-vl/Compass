@@ -65,7 +65,7 @@ function Row({ d, project, off, relay, reload }: { d: DocumentRow; project: Proj
             <button type="button" className="btn" disabled={off || busy} onClick={() => void act(async () => {
               const r = await api<{ kelly?: 'sent' | 'failed' | 'off' }>('/library/import', { method: 'POST', json: { document_id: d.id, ...(kelly ? { also_kelly: true } : {}) } });
               setKelly(false); // one import, one hand-off: the next is ticked again
-              toast(r.kelly === 'failed' ? "Added to the library. Kelly couldn't take it." : r.kelly === 'off' ? 'Added to the library. Kelly is switched off.' : r.kelly === 'sent' ? 'Added to the library and shared with Kelly' : 'Added to the library');
+              toast(r.kelly === 'failed' ? "Added to the library. Kelly couldn't take it." : r.kelly === 'off' ? 'Added to the library. Kelly is switched off.' : r.kelly === 'sent' ? 'Added to the library and shared with Kelly. She keeps her copy; remove it in Kelly.' : 'Added to the library');
             })}>Add to library</button>
             {relay && <label className="tap sub"><input type="checkbox" checked={kelly} disabled={off || busy} onChange={(e) => setKelly(e.target.checked)} />Also let Kelly search it</label>}
           </>)}

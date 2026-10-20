@@ -28,19 +28,20 @@ kelly.put('/', async (c) => {
   const refused = await requireStepUp(c); // passkey: this is what lets an outside app act for Vlad
   if (refused) return refused;
   const before = (await getSettings(c.env)).kelly;
-  const after = { enabled: (body.enabled as boolean | undefined) ?? before.enabled === true, scopes: body.scopes ? AGENT_SCOPES.filter((s) => (body.scopes as string[]).includes(s)) : before.scopes ?? [] };
+  // `at` keys the Worker's relay caches (relayGet): any change leaves the brief and calendar Kelly sent before it behind, in every data centre.
+  const after = { enabled: (body.enabled as boolean | undefined) ?? before.enabled === true, scopes: body.scopes ? AGENT_SCOPES.filter((s) => (body.scopes as string[]).includes(s)) : before.scopes ?? [], at: now() };
   await patchSettings(c.env, { kelly: after });
   await audit(c.env, 'you', 'kelly.scopes', null, { before, after });
   return c.json({ enabled: after.enabled, scopes: after.scopes });
 });
 
 type Row = { id: string; at: string; actor: string; action: string; target: string | null; detail: string | null };
-/** Kelly's calls and changes to her access, newest first. `task_live` says whether the task a call named still exists (so the screen can link it). */
+/** Kelly's calls, changes to her access and the documents Vlad gave her, newest first. `task_live` says whether the task a call named still exists (so the screen can link it). */
 kelly.get('/log', async (c) => {
   const n = Number(c.req.query('limit') ?? 50), before = c.req.query('before') ?? '9999';
   if (!Number.isInteger(n) || n < 1) return c.json({ error: 'limit must be a whole number from 1 to 100' }, 400);
   const limit = Math.min(n, 100);
-  const { results } = await c.env.DB.prepare(`SELECT id, at, actor, action, target, detail FROM audit_log WHERE (${CALL} OR action = 'kelly.scopes') AND at < ?1 ORDER BY at DESC LIMIT ?2`).bind(before, limit).all<Row>();
+  const { results } = await c.env.DB.prepare(`SELECT id, at, actor, action, target, detail FROM audit_log WHERE (${CALL} OR action IN ('kelly.scopes', 'kelly.document')) AND at < ?1 ORDER BY at DESC LIMIT ?2`).bind(before, limit).all<Row>();
   const ids = [...new Set(results.filter((r) => r.action.startsWith('agent.tasks.') && r.target).map((r) => r.target!))];
   const live = new Set<string>();
   if (ids.length) for (const t of (await c.env.DB.prepare(`SELECT id FROM tasks WHERE deleted_at IS NULL AND id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`).bind(...ids).all<{ id: string }>()).results) live.add(t.id);
@@ -48,11 +49,11 @@ kelly.get('/log', async (c) => {
   return c.json({ rows: results.map((r) => ({ ...r, detail: parse(r.detail), task_live: !!r.target && live.has(r.target) })), next: results.length === limit ? results[results.length - 1].at : null });
 });
 
-type Gate = { relay: string; secret: string } | null;
+type Gate = { relay: string; secret: string; gen?: string } | null;
 /** The relay when both its URL and secret are set. */
 export const relayOf = (env: Env): Gate => (env.KELLY_RELAY_URL && env.KELLY_RELAY_SECRET ? { relay: env.KELLY_RELAY_URL.replace(/\/$/, ''), secret: env.KELLY_RELAY_SECRET } : null);
 /** Kelly on, compass:read.tasks granted, and a relay configured; checked before any cache read or relay call so turning her off ends it at once. */
-function gate(env: Env, s: Settings): Gate { return allowed(s.kelly, 'compass:read.tasks') ? relayOf(env) : null; }
+function gate(env: Env, s: Settings): Gate { const g = allowed(s.kelly, 'compass:read.tasks') ? relayOf(env) : null; return g && { ...g, gen: s.kelly.at ?? '0' }; }
 /** Every call to the relay: its secret, a 3xx is never followed, a timeout (5 s unless the call needs longer). */
 export const relayFetch = (g: NonNullable<Gate>, path: string, init: RequestInit & { headers?: Record<string, string> } = {}, ms = 5000) =>
   fetch(`${g.relay}${path}`, { ...init, headers: { ...init.headers, 'X-Relay-Secret': g.secret }, redirect: 'manual', signal: AbortSignal.timeout(ms) });
@@ -66,20 +67,21 @@ export async function sendDocument(env: Env, name: string, bytes: Uint8Array): P
     return typeof ((await r.json().catch(() => null)) as { id?: unknown } | null)?.id === 'string';
   } catch (e) { console.error('kelly relay document', e); return false; }
 }
-/** One relay GET, cached in the Worker's own cache (not D1) under `name`. `clean` turns the body into what we keep (null = unusable). 3xx counts as unavailable, never followed. */
-async function relayGet<T>(g: NonNullable<Gate>, name: string, path: string, maxAge: number, clean: (body: unknown) => T | null): Promise<T | null> {
-  const key = new Request(`https://compass.invalid/${name}`), cache = caches.default;
+/** One relay GET, cached in the Worker's own cache (not D1) under `name` and the last change to Kelly's access (`gen`), so a change starts afresh. `clean` turns the body into what we keep (null = unusable). 3xx counts as unavailable, never followed. */
+async function relayGet<T>(g: NonNullable<Gate>, name: string, path: string, maxAge: number, clean: (body: unknown) => T | null, ms?: number): Promise<T | null> {
+  const key = new Request(`https://compass.invalid/${encodeURIComponent(g.gen ?? '0')}/${name}`), cache = caches.default;
   const hit = await cache.match(key);
   if (hit) return (await hit.json()) as T;
   try {
-    const r = await relayFetch(g, path);
+    const r = await relayFetch(g, path, {}, ms);
     const out = r.ok ? clean(await r.json().catch(() => null)) : null;
     if (out) await cache.put(key, new Response(JSON.stringify(out), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${maxAge}` } }));
     return out;
   } catch (e) { console.error('kelly relay', name, e); return null; }
 }
 
-/** Kelly's paragraph for today from Kelly-Cloud's relay; `{ unavailable: true }` for anything else (off, no read permission, no relay, slow, bad answer). */
+/** Kelly's paragraph for today from Kelly-Cloud's relay; `{ unavailable: true }` for anything else (off, no read permission, no relay, slow, bad answer).
+ * Up to 15 s: a first build reads her calendar and Compass (3 s at most) and writes it with a model; Today shows Compass's own brief meanwhile. */
 kelly.get('/brief', async (c) => {
   const q = c.req.query('date');
   if (q !== undefined && !isYmd(q)) return c.json({ error: 'date must be like 2026-10-20' }, 400);
@@ -87,7 +89,7 @@ kelly.get('/brief', async (c) => {
   const s = await getSettings(c.env), g = gate(c.env, s);
   if (!g) return un();
   const date = q ?? localDate(s.tz);
-  const out = await relayGet(g, `kelly-brief/${date}`, `/brief?date=${date}`, 3600, (b) => cleanBrief(b, now()));
+  const out = await relayGet(g, `kelly-brief/${date}`, `/brief?date=${date}`, 3600, (b) => cleanBrief(b, now()), 15_000);
   return out ? c.json(out, 200, { 'Cache-Control': 'private, no-store' }) : un();
 });
 

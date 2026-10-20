@@ -33,8 +33,8 @@ export interface Settings {
   wip_limits: Record<Status, number | null>; saved_views: { name: string; query: string }[]; tz: string;
   push: Record<PushType, boolean>; work_email_domains: string[]; last_review_at: string | null;
   ai_monthly_cap_micro: number; default_provider: Provider;
-  /** What Kelly's agent API may do (changed only through PUT /api/kelly, never PATCH /api/settings). Off by default. */
-  kelly: { enabled: boolean; scopes: AgentScope[] };
+  /** What Kelly's agent API may do (changed only through PUT /api/kelly, never PATCH /api/settings). Off by default. `at` is the last change: the relay caches are keyed on it, so a change starts them afresh. */
+  kelly: { enabled: boolean; scopes: AgentScope[]; at?: string };
 }
 export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass:read.projects';
 export const DEFAULT_SETTINGS: Settings = {

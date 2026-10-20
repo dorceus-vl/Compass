@@ -10,7 +10,7 @@ import { kellyLine } from '../../../shared/kelly-log.ts';
 type Row = { id: string; at: string; actor: string; action: string; target: string | null; detail: unknown; task_live: boolean };
 type Page = { rows: Row[]; next: string | null };
 
-/** What Kelly did through the agent API (and when Vlad changed her access), newest first. Everything is plain text; a task is a link only while it still exists. */
+/** What Kelly did through the agent API (and when Vlad changed her access or gave her a document), newest first. Everything is plain text; a task is a link only while it still exists. */
 export function KellyLog() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export function KellyLog() {
   return (
     <>
       <div className="head"><div><div className="eyebrow"><Link to="/settings">Settings</Link> · Kelly</div><h1 style={{ marginTop: 6 }}>What Kelly <b>did</b></h1>
-        <div className="sub">Every call she makes to Compass, and every time you changed what she may do. Task names are never kept here.</div></div></div>
+        <div className="sub">Every call she makes to Compass, every time you changed what she may do, and every document you gave her (she keeps her copy; remove it in Kelly). Task and document names are never kept here.</div></div></div>
       {rows?.length === 0 && <div className="card"><p style={{ margin: 0 }}>Kelly hasn't called Compass yet.</p></div>}
       <div className="tlist2" role="list" aria-label="Kelly's activity">
         {rows?.map((r) => {

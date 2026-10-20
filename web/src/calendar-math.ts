@@ -44,5 +44,5 @@ export function placeEvents(events: CalEvent[], days: string[], tz?: string): Re
 }
 /** "14:30" for a timed event in `tz`; '' for all-day. */
 export const eventTime = (e: CalEvent, tz?: string) => e.all_day || e.start.length === 10 ? '' : new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(e.start));
-/** "Kelly · Google": the label every event carries. */
-export const eventLabel = (e: CalEvent) => `Kelly · ${e.source ? e.source[0].toUpperCase() + e.source.slice(1) : 'Google'}`;
+/** "Kelly · Google", "Kelly · Outlook": the label every event carries (Kelly sends "Google Calendar", "Outlook Calendar"; the word "Calendar" goes). */
+export const eventLabel = (e: CalEvent) => { const s = (e.source ?? '').replace(/\s*calendar$/i, '').trim(); return `Kelly · ${s ? s[0].toUpperCase() + s.slice(1) : 'Google'}`; };
