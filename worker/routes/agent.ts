@@ -152,7 +152,7 @@ agent.get('/knowledge/search', (c) => call(c, 'agent.knowledge.search', 'compass
     return { detail: { passages: found.length, collections: ids.length }, body: { passages: found.map((p) => ({ text: p.text, document: p.item_title, locator: p.locator, collection: p.collection.name })) } };
   } catch (e) {
     if (!(e instanceof AiRefused)) throw e;
-    return { status: e.status as ContentfulStatusCode, refused: e.code === 'rate_limited' ? 'rate_limited' : 'error', body: { error: e.code } };
+    return { status: e.status as ContentfulStatusCode, refused: e.code === 'rate_limited' ? 'rate_limited' : 'error', body: e.code === 'rate_limited' ? { error: e.code, limit: 'hour' } : { error: e.code } }; // `limit: 'hour'` tells Kelly this is the knowledge hour, not the 60-a-minute agent limit
   }
 }));
 

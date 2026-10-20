@@ -38,6 +38,11 @@ s.hidden(t0); assert.equal(timers.fns.at(-1)!.ms, HIDDEN_LIMIT_MS); timers.fns.a
 assert.deepEqual(s.loaded(), []);
 await s.search(['b'], 'supplier'); s.drop(); assert.deepEqual(s.loaded(), []);
 
+// The screen is told when the index is dropped (so it can clear Locked results), until it unsubscribes.
+let told = 0; const off = s.onDrop(() => { told++; });
+s.drop(); assert.equal(told, 1); off(); s.drop(); assert.equal(told, 1);
+const t2 = s.onDrop(() => { told++; }); s.hidden(t0); s.visible(t0 + HIDDEN_LIMIT_MS); assert.equal(told, 2); t2();
+
 // A drop while a load is in flight: the answer is used once, not kept.
 let release!: () => void;
 const slow = createLockedSearch(() => new Promise((res) => { release = () => res(data.a); }), timers as never);

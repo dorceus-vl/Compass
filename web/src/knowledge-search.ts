@@ -15,7 +15,8 @@ export function createLockedSearch(load: (collectionId: string) => Promise<Locke
   let indexes = new Map<string, SearchIndex<Doc>>();
   let loading = new Map<string, Promise<SearchIndex<Doc>>>();
   let timer: unknown = null, hiddenAt: number | null = null, epoch = 0;
-  const drop = () => { indexes = new Map(); loading = new Map(); epoch++; };
+  const dropped = new Set<() => void>();
+  const drop = () => { indexes = new Map(); loading = new Map(); epoch++; dropped.forEach((f) => f()); };
   const ensure = (id: string) => {
     const have = indexes.get(id);
     if (have) return Promise.resolve(have);
@@ -42,6 +43,8 @@ export function createLockedSearch(load: (collectionId: string) => Promise<Locke
       return { hits: hits.sort((a, b) => b.score - a.score).slice(0, limit), failed };
     },
     drop,
+    /** Called whenever the in-memory index is dropped, so the screen can clear the Locked results it shows. Returns the unsubscribe. */
+    onDrop(f: () => void) { dropped.add(f); return () => { dropped.delete(f); }; },
     loaded: () => [...indexes.keys()],
     /** The tab was hidden at time `at`: it is dropped when it has stayed hidden for 10 minutes (a timer, and a check when it comes back, as timers sleep in the background). */
     hidden(at = Date.now()) { hiddenAt = at; if (timer) timers.clear(timer); timer = timers.set(drop, HIDDEN_LIMIT_MS); },

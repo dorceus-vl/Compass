@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
-import { appsDue, claimRefresh, cleanRelay, compassDigest, lastRun, refreshApps, scrub, waitMinutes, SECTION_MAX } from '../worker/lib/digest.ts';
+import { appsDue, claimRefresh, cleanRelay, compassDigest, lastRun, refreshApps, retryOnly, scrub, waitMinutes, SECTION_MAX } from '../worker/lib/digest.ts';
 import { query, hashVector } from '../worker/lib/vectors.ts';
 
 const db = new DatabaseSync(':memory:');
@@ -119,12 +119,18 @@ const aud = (at: string, action: string, detail: string | null) => db.prepare('I
 db.exec("DELETE FROM audit_log WHERE action LIKE 'knowledge.apps.%'");
 assert.equal(await lastRun(env), null);
 aud('2026-10-20T11:00:00.000Z', 'knowledge.apps.refresh', null);
-assert.deepEqual(await lastRun(env), { at: '2026-10-20T11:00:00.000Z', failed: true }, 'no done row: unfinished counts as failed');
+assert.deepEqual(await lastRun(env), { at: '2026-10-20T11:00:00.000Z', failed: true, retry: null }, 'no done row: unfinished counts as failed (all five again)');
 aud('2026-10-20T11:00:09.000Z', 'knowledge.apps.done', '{"ok":["compass"],"failed":["hollow"]}');
-assert.deepEqual(await lastRun(env), { at: '2026-10-20T11:00:00.000Z', failed: true });
+assert.deepEqual(await lastRun(env), { at: '2026-10-20T11:00:00.000Z', failed: true, retry: ['hollow'] }, 'a finished attempt names the apps to retry');
 aud('2026-10-20T12:00:00.000Z', 'knowledge.apps.refresh', null); aud('2026-10-20T12:00:09.000Z', 'knowledge.apps.done', '{"ok":["compass","finance","health","home","hollow"],"failed":[]}');
-assert.deepEqual(await lastRun(env), { at: '2026-10-20T12:00:00.000Z', failed: false }, "the newest attempt's own result, not an older failure");
+assert.deepEqual(await lastRun(env), { at: '2026-10-20T12:00:00.000Z', failed: false, retry: [] }, "the newest attempt's own result, not an older failure");
 db.exec("DELETE FROM audit_log WHERE action LIKE 'knowledge.apps.%'");
+// retryOnly: the same day as a finished attempt with failures -> only those; a new day, a clean run or an unfinished one -> all (null)
+const sTz = { tz: 'America/Toronto' };
+assert.deepEqual(retryOnly(sTz, { at: '2026-10-20T11:00:00.000Z', retry: ['hollow', 'finance'] }, atZ('2026-10-20T12:00:00Z')), ['hollow', 'finance']);
+assert.equal(retryOnly(sTz, { at: '2026-10-20T11:00:00.000Z', retry: ['hollow'] }, atZ('2026-10-21T11:00:00Z')), null, 'tomorrow: everything');
+assert.equal(retryOnly(sTz, { at: '2026-10-20T11:00:00.000Z', retry: null }, atZ('2026-10-20T12:00:00Z')), null, 'unfinished: everything');
+assert.equal(retryOnly(sTz, null, atZ('2026-10-20T12:00:00Z')), null);
 
 // -- refreshApps with a faked relay.
 let relay: () => Response | Promise<Response> = () => new Response('{}');
@@ -152,6 +158,39 @@ assert.match((db.prepare("SELECT group_concat(text) AS t FROM knowledge_chunks c
 const oldChunks = chunkIds(), oldItems = now1.map((i) => i.id);
 const vecHits = async () => new Set((await query(env, hashVector('digest'), null, 500)).map((m) => m.id));
 assert.ok((await vecHits()).size >= oldChunks.length, 'every passage has a vector');
+
+// a retry (`only`) re-replaces just those sources; the ones that worked that day keep their items, and the relay is not asked when no relay app is named
+const idsBy = () => Object.fromEntries(items().map((i) => [i.source, i.id]));
+{
+  const was = idsBy(), nCalls = calls.length;
+  relay = () => json(sections('RETRY'));
+  const rr = await refreshApps(env, undefined, 'cron', ['hollow']);
+  assert.deepEqual(rr, { ok: ['hollow'], errors: {} });
+  const now = idsBy();
+  assert.notEqual(now['app:hollow'], was['app:hollow'], 'the retried source was replaced');
+  for (const a of ['compass', 'finance', 'health', 'home']) assert.equal(now[`app:${a}`], was[`app:${a}`], `${a} kept the item that worked`);
+  const rc = await refreshApps(env, undefined, 'cron', ['compass']);
+  assert.deepEqual(rc.ok, ['compass']); assert.equal(calls.length, nCalls + 1, 'Compass alone makes no relay call');
+  assert.equal(items().length, 5);
+  db.exec("DELETE FROM audit_log WHERE action LIKE 'knowledge.apps.%'");
+  aud(new Date(Date.now() - 1000).toISOString(), 'knowledge.apps.refresh', null); // the claim row the route/cron writes first
+  await refreshApps(env, undefined, 'cron', ['finance']);
+  assert.deepEqual((await lastRun(env))?.retry, [], 'its done row names only what it tried');
+}
+
+// a relay answer over the size cap is refused before parsing (by header, and by streaming when no length is given)
+{
+  const big = JSON.stringify({ sections: { finance: 'x'.repeat(250_000) } });
+  const mid = items().find((i) => i.source === 'app:finance')!.id;
+  relay = () => new Response(big, { headers: { 'Content-Length': String(big.length) } });
+  let rb = await refreshApps(env);
+  assert.equal(rb.errors.finance, "Kelly-Cloud's answer was too large.");
+  relay = () => new Response(new ReadableStream({ start(c) { for (let i = 0; i < 6; i++) c.enqueue(new TextEncoder().encode('y'.repeat(40_000))); c.close(); } }));
+  rb = await refreshApps(env);
+  assert.equal(rb.errors.hollow, "Kelly-Cloud's answer was too large.");
+  assert.equal(items().find((i) => i.source === 'app:finance')!.id, mid, 'the existing items stay');
+  relay = () => json(sections('AFTER'));
+}
 
 // a second refresh REPLACES: still five items, none of the old passages or vectors left, the new text in
 relay = () => json(sections('TWO'));

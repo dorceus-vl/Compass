@@ -169,6 +169,19 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | PDU / certification tracker (PMP renewal cycle, PgMP plan) | v2 |
 | Flashcards / quick review for certification study | later |
 
+### Knowledge base (Phase 6)
+
+| Feature | Tier |
+| --- | --- |
+| Knowledge screen: collections of your own files, work or personal; drop PDF, Word, Excel, PowerPoint, CSV, Markdown, text or images | done, Phase 6 |
+| Work collections are Cloud AI (Athena may quote passages, in work threads only) or Locked (sealed, searched by words on your device, never sent to any model); Locked to Cloud AI needs the passkey | done, Phase 6 |
+| Search by meaning and keywords (Workers AI embeddings and Vectorize, inside Cloudflare), with the page, slide or sheet range on every passage | done, Phase 6 |
+| Save to knowledge from a meeting review, an email and Athena's attachments; Athena answers from a collection with citations ("Ask Athena about this") | done, Phase 6 |
+| "From my apps": a daily digest of Compass (personal), Finance, Health (counts only, never a medication name), Home and Hollow, replaced on each refresh | done, Phase 6 |
+| Kelly searches your personal knowledge (permission `compass:read.knowledge`, passkey to turn on); never a work collection | done, Phase 6 |
+| Trash, 30-day purge, export and monthly-cap metering cover knowledge | done, Phase 6 |
+| Live OneNote, SharePoint or Outlook connectors; automatic indexing of work email; a model on the device | later |
+
 ## 10. Integrations
 
 | App | What flows | Tier |

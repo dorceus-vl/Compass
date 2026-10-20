@@ -63,7 +63,7 @@
 - **Passkey step-up is required to:** change a work collection from Locked to Cloud AI; delete a collection; turn on Kelly's `compass:read.knowledge` (through the existing `PUT /api/kelly`).
 - **Metering:**
   - Embedding is feature `knowledge_embed`: one meter call per ingest batch, plus one per question that embeds its query.
-  - Prices come from a var `KNOWLEDGE_PRICES` = `{"embed_per_1k_tokens":0.012}` (USD).
+  - Prices come from a var `KNOWLEDGE_PRICES` = `{"embed_per_1k_tokens":0.000012}` (USD).
   - It has its own hourly bucket of 120, counts against the monthly cap, and is excluded from the 30/h model count (as in A9).
 - **Trash:** an item or collection in Trash leaves search immediately. Its passages and vectors are purged with the rest of Trash after 30 days.
 - **Export** includes the three tables, with work text opened.

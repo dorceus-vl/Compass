@@ -3,7 +3,9 @@
 set -euo pipefail
 B=${BASE:-http://localhost:8790}; J=/tmp/compass-smoke.jar; rm -f $J
 H=(-s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json")
-fail() { echo "smoke: FAIL $1"; exit 1; }
+T0=$(date -u +%Y-%m-%dT%H:%M:%S.000Z) # rows made before this are not the smoke's: its cleanup (end of file) only touches rows created at or after it
+unpark() { [ -z "${PARK:-}" ] || D1X "UPDATE tasks SET deleted_at = NULL WHERE deleted_at = '$PARK'" >/dev/null; PARK=; }
+fail() { unpark; echo "smoke: FAIL $1"; exit 1; }
 # The hourly AI limits count the local ai_usage rows, so a run starts from none. Local only: --local touches the dev D1 file, never a remote database, and a non-local BASE is refused.
 case "$B" in http://localhost:*|http://127.0.0.1:*) ;; *) fail "BASE must be a local wrangler dev (got $B)";; esac
 npx wrangler d1 execute compass-db --local --command "DELETE FROM ai_usage" >/dev/null 2>&1 || fail "could not clear the local ai_usage"
@@ -399,6 +401,9 @@ curl "${H[@]}" -X POST $B/api/reports/status -d "$SR" | js "d.ai_summary===null&
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/reports/status -d '{"project_id":"'$W1'","from":"2026-02-30","to":"2026-12-31"}')" = 400 ] || fail "bad date accepted"
 echo "smoke: (r) status report data readable for a work project; cloud -> stub summary; offline -> ai_refused offline_boundary, no model call"
 # Task 12: today's brief on the stub (an offline project's task title must never reach the model input), the export, AI settings, a gate milestone.
+# The brief reads every live task and the stub echoes only the first 4,000 characters, so the check must not depend on how many tasks the local dev D1 holds:
+# park the live ones (a marker in deleted_at, undone right after the checks or by fail) and look at the smoke's own four.
+PARK="parked-$R"; D1X "UPDATE tasks SET deleted_at = '$PARK' WHERE deleted_at IS NULL" >/dev/null
 BO=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke brief offline","kind":"work"}' | js d.project.id)
 BC=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke brief cloud","kind":"personal"}' | js d.project.id)
 KTO=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke offline secret $R\",\"project_id\":\"$BO\",\"due_at\":\"2026-01-01\"}" | js d.task.id)
@@ -419,6 +424,7 @@ case "$BT" in *"Smoke loose work"*) fail "work task without a project reached th
 printf '%s' "$BT" | grep -Eq '\+[0-9]+ items from offline projects' || fail "no offline count line: $BT"
 printf '%s' "$BT" | grep -Eq '\+[0-9]+ work items without a project' || fail "no no-project count line: $BT"
 [ "$(D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='brief'" | js 'd[0].results[0].n')" -ge 1 ] || fail "brief not counted in ai_usage"
+unpark
 for T in $KTO $KTC $KTP $KTW; do curl "${H[@]}" -X DELETE $B/api/tasks/$T >/dev/null; done # soft delete: the next run's counts must not include these
 echo "smoke: (s) brief on the stub: cloud and personal titles in, offline-project and no-project work titles out, both count lines present"
 EX=$(curl "${H[@]}" -D $J.h -X GET $B/api/export -w '\n%{http_code}' ); [ "$(printf '%s' "$EX" | tail -1)" = 200 ] || fail "export: $(printf '%s' "$EX" | tail -1)"
@@ -1119,5 +1125,7 @@ for x in $K5W $K5L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x 
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
 for x in $K4T1 $K4T2; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$K4WP >/dev/null
+# The smoke's own leftovers (local D1 only): its tasks go to Trash, and the knowledge rows it made (collections, items, passages) are removed, so reruns see the same counts.
+D1X "UPDATE tasks SET deleted_at = '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)' WHERE deleted_at IS NULL AND created_at >= '$T0'; DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE created_at >= '$T0'); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE created_at >= '$T0'); DELETE FROM knowledge_collections WHERE created_at >= '$T0'" >/dev/null
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

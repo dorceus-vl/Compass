@@ -17,7 +17,7 @@ export const SOURCES = ['compass', ...RELAY_SOURCES] as const;
 export type AppSource = (typeof SOURCES)[number];
 export const APPS_NAME = 'From my apps';
 const TITLE: Record<AppSource, string> = { compass: 'Compass', finance: 'Finance', health: 'Health', home: 'Home', hollow: 'Hollow' };
-export const SECTION_MAX = 4000, DIGEST_MAX = 12_000, TASKS = 150, REFRESH_WINDOW_MS = 10 * 60_000, RELAY_MS = 15_000;
+export const SECTION_MAX = 4000, DIGEST_MAX = 12_000, TASKS = 150, REFRESH_WINDOW_MS = 10 * 60_000, RELAY_MS = 15_000, RELAY_MAX_BYTES = 200_000;
 const ACTION = 'knowledge.apps.refresh';
 
 const one = (s: string | null | undefined, n = 200) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -91,12 +91,24 @@ export function appsDue(s: Pick<Settings, 'tz' | 'digest_hour'>, last: { at: str
   return last.failed && at.getTime() - Date.parse(last.at) >= RETRY_MS;
 }
 
-/** The newest attempt and whether it came out clean: its `knowledge.apps.done` row (written when it finishes) names the apps that failed; none = it never finished. */
-export async function lastRun(env: Env): Promise<{ at: string; failed: boolean } | null> {
+/**
+ * The newest attempt and whether it came out clean: its `knowledge.apps.done` row (written when it finishes) names the apps that failed (`retry`);
+ * none = it never finished, so `retry` is null (all five again).
+ */
+export async function lastRun(env: Env): Promise<{ at: string; failed: boolean; retry: AppSource[] | null } | null> {
   const at = await lastAttempt(env);
   if (!at) return null;
   const done = await env.DB.prepare('SELECT detail FROM audit_log WHERE action = ?1 AND at >= ?2 ORDER BY at DESC LIMIT 1').bind('knowledge.apps.done', at).first<{ detail: string | null }>();
-  try { return { at, failed: !done || (JSON.parse(done.detail ?? '{}').failed ?? []).length > 0 }; } catch { return { at, failed: true }; }
+  try {
+    if (!done) return { at, failed: true, retry: null };
+    const retry = ((JSON.parse(done.detail ?? '{}').failed ?? []) as string[]).filter((a): a is AppSource => (SOURCES as readonly string[]).includes(a));
+    return { at, failed: retry.length > 0, retry };
+  } catch { return { at, failed: true, retry: null }; }
+}
+
+/** Which sources the cron refreshes now: on the same day as a finished attempt with failures, only those that failed (the others keep what worked); otherwise all (null). */
+export function retryOnly(s: Pick<Settings, 'tz'>, last: { at: string; retry: AppSource[] | null } | null, at: Date): AppSource[] | null {
+  return last?.retry?.length && localDate(s.tz, new Date(last.at)) === localDate(s.tz, at) ? last.retry : null;
 }
 
 /** The newest refresh attempt (cron or Refresh now), or null. */
@@ -158,6 +170,25 @@ async function failItem(env: Env, coll: KnowledgeCollection, app: AppSource, rea
   if (!r.meta.changes) await addItem(env, coll, { source, title: TITLE[app], document_id: null, passages: [], error: reason });
 }
 
+/** The body as text, or null once it passes `max` bytes (checked on the header first, then as it streams, so a huge answer is never held whole). */
+async function readCapped(r: Response, max: number): Promise<string | null> {
+  if (Number(r.headers.get('content-length') ?? 0) > max) { await r.body?.cancel().catch(() => {}); return null; }
+  const rd = r.body?.getReader();
+  if (!rd) return '';
+  const parts: Uint8Array[] = []; let n = 0;
+  for (;;) {
+    const { done, value } = await rd.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > max) { await rd.cancel().catch(() => {}); return null; }
+    parts.push(value);
+  }
+  const all = new Uint8Array(n); let o = 0;
+  for (const x of parts) { all.set(x, o); o += x.byteLength; }
+  return new TextDecoder().decode(all);
+}
+const parse = (t: string): unknown => { try { return JSON.parse(t); } catch { return null; } };
+
 export interface RefreshResult { ok: AppSource[]; errors: Partial<Record<AppSource, string>> }
 
 /**
@@ -165,19 +196,23 @@ export interface RefreshResult { ok: AppSource[]; errors: Partial<Record<AppSour
  * (its secret header, no redirects, 15 s); Compass's own part needs no relay. Embedding starts afterwards: `defer` hands it to the request's
  * waitUntil, otherwise (the cron) it is awaited. Never throws for a failing source; the result and an audit row carry the app names only.
  */
-export async function refreshApps(env: Env, defer?: (p: Promise<unknown>) => void, actor: 'you' | 'cron' = 'you'): Promise<RefreshResult> {
+export async function refreshApps(env: Env, defer?: (p: Promise<unknown>) => void, actor: 'you' | 'cron' = 'you', only: AppSource[] | null = null): Promise<RefreshResult> {
   const coll = await appsCollection(env), texts: Partial<Record<AppSource, string>> = {}, errors: Partial<Record<AppSource, string>> = {};
+  const want = (a: AppSource) => !only || only.includes(a); // a same-day retry touches only the sources that failed
   const g = relayOf(env);
   let relay: Record<(typeof RELAY_SOURCES)[number], string | null> | null = null, why = "Kelly-Cloud isn't connected.";
-  if (g) {
+  if (g && RELAY_SOURCES.some(want)) {
     try {
       const r = await relayFetch(g, '/apps-digest', {}, RELAY_MS);
-      if (r.ok) relay = cleanRelay(await r.json().catch(() => null)); else why = 'Kelly-Cloud answered with an error.';
+      if (r.ok) {
+        const body = await readCapped(r, RELAY_MAX_BYTES);
+        if (body === null) why = "Kelly-Cloud's answer was too large."; else relay = cleanRelay(parse(body));
+      } else why = 'Kelly-Cloud answered with an error.';
     } catch { why = 'Kelly-Cloud could not be reached.'; }
   }
-  for (const k of RELAY_SOURCES) { if (relay?.[k]) texts[k] = relay[k]!; else errors[k] = relay ? `${TITLE[k]} could not be read.` : why; }
-  try { texts.compass = await compassDigest(env); } catch { errors.compass = 'Compass could not build its part.'; }
-  for (const app of SOURCES) {
+  for (const k of RELAY_SOURCES.filter(want)) { if (relay?.[k]) texts[k] = relay[k]!; else errors[k] = relay ? `${TITLE[k]} could not be read.` : why; }
+  if (want('compass')) try { texts.compass = await compassDigest(env); } catch { errors.compass = 'Compass could not build its part.'; }
+  for (const app of SOURCES.filter(want)) {
     try {
       if (texts[app]) await replaceItem(env, coll, app, texts[app]!); else await failItem(env, coll, app, errors[app]!);
     } catch (e) { console.error(`[apps] ${app} not stored: ${(e as Error).name}`); errors[app] = `${TITLE[app]} could not be stored.`; delete texts[app];
@@ -186,7 +221,7 @@ export async function refreshApps(env: Env, defer?: (p: Promise<unknown>) => voi
   }
   const embedding = embedPending(env, 500, { collection: coll.id }).catch((e) => console.error(`[apps] embed failed: ${(e as Error).name}`));
   if (defer) defer(embedding); else await embedding;
-  const ok = SOURCES.filter((a) => texts[a] && !errors[a]);
+  const ok = SOURCES.filter((a) => want(a) && texts[a] && !errors[a]);
   await audit(env, actor, 'knowledge.apps.done', coll.id, { ok, failed: Object.keys(errors) });
   return { ok, errors };
 }

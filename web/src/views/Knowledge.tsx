@@ -20,6 +20,8 @@ const kindLabel = (c: Coll) => (c.system ? 'From my apps' : c.scope === 'persona
 const Kind = ({ c }: { c: Coll }) => <span className={`chip kn-chip${c.boundary === 'locked' && c.scope === 'work' ? ' locked' : ''}`}>{c.boundary === 'locked' && c.scope === 'work' && <Icon name="lock" />}{kindLabel(c)}</span>;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const SEARCH_PAUSED = 'Searching is paused for a few minutes.';
+const BUDGET_USED = "This month's AI budget is used up. Raise it in Settings → AI.";
+const LOCKED_CLEARED = 'Locked results were cleared from this screen. Search again to load them.';
 const BOUNDARY_LINE = { locked: 'No AI ever reads it. You search it by words, on this device.', cloud: 'Athena can read passages in work threads and search works by meaning. Your passkey confirms this.' };
 
 /** Searches the open collection, or all of them: the server for Cloud AI and personal, this device for Locked. Debounced; a stale answer is dropped. */
@@ -29,6 +31,8 @@ function useKnowledgeSearch(q: string, scope: string | undefined, colls: Coll[] 
   const ref = useRef(colls);
   ref.current = colls;
   const seq = useRef(0), ready = !!colls;
+  // The in-memory Locked index was dropped (10 minutes hidden, sign-out): the Locked results on screen go with it.
+  useEffect(() => lockedStore().onDrop(() => set((s) => (s && s.hits.some((h) => h.locked) ? { ...s, hits: s.hits.filter((h) => !h.locked), notes: [...s.notes, LOCKED_CLEARED] } : s))), []);
   useEffect(() => {
     const term = q.trim(), mine = ++seq.current;
     if (!term || !ready) { set(null); setBusy(false); return; }
@@ -40,7 +44,7 @@ function useKnowledgeSearch(q: string, scope: string | undefined, colls: Coll[] 
       const server = scoped.some((c) => c.boundary === 'cloud')
         ? api<{ passages: Found[] }>(`/knowledge/search?q=${encodeURIComponent(term)}${scope ? `&collections=${encodeURIComponent(scope)}` : ''}`).then((r) => {
           for (const p of r.passages) { const c = byId.get(p.collection.id); if (c) cloud.push({ key: p.id, document_id: p.document_id, locator: p.locator, title: p.item_title, text: snippet(p.text, term, 260), coll: c, locked: false }); }
-        }).catch((e) => { if (e instanceof SignedOut) return; notes.push(e instanceof ApiError ? (e.status === 429 ? SEARCH_PAUSED : e.message) : 'Searching by meaning needs a connection.'); })
+        }).catch((e) => { if (e instanceof SignedOut) return; notes.push(e instanceof ApiError ? (e.code === 'cap_reached' ? BUDGET_USED : e.status === 429 ? SEARCH_PAUSED : e.message) : 'Searching by meaning needs a connection.'); })
         : Promise.resolve();
       const device = lockedIds.length ? lockedStore().search(lockedIds, term, 10) : Promise.resolve({ hits: [], failed: [] as string[] });
       const [, d] = await Promise.all([server, device]);
