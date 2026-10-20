@@ -3,6 +3,7 @@ import type { Rule, RuleMode, Horizon, Kind } from '../../../shared/types.ts';
 import { api } from '../api.ts';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { accent, sourceColor } from '../ui/colors.ts';
+import { CardHead } from '../ui/CardHead.tsx';
 
 const APPS: [string, string][] = [['*', 'Any app'], ['finance', 'Finance'], ['health', 'Health'], ['home', 'Home'], ['nightowl', 'Night Owl'], ['kelly', 'Kelly'], ['sonarflow', 'SonarFlow'], ['hollow', 'Hollow'], ['email', 'Email']];
 const MODES: [RuleMode, string][] = [['task', 'Task'], ['inbox', 'Wait in inbox'], ['ignore', 'Ignore']];
@@ -45,7 +46,7 @@ export function Rules() {
 
   return (
     <div className="card">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>Sources and rules</div>
+      <CardHead icon="settings" title="Sources and rules" desc="How what your other apps send is sorted on arrival." />
       <p style={{ margin: '0 0 6px' }}>Rules run in this order on what your other apps send. The first one that matches decides: add a task, wait in the inbox, or ignore it.</p>
       {rules.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No rules yet.</p>}
       <div className="rules">{rules.map((r) => (

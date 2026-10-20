@@ -27,7 +27,7 @@ export function Markdown({ text }: { text: string }) {
           case 'quote': return <blockquote key={i}>{inline(b.c)}</blockquote>;
           case 'hr': return <hr key={i} />;
           case 'table': return (
-            <div key={i} style={{ overflowX: 'auto' }}>
+            <div key={i} className="tbl">
               <table><thead><tr>{b.head.map((c, j) => <th key={j}>{inline(c)}</th>)}</tr></thead>
                 <tbody>{b.rows.map((r, j) => <tr key={j}>{r.map((c, k) => <td key={k}>{inline(c)}</td>)}</tr>)}</tbody></table>
             </div>

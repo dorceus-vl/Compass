@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { api, deviceId, login } from '../api.ts';
+import { CursorCompass, FloatingShapes } from '../ui/Hero.tsx';
 
 // Sign in with Knocturn ID, as Health and Finance do: username + password, then Touch ID / Face ID on the options it
 // sends back (the same body again plus the passkey's answer). A device with no passkey yet: "New device?" opens
@@ -79,6 +80,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <main className="signin">
+      <div className="sstage">
+        {/* Decoration, wide screens only (CSS hides it under 900 px): no focusable content, so it never takes focus or clicks from the form. */}
+        <div className="stage" aria-hidden="true"><div className="layer"><FloatingShapes /></div><CursorCompass /></div>
       <div className="card">
         <div className="brand">
           <img src="/icons/icon-192.png" width={34} height={34} alt="" />
@@ -122,6 +126,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           </section>
         )}
         <p className="foot">Session kept for 90 days · Knocturn ID</p>
+      </div>
       </div>
     </main>
   );

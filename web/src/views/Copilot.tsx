@@ -10,6 +10,8 @@ import { useLibrary } from '../library.ts';
 import { BUILTINS } from '../docs/templates.ts';
 import { useDocs } from './project/Documents.tsx';
 import { Markdown } from '../ui/Markdown.tsx';
+import { Icon } from '../ui/Shell.tsx';
+import { Highlight } from './Library.tsx';
 import { Link, navigate } from '../router.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { fmtDue, today } from '../dates.ts';
@@ -103,7 +105,7 @@ function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null 
       {todo.length > 0 && <>
         <div className="eyebrow">Proposed for the board</div>
         {todo.map((r) => (
-          <label key={r.key} className="tap cp-prop-row">
+          <label key={r.key} className={`tap cp-prop-row${ticked.has(r.key) && usable(r) ? ' on' : ''}`}>
             <input type="checkbox" checked={ticked.has(r.key) && usable(r)} disabled={!usable(r) || busy}
               onChange={(e) => setTicked((s) => { const n = new Set(s); if (e.target.checked) n.add(r.key); else n.delete(r.key); return n; })} />
             <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{r.text}</span>
@@ -136,7 +138,7 @@ function OfflinePanel({ text, reason, project }: { text: string; reason: string;
       <b>{reason}</b>
       <div className="eyebrow">Library</div>
       {hits.length ? <div className="lib-list">{hits.map(({ page, snippet }) => (
-        <Link key={page.slug} to={`/library/${page.slug}`} className="card lib-hit" style={{ padding: 12 }}><b>{page.title}</b><p>{snippet}</p></Link>))}</div>
+        <Link key={page.slug} to={`/library/${page.slug}`} className="card lib-hit" style={{ padding: 12 }}><b>{page.title}</b><p><Highlight text={snippet} q={text} /></p></Link>))}</div>
         : <p className="sub" style={{ margin: 0 }}>{ready ? 'Nothing in the library matches.' : 'Loading the library…'}</p>}
       <div className="eyebrow">Templates</div>
       {templates.length ? <div className="row">{templates.map((t) => <Link key={t.key} to={to} className="chip" title={project ? 'Open the Report tab' : 'Pick a project, then open its Report tab'}>{t.name}</Link>)}</div> : <p className="sub" style={{ margin: 0 }}>No template names match.</p>}
@@ -155,7 +157,7 @@ function Answer({ m, project, onSave, onOther }: { m: AiMessage; project: Projec
   return (
     <article className="card cp-msg" aria-label={`Answer from ${NAME[p]}`}>
       <Markdown text={m.content} />
-      {m.citations.length > 0 && <div className="row">{m.citations.map((s) => <Link key={s} to={`/library/${s}`} className="chip">{pages.find((x) => x.slug === s)?.title ?? s}</Link>)}</div>}
+      {m.citations.length > 0 && <div className="row">{m.citations.map((s) => <Link key={s} to={`/library/${s}`} className="chip cite"><Icon name="library" />{pages.find((x) => x.slug === s)?.title ?? s}</Link>)}</div>}
       {m.proposals && <ProposalsPanel m={m} project={project} />}
       <div className="row cp-foot">
         <small className="sub">{NAME[p]} · {usd(m.cost_micro, 4)}</small>
@@ -280,9 +282,9 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
       <div className="card cp-compose">
         <div className="row">
           {projectId || thread
-            ? <div className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project">
-                {projects.find((p) => p.id === projSel)?.name ?? 'None (personal)'}
-                <small className="sub"> · {thread ? 'this conversation stays with its project; start a new conversation to pick another' : 'this project'}</small></div>
+            ? <div className="chip cp-lock" aria-label="Project">
+                <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? 'None (personal)'}</b>
+                <small>{thread ? 'this conversation stays with its project; start a new conversation to pick another' : 'this project'}</small></div>
             : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={projSel} onChange={(e) => setSel(e.target.value)}>
                 <option value="">None (personal)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
           <div className="seg" role="group" aria-label="Provider">

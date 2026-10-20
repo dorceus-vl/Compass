@@ -78,6 +78,9 @@ function Shape({ s: [c, kind, look, x, y, size], i }: { s: (typeof SHAPES)[numbe
   return <div className={`shape ${look}`} style={{ ...base, ...(look === 'line' ? { border: `1.5px solid ${c}` } : { background: c }), borderRadius: kind === 'circle' ? '50%' : 12, rotate: kind === 'sq' ? '18deg' : undefined }} />;
 }
 
+/** The seven floating shapes (also the sign-in stage's backdrop); positioned in % of the parent. */
+export const FloatingShapes = () => <>{SHAPES.map((s, i) => <Shape key={i} s={s} i={i} />)}</>;
+
 /** A number that counts up to `to` over 900 ms (ease-out), from whatever it showed before. */
 function Count({ to }: { to: number }) {
   const reduce = useReducedMotion();
@@ -122,7 +125,7 @@ export function Hero({ greeting, stats }: { greeting: string; stats: HeroStats }
   return (
     <section className="hero" ref={hero} aria-labelledby="hero-h">
       <div className="layer hgrid" ref={grid} aria-hidden="true" />
-      <div className="layer" ref={shapes} aria-hidden="true">{SHAPES.map((s, i) => <Shape key={i} s={s} i={i} />)}</div>
+      <div className="layer" ref={shapes} aria-hidden="true"><FloatingShapes /></div>
       <CursorCompass readout />
       <div className="hcopy">
         <span className="eyebrow">{new Date().toLocaleDateString('en-CA', { weekday: 'long', day: 'numeric', month: 'long' })}</span>

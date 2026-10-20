@@ -8,6 +8,8 @@ import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
+import { CardHead } from '../ui/CardHead.tsx';
+import { Icon } from '../ui/Shell.tsx';
 import { Documents } from './project/Documents.tsx';
 import { loadUsage, providerReady, spend, type Usage } from '../copilot.ts';
 import { saveBytes } from '../docs/download.ts';
@@ -15,6 +17,8 @@ import { exportMarkdown } from '../docs/export-md.ts';
 
 type Patch = Partial<Omit<Settings, 'wip_limits' | 'push'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']> };
 type Save = (patch: Patch) => Promise<void>;
+const MORE = [['inbox', '/inbox', 'Inbox'], ['meetings', '/meetings', 'Meetings'], ['review', '/review', 'Weekly review'], ['library', '/library', 'Library'], ['copilot', '/copilot', 'Copilot'],
+  ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['timeline', '/timeline', 'Timeline'], ['trash', '/trash', 'Trash']] as const;
 const WIP_LABELS: Partial<Record<Status, string>> = { new: 'New', progress: 'In progress', hold: 'On hold', waiting: 'Waiting on' };
 
 export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
@@ -23,10 +27,9 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   useEffect(() => { api<Settings>('/settings').then(setS).catch(() => toast('Settings need a connection')); }, []);
   // Also shown while settings can't load (offline): on a phone this is the only way to the views that have no tab.
   const goTo = (
-    <div className="card">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>Go to</div>
-      <div className="row"><Link to="/inbox" className="btn">Inbox</Link><Link to="/meetings" className="btn">Meetings</Link><Link to="/review" className="btn">Weekly review</Link><Link to="/library" className="btn">Library</Link><Link to="/copilot" className="btn">Copilot</Link><Link to="/list" className="btn">List</Link><Link to="/upcoming" className="btn">Upcoming</Link><Link to="/timeline" className="btn">Timeline</Link><Link to="/trash" className="btn">Trash</Link></div>
-    </div>
+    <nav className="more" aria-label="More">
+      {MORE.map(([icon, to, label]) => <Link key={to} to={to} className="more-row"><span className="secico"><Icon name={icon} /></span><span>{label}</span><span className="chev"><Icon name="chevron" /></span></Link>)}
+    </nav>
   );
   if (!s) return goTo;
   // Optimistic: show the change now, send only the changed key (the server merges WIP per status), ignore replies older than the newest request.
@@ -58,7 +61,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
           <button type="button" className="btn" onClick={signOut}>Sign out</button></div></div>
       {goTo}
       <div className="card">
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Day</div>
+        <CardHead icon="today" title="Day" desc="When your day starts, the digest goes out and the week gets reviewed." />
         {row('Day starts at', <select className="field" value={s.day_start_hour} onChange={(e) => save({ day_start_hour: Number(e.target.value) })}>{hours.map((h) => <option key={h} value={h}>{h}:00</option>)}</select>)}
         {row('Daily digest at', <select className="field" value={s.digest_hour} onChange={(e) => save({ digest_hour: Number(e.target.value) })}>{hours.map((h) => <option key={h} value={h}>{h}:00</option>)}</select>)}
         {row('Quiet hours (no notifications) from', <input key={s.quiet_from} className="field" type="time" defaultValue={s.quiet_from} onBlur={(e) => (e.target.value && e.target.value !== s.quiet_from ? save({ quiet_from: e.target.value }) : (e.target.value = s.quiet_from))} />)}
@@ -72,12 +75,11 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Ai s={s} save={save} />
       <ExportCard />
       <div className="card">
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Documents</div>
-        <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-dim)' }}>Unfiled documents: files that are not in a project. Project files live on the project's Documents tab.</p>
+        <CardHead icon="doc" title="Documents" desc="Unfiled files that are not in a project. Project files live on the project's Documents tab." />
         <Documents project={null} />
       </div>
       <div className="card">
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Board limits (work in progress)</div>
+        <CardHead icon="board" title="Board limits" desc="Work in progress: how many cards each column may hold." />
         {(['new', 'progress', 'hold', 'waiting'] as Status[]).map((k) => row(WIP_LABELS[k]!, <input key={`${k}:${s.wip_limits[k]}`} className="field" type="number" min={1} max={99} placeholder="none" defaultValue={s.wip_limits[k] ?? ''} onBlur={(e) => {
           const v = e.target.value === '' ? null : Number(e.target.value);
           if (v === (s.wip_limits[k] ?? null)) return;
@@ -86,7 +88,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
         }} />))}
       </div>
       <div className="card">
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Saved views</div>
+        <CardHead icon="list" title="Saved views" desc="Filters you saved from List." />
         {s.saved_views.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Save one from List.</p>}
         {s.saved_views.map((v) => row(`${v.name} · ${v.query}`, <button type="button" className="btn" onClick={() => save({ saved_views: s.saved_views.filter((x) => x.name !== v.name) })}>Remove</button>))}
       </div>
@@ -124,7 +126,7 @@ function Notifications({ s, save }: { s: Settings; save: Save }) {
   const canAsk = state === 'off' || state === 'on';
   return (
     <div className="card">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>Notifications</div>
+      <CardHead icon="bell" title="Notifications" desc="What reaches this device, and when it stays quiet." />
       <p style={{ margin: '0 0 10px' }} role="status">{state ? STATUS_TEXT[state] : 'Checking...'}</p>
       <div className="row">
         {canAsk && (state === 'on'
@@ -165,7 +167,7 @@ function Email({ s, save }: { s: Settings; save: Save }) {
   };
   return (
     <div className="card">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>Email</div>
+      <CardHead icon="mail" title="Email" desc="Forward email to Compass and it becomes tasks." />
       <div style={{ fontSize: 14, marginBottom: 4 }}>Forward emails to this address to turn them into tasks:</div>
       {address === undefined ? <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Needs a connection.</p>
         : address === null ? <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Not set up yet</p>
@@ -195,7 +197,7 @@ function Ai({ s, save }: { s: Settings; save: Save }) {
   const row = (label: string, el: ReactElement) => <label key={label} className="ai-row">{label}{el}</label>;
   return (
     <div className="card ai-card">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>AI</div>
+      <CardHead icon="copilot" title="AI" desc="Which model answers, and the monthly budget." />
       {row('Default provider', <select className="field" value={s.default_provider} onChange={(e) => void save({ default_provider: e.target.value as Provider })}>
         {(['claude', 'gemini'] as Provider[]).map((p) => <option key={p} value={p}>{PROVIDER_NAME[p]}</option>)}</select>)}
       {row('Monthly budget (US dollars)', <input key={dollars} className="field" type="number" min={0} max={1000} step={1} defaultValue={dollars} onBlur={(e) => {
@@ -227,7 +229,7 @@ function ExportCard() {
   };
   return (
     <div className="card export-card">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>Export</div>
+      <CardHead icon="download" title="Export" desc="A readable copy of everything you have written." />
       <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-dim)' }}>Everything you have written, readable, with your passkey. The JSON also holds what is in Trash; the Markdown zip has one file per project.</p>
       <div className="row">
         <button type="button" className="btn" disabled={busy} onClick={run('json')}>Export everything (JSON)</button>
