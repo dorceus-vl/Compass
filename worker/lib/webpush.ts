@@ -4,7 +4,7 @@
 export type VapidEnv = { VAPID_PUBLIC_KEY: string; VAPID_PRIVATE_KEY: string; VAPID_SUBJECT: string };
 export type PushMessage = { title: string; body: string; url: string; tag?: string };
 export type PushSub = { endpoint: string; p256dh: string; auth: string };
-type Sent = 'sent' | 'gone' | 'failed' | 'local'; // local: we could not sign or encrypt (server misconfiguration), the push service was never asked
+export type Sent = 'sent' | 'gone' | 'failed' | 'local'; // local: we could not sign or encrypt (server misconfiguration), the push service was never asked
 
 const te = new TextEncoder();
 export const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

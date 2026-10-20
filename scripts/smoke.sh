@@ -282,5 +282,21 @@ for x in $TH $TW; do curl "${H[@]}" -X DELETE $B/api/ai/threads/$x | grep -q '"o
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/ai/threads/$TH)" = 404 ] || fail "trashed thread still served"
 curl "${H[@]}" -X DELETE $B/api/projects/$P1 >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$W1 >/dev/null
 D1X "DELETE FROM ai_usage WHERE at >= '$AT0'" >/dev/null # local DB only: repeated runs must not hit the 30-an-hour limit
+# (w) Phase 4 device push: fake tokens register, resolve to 'local' (no push secrets here) so the rows stay; the test push lands in the outbox.
+APT=$(printf 'a%.0s' $(seq 64)); FCT="smokefcm${R}_$(printf 'x%.0s' $(seq 24))"
+curl "${H[@]}" -X POST $B/api/push/device -d "{\"kind\":\"apns\",\"token\":\"$APT\",\"env\":\"development\",\"platform\":\"ios\",\"device_name\":\"Smoke iPhone\"}" | grep -q '"id"' || fail "apns register"
+curl "${H[@]}" -X POST $B/api/push/device -d "{\"kind\":\"fcm\",\"token\":\"$FCT\",\"platform\":\"android\"}" | grep -q '"id"' || fail "fcm register"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/push/device -d '{"kind":"apns","token":"nothex","env":"production","platform":"ios"}')" = 400 ] || fail "bad apns token accepted"
+NOENV="{\"kind\":\"apns\",\"token\":\"$APT\",\"platform\":\"ios\"}"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/push/device -d "$NOENV")" = 400 ] || fail "apns without env accepted"
+SINCE=$(node -pe 'new Date(Date.now()-1000).toISOString()')
+curl "${H[@]}" -X POST $B/api/push/test | grep -q '"sent":0' || fail "push test"
+curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.some(i=>i.title==='Test from Compass'&&i.url==='/')" | grep -q true || fail "outbox missing the test push"
+curl "${H[@]}" $B/api/push | js "d.subscriptions.filter(x=>x.platform==='ios'||x.platform==='android').length>=2" | grep -q true || fail "local device rows were removed or changed"
+for x in $(curl "${H[@]}" $B/api/push | js "d.subscriptions.filter(x=>x.platform==='ios'||x.platform==='android').map(x=>x.id).join(' ')"); do curl "${H[@]}" -X DELETE $B/api/push/$x >/dev/null; done
+NS=$(curl -s -o /tmp/compass-native.json -w '%{http_code}' -X POST $B/api/auth/native -H "Origin: $B" -H 'Content-Type: application/json' -d "{\"code\":\"badcode$R\",\"code_verifier\":\"$(printf 'v%.0s' $(seq 43))\"}")
+case "$NS" in 401|502|503) ;; *) fail "native sign-in with a bad code answered $NS";; esac
+[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/auth/native -H 'Content-Type: application/json' -d '{}')" = 403 ] || fail "native sign-in skipped the same-origin check"
+echo "smoke: (w) device push: apns+fcm registered, local (rows kept), outbox has the test push; /api/auth/native bad code -> $NS"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

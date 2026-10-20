@@ -99,6 +99,7 @@ export async function purgeAudit(env: Env): Promise<void> {
   await env.DB.prepare('DELETE FROM audit_log WHERE at < ?1').bind(daysAgo(AUDIT_DAYS)).run();
   await env.DB.prepare('DELETE FROM ai_usage WHERE at < ?1').bind(daysAgo(400)).run(); // usage counts only feed the monthly cap
   await env.DB.prepare('DELETE FROM push_log WHERE sent_at < ?1').bind(daysAgo(30)).run(); // push dedupe keys outlive nothing useful past 30 days
+  await env.DB.prepare('DELETE FROM push_outbox WHERE at < ?1').bind(daysAgo(7)).run(); // the Mac app polls it every minute; a week covers a closed lid
 }
 /**
  * Inbox rows that were dealt with (dismissed, kept, added) over 30 days ago can still hold email text, so they go. New and snoozed rows stay,

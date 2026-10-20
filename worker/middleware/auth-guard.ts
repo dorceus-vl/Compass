@@ -4,7 +4,7 @@ import { getSession, touchSession, checkWithId } from '../lib/session.ts';
 import { sameOrigin } from '../lib/access.ts';
 
 // Only /api/* reaches the Worker (wrangler.jsonc run_worker_first); the app shell is static and holds no data.
-const PUBLIC = new Set(['/api/auth/login', '/api/auth/dev-login']);
+const PUBLIC = new Set(['/api/auth/login', '/api/auth/dev-login', '/api/auth/native']);
 
 export async function authGuard(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
   // POST /api/inbox is sent by other servers (no cookie, no Origin); the route checks the per-sender secret itself.

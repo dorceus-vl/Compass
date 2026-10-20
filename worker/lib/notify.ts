@@ -2,20 +2,30 @@ import type { Env } from '../types.ts';
 import type { PushType, InboxItem, MeetingReview, Task } from '../../shared/types.ts';
 import { getSettings, now } from './db.ts';
 import { inQuietHours } from './schedule.ts';
-import { sendPush, type PushMessage } from './webpush.ts';
+import { sendPush, type PushMessage, type Sent } from './webpush.ts';
+import { sendApns } from './apns.ts';
+import { sendFcm } from './fcm.ts';
 
 const MAX_FAILS = 10;
-type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
+type Sub = { id: string; kind: 'web' | 'apns' | 'fcm'; endpoint: string; env: string | null; p256dh: string | null; auth: string | null };
 
-/** Sends to every device, then keeps the books: gone (404/410) is deleted; a failure counts, 10 in a row delete; a success resets the count. Returns how many got it. */
-export async function deliver(env: Env, message: PushMessage): Promise<number> {
-  const { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, VAPID_SUBJECT: sub } = env;
-  if (!pub || !priv || !sub) return 0; // not set up yet
-  const { results } = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions').all<Sub>();
+/**
+ * Sends to every device by its kind, then keeps the books: gone is deleted; a failure counts, 10 in a row delete; a success resets the count.
+ * A kind whose secret is missing is 'local' (not the device's fault) and touches nothing. The message also goes to the outbox once (the Mac app
+ * reads it), whether or not any device is reachable; `key` makes a retry of the same push write it once. Returns how many devices got it.
+ */
+export async function deliver(env: Env, message: PushMessage, key?: string): Promise<number> {
+  await env.DB.prepare('INSERT OR IGNORE INTO push_outbox (id, at, title, body, url) VALUES (?1, ?2, ?3, ?4, ?5)')
+    .bind(key ?? crypto.randomUUID(), now(), message.title, message.body, message.url).run();
+  const { results } = await env.DB.prepare('SELECT id, kind, endpoint, env, p256dh, auth FROM push_subscriptions').all<Sub>();
   if (!results.length) return 0; // D1 refuses an empty batch
-  const keys = { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, VAPID_SUBJECT: sub };
-  const outcomes = await Promise.all(results.map((s) => sendPush(keys, s, message)));
-  // Subscriptions are device configuration, not user content, so a dead one is hard-deleted. 'local' (we couldn't sign or encrypt) touches nothing.
+  const { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, VAPID_SUBJECT: subj } = env;
+  const outcomes = await Promise.all(results.map((s): Promise<Sent> =>
+    s.kind === 'apns' ? sendApns(env, s, message)
+      : s.kind === 'fcm' ? sendFcm(env, s, message)
+        : pub && priv && subj && s.p256dh && s.auth ? sendPush({ VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: priv, VAPID_SUBJECT: subj }, { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth }, message)
+          : Promise.resolve('local')));
+  // Subscriptions are device configuration, not user content, so a dead one is hard-deleted. 'local' touches nothing.
   const writes = results.flatMap((s, i) => outcomes[i] === 'sent'
     ? [env.DB.prepare('UPDATE push_subscriptions SET failed_count = 0, last_ok_at = ?2 WHERE id = ?1').bind(s.id, now())]
     : outcomes[i] === 'gone'
@@ -39,7 +49,7 @@ export async function pushAll(env: Env, type: PushType, key: string, message: Pu
   const s = await getSettings(env);
   if (s.push[type] === false || inQuietHours(localHHMM(s.tz), s.quiet_from, s.quiet_to)) return 0;
   if (await env.DB.prepare('SELECT 1 FROM push_log WHERE key = ?1').bind(key).first()) return 0;
-  const sent = await deliver(env, message);
+  const sent = await deliver(env, message, key);
   if (sent > 0) await env.DB.prepare('INSERT OR IGNORE INTO push_log (key, sent_at) VALUES (?1, ?2)').bind(key, now()).run();
   return sent;
 }

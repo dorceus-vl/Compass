@@ -15,6 +15,9 @@
     "ID_URL": "https://id.knocturnlabs.com",
     "VAPID_SUBJECT": "mailto:vladimir.bigvlad@gmail.com",
     "DEV_LOGIN": "0",
+    // Phase 4 device push (worker/lib/apns.ts, fcm.ts). Secrets Vlad puts himself: APNS_KEY_P8, APNS_KEY_ID, FCM_SERVICE_ACCOUNT.
+    "APPLE_TEAM_ID": "K948BT44PM",
+    "APNS_TOPIC": "com.knocturnlabs.compass",
     // Phase 3 copilot (worker/lib/ai.ts). Keys are secrets Vlad puts himself: ANTHROPIC_API_KEY, GEMINI_API_KEY.
     "AI_MODEL_CLAUDE": "claude-sonnet-5-5",
     "AI_MODEL_GEMINI": "gemini-3.6-flash",

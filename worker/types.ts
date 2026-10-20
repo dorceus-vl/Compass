@@ -19,6 +19,12 @@ export interface Env {
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
+  /** Phase 4 device push. Apple: the .p8 key text and its id (secrets Vlad puts), the team and the app id (vars). Firebase: the service-account JSON (secret). Unset = that kind is skipped as local. */
+  APNS_KEY_P8?: string;
+  APNS_KEY_ID?: string;
+  APPLE_TEAM_ID: string;
+  APNS_TOPIC: string;
+  FCM_SERVICE_ACCOUNT?: string;
   /** Sender addresses allowed to forward email into the inbox, comma-separated. */
   ALLOWED_FORWARDERS?: string;
   /** Secret forward-to address (compass-<random>@knocturnlabs.com); only mail sent to it gets in. Unset = all email dropped. */

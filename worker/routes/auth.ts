@@ -39,6 +39,28 @@ auth.post('/login', async (c) => {
   return c.json({ error, message: ID_MESSAGES[error] ?? 'Sign-in failed. Try again.' }, r.status as ContentfulStatusCode);
 });
 
+// A shell app (iPhone, iPad, Android, Mac) signs in on Knocturn ID's own page (INTEGRATION.md §8d) and posts the one-time code it got back
+// with its PKCE verifier. Same allow-list and session as /login; the cookie lands in the shell's web view, which loads this site.
+auth.post('/native', async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const code = typeof body.code === 'string' ? body.code : '';
+  const verifier = typeof body.code_verifier === 'string' ? body.code_verifier : '';
+  if (!code || code.length > 200 || !/^[A-Za-z0-9_-]{43,128}$/.test(verifier)) return c.json({ error: 'invalid_request', message: ID_MESSAGES.invalid_request }, 400);
+  const r = await idFetch(c, '/v1/auth/token', { code, code_verifier: verifier }).catch(() => null);
+  if (!r || r.status >= 500) return c.json({ error: 'id_unavailable', message: "Can't reach Knocturn ID right now. Try again in a minute." }, 503);
+  const data = await r.json<{ error?: string; access_token: string; refresh_token: string }>().catch(() => null);
+  if (r.ok && data?.access_token) {
+    if (!userAllowed(c.env.COMPASS_USERS, subOf(data.access_token))) {
+      await idFetch(c, '/v1/auth/logout', { refresh_token: data.refresh_token }).catch(() => null);
+      return c.json({ error: 'not_allowed', message: "This Knocturn ID account can't use Compass." }, 403);
+    }
+    await createSession(c, data);
+    return c.json({ ok: true });
+  }
+  const error = data?.error ?? 'invalid_grant';
+  return c.json({ error, message: error === 'invalid_grant' ? 'That sign-in expired. Try again.' : (ID_MESSAGES[error] ?? 'Sign-in failed. Try again.') }, error === 'rate_limited' ? 429 : 401);
+});
+
 // wrangler dev only: a session without Knocturn ID, so the smoke test and local work need no real sign-in.
 auth.post('/dev-login', async (c) => {
   const host = new URL(c.req.url).hostname;
