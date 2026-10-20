@@ -3,7 +3,9 @@ import type { AiFeature, Provider } from '../../shared/types.ts';
 import { audit, getSettings, now } from './db.ts';
 
 export type AiTurn = { role: 'user' | 'assistant'; content: string };
-export type AiCall = { provider: Provider; system: string; messages: AiTurn[]; maxTokens: number };
+/** Images ride on the last user turn, as base64 (Claude `image` blocks, Gemini `inline_data`). */
+export type AiImage = { media_type: 'image/png' | 'image/jpeg'; data: string };
+export type AiCall = { provider: Provider; system: string; messages: AiTurn[]; maxTokens: number; images?: AiImage[] };
 export type AiResult = { text: string; input_tokens: number; output_tokens: number; cost_micro: number };
 type Prices = Record<Provider, { in: number; out: number }>;
 type Code = 'no_key' | 'cap_reached' | 'rate_limited' | 'offline_boundary' | 'provider_error';
@@ -45,13 +47,20 @@ export function monthStartUtc(tz: string, at: Date): string {
   return new Date(guess - offsetMs(guess - offsetMs(guess))).toISOString();
 }
 
+/** The last user turn, where images go (-1 when there are no images). */
+const imageTurn = (call: AiCall) => (call.images?.length ? call.messages.map((t) => t.role).lastIndexOf('user') : -1);
+
 export function anthropicRequest(env: Env, call: AiCall): { url: string; init: RequestInit } {
   return {
     url: 'https://api.anthropic.com/v1/messages',
     init: {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY ?? '', 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: env.AI_MODEL_CLAUDE, max_tokens: call.maxTokens, system: call.system, messages: call.messages }),
+      body: JSON.stringify({
+        model: env.AI_MODEL_CLAUDE, max_tokens: call.maxTokens, system: call.system,
+        messages: call.messages.map((t, i) => (i === imageTurn(call)
+          ? { role: t.role, content: [...call.images!.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.data } })), { type: 'text', text: t.content }] } : t)),
+      }),
     },
   };
 }
@@ -64,7 +73,11 @@ export function geminiRequest(env: Env, call: AiCall): { url: string; init: Requ
       headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY ?? '' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: call.system }] },
-        contents: call.messages.map((t) => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.content }] })),
+        contents: call.messages.map((t, i) => ({
+          role: t.role === 'assistant' ? 'model' : 'user',
+          parts: i === imageTurn(call)
+            ? [...call.images!.map((im) => ({ inline_data: { mime_type: im.media_type, data: im.data } })), { text: t.content }] : [{ text: t.content }],
+        })),
         generationConfig: { maxOutputTokens: call.maxTokens },
       }),
     },
@@ -97,7 +110,7 @@ function stubAnswer(call: AiCall): Read {
   const last = [...call.messages].reverse().find((t) => t.role === 'user')?.content ?? '';
   const slug = call.system.match(/<<<data page ([^ \n]+)/)?.[1];
   const meta = { citations: slug ? [slug] : [], proposals: { tasks: [{ title: 'Stub task', horizon: 'short', due_at: null }], raid: [], decisions: [] } };
-  return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
+  return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n[stub: ${call.images?.length ?? 0} image(s)]\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
 }
 
 /** One model call, with the key, cap and hourly checks first and the usage row + audit (never content) after. */

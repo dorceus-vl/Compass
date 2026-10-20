@@ -27,4 +27,27 @@ assert.equal(r.headers.get('content-type'), 'application/pdf');
 assert.match(r.headers.get('content-disposition')!, /^attachment; filename="[\w.-]+"$/);
 assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
 assert.equal(r.headers.get('cache-control'), 'private, no-store');
+
+// Phase 5b: csv, pptx, png, jpg.
+const pptx = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10]), JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), TXT = new TextEncoder().encode('a,b\n1,2');
+assert.deepEqual(checkDoc(f('a.pptx', ''), ZIP), { kind: 'pptx', type: pptx });
+assert.deepEqual(checkDoc(f('a.pptx', pptx), ZIP), { kind: 'pptx', type: pptx });
+assert.ok('error' in checkDoc(f('a.pptx', ''), PDF), 'pptx needs PK');
+for (const t of ['text/csv', 'text/plain', 'application/vnd.ms-excel', '']) assert.deepEqual(checkDoc(f('a.csv', t), TXT), { kind: 'csv', type: 'text/csv' }, t);
+assert.ok('error' in checkDoc(f('a.csv', 'application/pdf'), TXT));
+assert.ok('error' in checkDoc(f('a.csv', 'text/csv'), new Uint8Array([97, 0, 98])), 'a NUL in the first bytes is not text');
+assert.deepEqual(checkDoc(f('a.png', 'image/png'), PNG), { kind: 'png', type: 'image/png' });
+assert.ok('error' in checkDoc(f('a.png', 'image/png'), JPG), 'png needs its signature');
+assert.ok('error' in checkDoc(f('a.png', 'image/jpeg'), PNG), 'declared type must match');
+assert.deepEqual(checkDoc(f('a.jpg', 'image/jpeg'), JPG), { kind: 'jpg', type: 'image/jpeg' });
+assert.deepEqual(checkDoc(f('PHOTO.JPEG', 'image/jpeg'), JPG), { kind: 'jpg', type: 'image/jpeg' });
+assert.ok('error' in checkDoc(f('a.jpg', 'image/jpeg'), PNG), 'jpg needs its signature');
+const MB = 1024 * 1024;
+assert.deepEqual(checkDoc(f('a.png', 'image/png', 3.75 * MB), PNG), { kind: 'png', type: 'image/png' }, '3.75 MB is the largest image');
+assert.deepEqual(checkDoc(f('a.png', 'image/png', 3.75 * MB + 1), PNG), { error: 'Images must be 3.75 MB or smaller.' });
+assert.deepEqual(checkDoc(f('a.jpg', 'image/jpeg', 4 * MB), JPG), { error: 'Images must be 3.75 MB or smaller.' });
+assert.deepEqual(checkDoc(f('a.csv', 'text/csv', 12 * MB), TXT), { kind: 'csv', type: 'text/csv' }, 'other files keep the 20 MB cap');
+assert.deepEqual(checkDoc(f('a.csv', 'text/csv', 11 * MB), TXT, true), { error: 'Work files must be 10 MB or smaller.' });
+assert.equal(fileResponse(new ArrayBuffer(1), 'png', 'a.png').headers.get('content-type'), 'image/png');
 console.log('uploads.test ok');

@@ -10,6 +10,7 @@ import { useLibrary } from '../library.ts';
 import { BUILTINS } from '../docs/templates.ts';
 import { useDocs } from './project/Documents.tsx';
 import { Markdown } from '../ui/Markdown.tsx';
+import { splitAttachments } from '../../../shared/attachments.ts';
 import { Icon } from '../ui/Shell.tsx';
 import { Highlight } from './Library.tsx';
 import { Link, navigate } from '../router.ts';
@@ -269,7 +270,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
       <div className="cp-msgs" ref={box}>
         {!thread && !pending && !off && <div className="card"><p style={{ margin: 0 }}>Ask about a situation, a plan or a page of the library. Pick a project to give Athena its context.</p></div>}
         {msgs.map((m, i) => m.role === 'user'
-          ? <div key={m.id} className="cp-user">{m.content}</div>
+          ? <div key={m.id} className="cp-user">{splitAttachments(m.content).text}{splitAttachments(m.content).attachments.length > 0 && <div className="row">{splitAttachments(m.content).attachments.map((a) => <span key={a.id} className="chip">{a.name}</span>)}</div>}</div>
           : <Answer key={m.id} m={m} project={project} onSave={() => void save(m)}
             onOther={i === lastAnswer && !busy && lastUser >= 0 && providerReady(usage, OTHER[m.provider ?? 'claude'])
               && !msgs.slice(lastUser).some((y) => y.role === 'assistant' && y.provider === OTHER[m.provider ?? 'claude']) && (() => void askToo(OTHER[m.provider ?? 'claude']))} />)}

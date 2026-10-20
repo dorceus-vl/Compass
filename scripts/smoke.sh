@@ -231,6 +231,58 @@ curl "${H[@]}" -X DELETE $B/api/documents/$DT >/dev/null
 curl "${H[@]}" $B/api/library/imports | grep -q "\"slug\":\"$ST\"" || fail "a trashed document's import left the device list"
 curl "${H[@]}" -X DELETE $B/api/library/$ST >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$PT >/dev/null
 echo "smoke: (p2) empty project_id 400; ask-about-page: live import 200, trashed project 404, trashed document 404 (device list keeps it)"
+# Phase 5b Task 1: Athena reads any document (stub). An xlsx and a png go in through the documents pipeline; the boundary refuses everything else before anything is stored.
+AD=$(mktemp -d)
+node --input-type=module -e "
+import { zipSync, strToU8 } from 'fflate'; import { writeFileSync } from 'node:fs';
+const wb = zipSync({ 'xl/workbook.xml': strToU8('<workbook xmlns:r=\"r\"><sheets><sheet name=\"Sheet1\" r:id=\"rId1\"/></sheets></workbook>'),
+  'xl/_rels/workbook.xml.rels': strToU8('<Relationships><Relationship Id=\"rId1\" Target=\"worksheets/sheet1.xml\"/></Relationships>'),
+  'xl/worksheets/sheet1.xml': strToU8('<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>10</v></c><c r=\"B1\"><f>A1*2</f><v>20</v></c></row></sheetData></worksheet>') });
+writeFileSync('$AD/book.xlsx', wb);
+writeFileSync('$AD/dot.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'));
+writeFileSync('$AD/data.csv', 'a,b\n1,2\n');" || fail "could not build the attachment fixtures"
+XLSX_T=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+AP1=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke athena personal","kind":"personal"}' | js d.project.id)
+AW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke athena work","kind":"work"}' | js d.project.id)
+AO=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke athena offline","kind":"personal"}' | js d.project.id)
+XU=$(up "@$AD/book.xlsx;type=$XLSX_T" -F "project_id=$AP1"); [ "$(printf '%s' "$XU" | tail -1)" = 201 ] || fail "xlsx upload: $XU"; AX=$(printf '%s' "$XU" | head -1 | js d.document.id)
+PU=$(up "@$AD/dot.png;type=image/png" -F "project_id=$AP1"); [ "$(printf '%s' "$PU" | tail -1)" = 201 ] || fail "png upload: $PU"; APN=$(printf '%s' "$PU" | head -1 | js d.document.id)
+CU=$(up "@$AD/data.csv;type=text/csv" -F "project_id=$AP1"); [ "$(printf '%s' "$CU" | tail -1)" = 201 ] || fail "csv upload: $CU"; ACS=$(printf '%s' "$CU" | head -1 | js d.document.id)
+WU=$(up "@$AD/data.csv;type=text/csv" -F "project_id=$AW"); [ "$(printf '%s' "$WU" | tail -1)" = 201 ] || fail "work csv upload: $WU"; AWD=$(printf '%s' "$WU" | head -1 | js d.document.id)
+OU=$(up "@$AD/data.csv;type=text/csv" -F "project_id=$AO"); [ "$(printf '%s' "$OU" | tail -1)" = 201 ] || fail "offline csv upload: $OU"; AOD=$(printf '%s' "$OU" | head -1 | js d.document.id)
+FU=$(up "@$AD/data.csv;type=text/csv"); [ "$(printf '%s' "$FU" | tail -1)" = 201 ] || fail "unfiled csv upload: $FU"; AFD=$(printf '%s' "$FU" | head -1 | js d.document.id)
+[ "$(up "@$AD/dot.png;type=image/jpeg" | tail -1)" = 400 ] || fail "a png declared as jpeg was accepted"
+curl "${H[@]}" -X PATCH $B/api/projects/$AO -d '{"data_boundary":"offline"}' >/dev/null
+AC=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/ai/chat -d "{\"project_id\":\"$AP1\",\"preset\":\"optimize_spreadsheet\",\"message\":\"Optimize this workbook\",\"document_ids\":[\"$AX\"]}")
+[ "$(printf '%s' "$AC" | tail -1)" = 200 ] || fail "chat with an xlsx: $AC"
+ACJ=$(printf '%s' "$AC" | head -1); ATH=$(printf '%s' "$ACJ" | js d.thread.id)
+printf '%s' "$ACJ" | js 'd.messages[1].content.includes("<<<data document book.xlsx")&&d.messages[1].content.includes("Sheet1!B1: =A1*2 → 20")&&d.messages[1].content.includes("[stub: 0 image(s)]")' | grep -q true || fail "the stub did not see the fenced workbook: $ACJ"
+printf '%s' "$ACJ" | js "d.messages[0].content.includes('[[attachments]]')&&d.messages[0].content.includes('$AX')&&!d.messages[0].content.includes('Sheet1!')" | grep -q true || fail "the stored question should hold the attachment, not its text"
+[ "$(curl "${H[@]}" $B/api/ai/threads/$ATH | js 'JSON.stringify(d.messages[0].content).includes("Sheet1!")')" = false ] || fail "extracted text was stored"
+curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"thread_id\":\"$ATH\",\"rerun\":true}" | js 'd.messages[0].content.includes("<<<data document book.xlsx")' | grep -q true || fail "a rerun lost its document"
+IM=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$AP1\",\"message\":\"What is this?\",\"document_ids\":[\"$APN\",\"$ACS\"]}")
+printf '%s' "$IM" | js 'd.messages[1].content.includes("[stub: 1 image(s)]")&&d.messages[1].content.includes("<<<data document data.csv")&&!d.messages[1].content.includes("<<<data document dot.png")' | grep -q true || fail "the stub did not report one image: $IM"
+N0=$(NMSG); AUSE=$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')
+refused() { # what, body: 409 document_boundary
+  local r; r=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/ai/chat -d "$2")
+  [ "$(printf '%s' "$r" | tail -1)" = 409 ] && printf '%s' "$r" | grep -q '"error":"document_boundary"' || fail "$1 not refused: $r"
+}
+refused "an offline project's document" "{\"message\":\"x\",\"document_ids\":[\"$AOD\"]}"
+refused "a work document in a personal chat" "{\"message\":\"x\",\"document_ids\":[\"$AWD\"]}"
+refused "another project's document" "{\"project_id\":\"$AP1\",\"message\":\"x\",\"document_ids\":[\"$AWD\"]}"
+refused "an unfiled document in a project chat" "{\"project_id\":\"$AP1\",\"message\":\"x\",\"document_ids\":[\"$AFD\"]}"
+refused "a document that does not exist" "{\"message\":\"x\",\"document_ids\":[\"nope\"]}"
+curl "${H[@]}" -X DELETE $B/api/documents/$ACS >/dev/null
+refused "a trashed document" "{\"project_id\":\"$AP1\",\"message\":\"x\",\"document_ids\":[\"$ACS\"]}"
+MORE="{\"project_id\":\"$AP1\",\"message\":\"x\",\"document_ids\":[\"$AX\",\"$AX\",\"$APN\",\"a\",\"b\"]}" # four distinct ids
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/ai/chat -d "$MORE")" = 400 ] || fail "more than 3 documents"
+[ "$(NMSG)" = "$N0" ] || fail "a refusal stored rows ($N0 -> $(NMSG))"
+[ "$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')" = "$AUSE" ] || fail "a refusal made a model call"
+FREE="{\"message\":\"x\",\"document_ids\":[\"$AFD\"]}"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/ai/chat -d "$FREE")" = 200 ] || fail "an unfiled document in a personal chat"
+echo "smoke: (p3) athena: xlsx -> fenced workbook in the stub, the stored question keeps names and ids only, a rerun keeps its document, png -> 1 image; offline, work-in-personal, other-project, unfiled-in-project, missing, trashed -> 409 document_boundary with nothing stored and no model call; more than 3 -> 400"
+for x in $AX $APN $AWD $AOD $AFD; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
+for x in $AP1 $AW $AO; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done; rm -rf $AD
 # Status report data (Phase 3 Task 10): W1 is a cloud work project here, so its rows are sealed and come back readable; the stub writes the summary.
 curl "${H[@]}" -X POST $B/api/projects/$W1/raid -d '{"type":"risk","text":"Smoke report risk","probability":4,"impact":5}' >/dev/null
 SR='{"project_id":"'$W1'","from":"2026-01-01","to":"2026-12-31","ai":true}'

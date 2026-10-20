@@ -53,7 +53,7 @@ documents.post('/', async (c) => {
   if (!name) return c.json({ error: 'The file needs a name.' }, 400);
   const sealed = pkind === 'work';
   // Size and type are judged on the File before its bytes are copied out, so an oversize work file is refused without a second copy.
-  const early = checkDoc({ name, type: file.type, size: file.size }, new Uint8Array(await file.slice(0, 8).arrayBuffer()), sealed);
+  const early = checkDoc({ name, type: file.type, size: file.size }, new Uint8Array(await file.slice(0, 4096).arrayBuffer()), sealed);
   if ('error' in early) return c.json({ error: early.error }, 400);
   const checked = early, size = file.size;
   let bytes: Uint8Array | null = new Uint8Array(await file.arrayBuffer());

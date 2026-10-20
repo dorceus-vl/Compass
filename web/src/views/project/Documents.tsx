@@ -27,7 +27,7 @@ export function useDocs(project: string | null) {
 }
 
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-const KIND: Record<string, string> = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', md: 'Markdown', txt: 'Text' };
+const KIND: Record<string, string> = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', md: 'Markdown', txt: 'Text', csv: 'CSV', pptx: 'PowerPoint', png: 'Image', jpg: 'Image' };
 
 function Row({ d, project, off, relay, reload }: { d: DocumentRow; project: Project | null; off: boolean; relay: boolean; reload: () => Promise<void> }) {
   const [rev, setRev] = useState(0);
@@ -45,7 +45,7 @@ function Row({ d, project, off, relay, reload }: { d: DocumentRow; project: Proj
     if (name === d.name) return;
     if (!name || !(await act(() => api(`/documents/${d.id}`, { method: 'PATCH', json: { name } })))) setRev((n) => n + 1); // blank or refused: show the stored name again
   };
-  const lib = d.kind !== 'xlsx';
+  const lib = !['xlsx', 'png', 'jpg'].includes(d.kind);
   return (
     <div className="acard doc-row" style={accent(project ? projectColor(project) : 'var(--text-dim)')}>
       <div className="row" style={{ flexWrap: 'nowrap' }}>
@@ -116,7 +116,7 @@ export function Documents({ project }: { project: Project | null }) {
       {off && <div className="sub" role="note">Offline: showing the last copy. Uploads and changes need a connection.</div>}
       <div className={`drop ${over ? 'over' : ''}`} onDragOver={(e) => { e.preventDefault(); if (!off) setOver(true); }} onDragLeave={() => setOver(false)} onDrop={off ? (e) => e.preventDefault() : drop}>
         <label className="btn primary" aria-disabled={off || busy}>Choose a file
-          <input type="file" className="sr-only" accept=".pdf,.docx,.xlsx,.md,.txt" disabled={off || busy} onChange={(e) => { void upload(e.target.files); e.target.value = ''; }} /></label>
+          <input type="file" className="sr-only" accept=".pdf,.docx,.xlsx,.pptx,.csv,.md,.txt,.png,.jpg,.jpeg" disabled={off || busy} onChange={(e) => { void upload(e.target.files); e.target.value = ''; }} /></label>
         <span className="sub">or drop one here</span>
       </div>
       <div className="sr-only" role="status" aria-live="polite">{error || status}</div>

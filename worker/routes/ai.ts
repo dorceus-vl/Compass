@@ -8,8 +8,13 @@ import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
 import { shared as sharedItem } from '../lib/agent.ts';
-import { runAi, aiUsage, AiRefused, type AiTurn } from '../lib/ai.ts';
+import { runAi, aiUsage, AiRefused, type AiTurn, type AiImage } from '../lib/ai.ts';
 import { buildSystem, fence, trimHistory } from '../lib/prompt.ts';
+import { checkAttachments, MAX_ATTACHMENTS } from '../lib/attachments.ts';
+import { withAttachments, splitAttachments, type Attachment } from '../../shared/attachments.ts';
+import { loadDoc, readBytes } from './documents.ts';
+import { attachmentText } from '../lib/extract.ts';
+import { MAX_IMAGE_BYTES } from '../lib/uploads.ts';
 import { retrieve, modelPage } from '../lib/library.ts';
 import { projectAccess, projectContext } from '../lib/project-context.ts';
 
@@ -22,6 +27,7 @@ async function toMessage(env: Env, row: MsgRow): Promise<AiMessage> {
   return { ...m, citations: JSON.parse(m.citations || '[]'), proposals: m.proposals ? JSON.parse(m.proposals) : null };
 }
 const liveThread = (env: Env, id: string) => env.DB.prepare('SELECT * FROM ai_threads WHERE id = ?1 AND deleted_at IS NULL').bind(id).first<AiThread>();
+const toBase64 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
 const threadMessages = async (env: Env, id: string) =>
   (await env.DB.prepare(`SELECT * FROM ai_messages WHERE thread_id = ?1 ${MSG_ORDER}`).bind(id).all<MsgRow>()).results;
 
@@ -41,6 +47,9 @@ ai.post('/chat', async (c) => {
   if (!absent(b.thread_id) && typeof b.thread_id !== 'string') return c.json({ error: 'thread_id must be text' }, 400);
   if (!absent(b.project_id) && (typeof b.project_id !== 'string' || !b.project_id)) return c.json({ error: 'project_id must be a project id' }, 400);
   if (rerun && absent(b.thread_id)) return c.json({ error: 'rerun needs a thread_id' }, 400);
+  if (!absent(b.document_ids) && (!Array.isArray(b.document_ids) || !b.document_ids.every((x) => typeof x === 'string' && x))) return c.json({ error: 'document_ids must be a list of document ids' }, 400);
+  let documentIds = [...new Set((b.document_ids as string[] | undefined) ?? [])];
+  if (documentIds.length > MAX_ATTACHMENTS) return c.json({ error: `Attach at most ${MAX_ATTACHMENTS} documents.` }, 400);
   const settings = await getSettings(env);
   const provider: Provider = (b.provider as Provider | undefined) ?? settings.default_provider;
 
@@ -56,14 +65,39 @@ ai.post('/chat', async (c) => {
     const { boundary, kind } = access;
     if (boundary === 'offline') throw new AiRefused('offline_boundary', 'This project is Offline only. Library search, templates and saved answers still work.');
 
-    // 4. History (and, for a rerun, the question).
+    // 4. History (and, for a rerun, the question and its documents).
     let history: AiTurn[] = [];
     if (thread) {
       const turns = await Promise.all((await threadMessages(env, thread.id)).map((r) => toMessage(env, r)));
       const cut = rerun ? turns.map((m) => m.role).lastIndexOf('user') : turns.length;
       if (cut < 0) return c.json({ error: 'Not found' }, 404);
-      if (rerun) message = turns[cut].content;
+      if (rerun) { // the question and its documents, as stored; the documents go through the boundary again below
+        const stored = splitAttachments(turns[cut].content);
+        message = stored.text; documentIds = stored.attachments.map((a) => a.id);
+      }
       history = turns.slice(0, cut).map((m) => ({ role: m.role, content: m.content }));
+    }
+
+    // 4b. Attachments: each must belong to this thread's project (or be unfiled while the thread is personal), live, in a cloud project. Nothing is stored or sent before this passes.
+    const docs: Record<string, NonNullable<Awaited<ReturnType<typeof loadDoc>>> | null> = {};
+    for (const id of documentIds) docs[id] = await loadDoc(env, id);
+    const boundaries: Record<string, 'cloud' | 'offline' | undefined> = {};
+    for (const pid of new Set(Object.values(docs).flatMap((d) => (d?.project_id ? [d.project_id] : [])))) boundaries[pid] = (await projectAccess(env, pid))?.boundary;
+    const verdict = checkAttachments(documentIds, docs, projectId, boundaries);
+    if (verdict === 'document_boundary') return c.json({ error: 'document_boundary', message: 'Athena can only read documents from this project (or unfiled ones in a personal chat), and never from an Offline-only project.' }, 409);
+    const attached: Attachment[] = [], fenced: string[] = [], images: AiImage[] = [];
+    for (const id of documentIds) {
+      const d = docs[id]!, bytes = await readBytes(env, d);
+      if (!bytes) return c.json({ error: 'Not found' }, 404);
+      attached.push({ id, name: d.name });
+      if (d.kind === 'png' || d.kind === 'jpg') {
+        if (bytes.length > MAX_IMAGE_BYTES) return c.json({ error: 'Images must be 3.75 MB or smaller.' }, 400);
+        images.push({ media_type: d.kind === 'png' ? 'image/png' : 'image/jpeg', data: toBase64(bytes) });
+      } else {
+        let t: { text: string; truncated: boolean };
+        try { t = await attachmentText(d.kind, bytes); } catch { return c.json({ error: `${d.name} could not be read.` }, 400); }
+        fenced.push(fence('document ' + d.name, t.text || '(no text found)'));
+      }
     }
 
     // 5. Library pages (model-facing only).
@@ -77,7 +111,7 @@ ai.post('/chat', async (c) => {
     // 6–8. Prompt, model call, validated answer.
     const asked = now();
     const system = buildSystem({ today: localDate(settings.tz), pages, project: projectId ? await projectContext(env, projectId) : null, preset: preset?.id ?? null });
-    const out = await runAi(env, preset?.feature ?? 'copilot', { provider, system, messages: [...trimHistory(history), { role: 'user', content: message }], maxTokens: 2000 });
+    const out = await runAi(env, preset?.feature ?? 'copilot', { provider, system, messages: [...trimHistory(history), { role: 'user', content: [message, ...fenced].join('\n\n') }], maxTokens: 2000, images });
     const answer = splitAnswer(out.text, new Set(pages.map((p) => p.slug)));
     // An empty answer (e.g. Gemini spent its budget thinking) is a provider failure: nothing is stored.
     if (!answer.content) throw new AiRefused('provider_error', `${provider === 'claude' ? 'Claude' : 'Gemini'} returned an empty answer.`);
@@ -90,7 +124,7 @@ ai.post('/chat', async (c) => {
       id: crypto.randomUUID(), thread_id: th.id, role, provider: null, content, citations: [], proposals: null, cost_micro: 0, saved: 0, created_at: at, enc_v: 0, ...extra,
     });
     const fresh = [
-      ...(rerun ? [] : [msg('user', message, {}, asked)]),
+      ...(rerun ? [] : [msg('user', withAttachments(message, attached), {}, asked)]),
       msg('assistant', answer.content, { provider, citations: answer.citations, proposals: isEmpty(answer.proposals) ? null : answer.proposals, cost_micro: out.cost_micro }, t),
     ];
     const stmts: D1PreparedStatement[] = [];

@@ -82,7 +82,7 @@ export interface ChangeRequest {
   created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
 }
 export interface Lesson { id: string; project_id: string; text: string; category: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
-export type DocKind = 'pdf' | 'docx' | 'xlsx' | 'md' | 'txt';
+export type DocKind = 'pdf' | 'docx' | 'xlsx' | 'md' | 'txt' | 'csv' | 'pptx' | 'png' | 'jpg';
 export interface DocumentRow {
   id: string; name: string; kind: DocKind; size: number; content_type: string; project_id: string | null; is_template: number;
   placeholders: string[]; text_indexed: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
