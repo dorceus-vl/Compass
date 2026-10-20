@@ -210,9 +210,6 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 .cp-item small{color:var(--text-faint);font-size:12px}
 .cp-item[aria-current="true"]{border-color:var(--accent)}
 .cp-top{padding:2px 0}
-.cp-foot{justify-content:flex-start}
-.cp-foot .btn{padding:8px 14px}
-.cp-foot .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .cp-err{display:flex;gap:12px;align-items:center;justify-content:space-between;border-color:color-mix(in srgb,var(--danger) 40%,transparent);color:var(--danger)}
 .cp-off{display:grid;gap:10px}
 .ath-compose textarea{resize:vertical}
@@ -823,8 +820,10 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
   .ath{grid-template-columns:minmax(0,1fr)}
   .ath-main{padding:14px}
   /* Phone: her portrait stays on top as a short banner so the answer is still in view. */
-  .ath-stage{z-index:2;top:8px;padding:10px;display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:10px}
-  .ath-stage .ath-frame{aspect-ratio:3/4;max-height:none}
+  .ath{--ath-banner:112px} /* the sticky banner's height: new messages scroll to just below it */
+  .ath-stage{z-index:2;top:8px;padding:8px;height:var(--ath-banner);display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:10px}
+  .ath-answer .cp-msgs>*{scroll-margin-top:calc(var(--ath-banner) + 8px + 12px)}
+  .ath-stage .ath-frame{aspect-ratio:3/4;max-height:none;border-radius:12px}
   .ath-stage .ath-tag span:last-child,.ath-traits{display:none}
   .ath-stage .ath-tag{left:6px;top:6px;padding:4px 6px}
 }

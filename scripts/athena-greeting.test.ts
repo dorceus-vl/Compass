@@ -24,4 +24,5 @@ assert.deepEqual(dueItems(tasks, projects, T, 'p').map((x) => x.id), ['g']);
 assert.equal(athenaGreeting(9, items, T), 'Good morning, Vlad. 3 items need you: "Late one" (3 days late) and "Cloud project" (due today), and 1 more. Want to start there, or bring me something to polish?');
 assert.match(athenaGreeting(14, [items[2]], T), /^Good afternoon, Vlad\. One item needs you: "Today one" \(due today\)\./);
 assert.match(athenaGreeting(20, [], T), /^Good evening, Vlad\. Nothing is due or overdue\./);
+assert.match(athenaGreeting(9, [task({ title: 'A', due_at: '2026-10-19' }), task({ title: 'B', due_at: T })], T), /"A" \(due yesterday\) and "B" \(due today\)\. Want/);
 console.log('athena-greeting ok');

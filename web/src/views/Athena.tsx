@@ -342,7 +342,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
     <>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{live}</div>
       <section className={`ath-compose${over ? ' over' : ''}`} aria-label="Ask Athena"
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={drop}>
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }} onDrop={drop}>
         <label className="eyebrow" htmlFor="ath-ask">Ask Athena, or drop a file here</label>
         <textarea id="ath-ask" ref={ta} className="field" rows={3} value={text} maxLength={8000}
           placeholder={card ? card.empty : more ? more.prompt : 'Paste an email, a status paragraph, or ask a question…'}
@@ -357,7 +357,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
             ? <div className="chip cp-lock" aria-label="Project">
                 <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? 'None (personal)'}</b>
                 <small>{thread ? 'stays with this conversation' : 'this project'}</small></div>
-            : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={projSel}
+            : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={projSel} disabled={up}
                 onChange={(e) => { setSel(e.target.value); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
                 <option value="">None (personal)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
           <div className="seg" role="group" aria-label="Provider">
@@ -369,7 +369,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
         <div className="ath-crow">
           <div className="ath-types" aria-label="Files Athena reads">{TYPES.map((t) => <span key={t}>{t}</span>)}</div>
           <div className="ath-btns">
-            <label className="ath-icon" aria-disabled={up || busy} title="Attach a file">
+            <label className="ath-icon" title="Attach a file">
               <Icon name="clip" /><span className="sr-only">Attach a file</span>
               <input type="file" multiple className="sr-only" accept={ACCEPT} disabled={up || busy} onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} /></label>
             {/* Task 4 adds the microphone button here. */}
@@ -379,8 +379,8 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
         <small className="sub">⌘↵ to send</small>
       </section>
 
-      <section aria-label="Quick help" className="ath-help">
-        <div className="eyebrow">Or start with</div>
+      <section aria-labelledby="ath-or" className="ath-help">
+        <div className="eyebrow" id="ath-or">Or start with</div>
         <div className="ath-cards" role="group" aria-label="Quick help">
           {CARDS.map((c) => { const p = PRESETS.find((x) => x.id === c.id)!; return (
             <button type="button" key={c.id} className="ath-card" aria-pressed={preset === c.id} onClick={() => pickCard(c.id)}>
@@ -397,7 +397,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
           {thread && <><span className="ath-title">{thread.title}</span><span className="chip">{thread.project_id ? projects.find((p) => p.id === thread.project_id)?.name ?? 'Project' : 'Personal'}</span></>}
         </div>
         <div className="cp-msgs" ref={box}>
-          {!thread && !pending && !off && <Greeting projectId={projectId} projectName={projectId ? project?.name : undefined} />}
+          {!id && !thread && !pending && !off && <Greeting projectId={projectId} projectName={projectId ? project?.name : undefined} />}
           {msgs.map((m, i) => { const s = m.role === 'user' ? splitAttachments(m.content) : null; return s
             ? <div key={m.id} className="cp-user">{s.text}{s.attachments.length > 0 && <div className="row">{s.attachments.map((a) => <span key={a.id} className="chip file">{a.name}</span>)}</div>}</div>
             : <Answer key={m.id} m={m} project={project} onSave={() => void save(m)}
@@ -440,7 +440,7 @@ export function Workspace({ projectId, openId, onOpen, page, usage, refreshUsage
       {!projectId && <Stage state={thinking ? 'thinking' : 'idle'} />}
       <div className="ath-main">
         <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} usage={usage} onOpen={onOpen} onBusy={setThinking} onSent={() => { setRev((x) => x + 1); refreshUsage(); }} />
-        <details className="ath-threads">
+        <details className="ath-threads" open={!!projectId || undefined}>
           <summary>Conversations{n ? ` (${n})` : ''}</summary>
           <button type="button" className="btn primary" onClick={() => onOpen('new')}>New conversation</button>
           <Threads projectId={projectId} openId={openId} onOpen={onOpen} rev={rev} />
