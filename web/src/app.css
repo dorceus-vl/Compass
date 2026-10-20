@@ -265,3 +265,16 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
   .printdoc thead{display:table-header-group}
 }
 .chip.ph{text-transform:none;letter-spacing:0}
+
+/* Phase 3 Task 12: today's brief, AI settings, gate toggle */
+.brief p{margin:6px 0 10px;font-size:15px;line-height:1.5;overflow-wrap:anywhere}
+.ai-row{display:grid;grid-template-columns:1fr 200px;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border-soft);font-size:14px}
+.ai-row code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.gate-btn{font:inherit;font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid var(--field-border);background:transparent;color:var(--text-faint);cursor:pointer}
+.gate-btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+@media (max-width:760px),(pointer:coarse){
+  .brief .btn,.export-card .btn,.ms-form .btn,.ms-form .field,.gate-btn{min-height:44px}
+  .gate-btn{min-width:44px;padding:0 14px}
+  .ai-card .field{min-height:44px}
+  .ai-row{grid-template-columns:1fr}
+}

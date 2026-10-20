@@ -25,7 +25,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
   const [open, setOpen] = useState<string | null>(null);
   const [newTask, setNewTask] = useState('');
   const [boundaryBusy, setBoundaryBusy] = useState(false);
-  const [newMs, setNewMs] = useState({ name: '', due_at: '' });
+  const [newMs, setNewMs] = useState({ name: '', due_at: '', gate: false });
   const p = projects.find((x) => x.id === id);
   // A tmp- id is swapped for the server's once sync replays the create; follow it instead of showing "not found".
   useEffect(() => {
@@ -99,10 +99,13 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
         <div className="hz"><div className="hh"><b>Milestones</b><small>{ms.length}</small></div>
           {ms.map((m) => <div key={m.id} className="task"><button type="button" className={`cb ${m.done_at ? 'done' : ''}`} aria-pressed={!!m.done_at} aria-label={`${m.name}: done`} onClick={() => updateMilestone(m.id, { done_at: m.done_at ? null : today() })} />
             <div style={{ flex: 1 }}><div className={`tt ${m.done_at ? 'done' : ''}`}>{m.gate ? '◆ ' : ''}{m.name}</div>
-              <div className="meta"><input type="date" aria-label={`${m.name} due date`} className="chip" style={{ background: 'transparent', color: 'inherit' }} value={m.due_at ?? ''} onChange={(e) => updateMilestone(m.id, { due_at: e.target.value || null })} />{m.due_at && <span className={`chip ${fmtDue(m.due_at).tone}`}>{fmtDue(m.due_at).text}</span>}</div></div></div>)}
-          <form onSubmit={async (e) => { e.preventDefault(); if (!newMs.name.trim()) return; await createMilestone(p.id, { name: newMs.name.trim(), due_at: newMs.due_at || null }); setNewMs({ name: '', due_at: '' }); }} style={{ display: 'grid', gap: 6 }}>
+              <div className="meta"><input type="date" aria-label={`${m.name} due date`} className="chip" style={{ background: 'transparent', color: 'inherit' }} value={m.due_at ?? ''} onChange={(e) => updateMilestone(m.id, { due_at: e.target.value || null })} />
+                <button type="button" className="gate-btn" aria-pressed={!!m.gate} aria-label={`${m.name}: gate`} onClick={() => updateMilestone(m.id, { gate: m.gate ? 0 : 1 })}>Gate</button>{m.due_at && <span className={`chip ${fmtDue(m.due_at).tone}`}>{fmtDue(m.due_at).text}</span>}</div></div></div>)}
+          <form onSubmit={async (e) => { e.preventDefault(); if (!newMs.name.trim()) return; await createMilestone(p.id, { name: newMs.name.trim(), due_at: newMs.due_at || null, gate: newMs.gate ? 1 : 0 }); setNewMs({ name: '', due_at: '', gate: false }); }} className="ms-form" style={{ display: 'grid', gap: 6 }}>
             <input className="field" placeholder="New milestone" value={newMs.name} onChange={(e) => setNewMs({ ...newMs, name: e.target.value })} />
-            <div className="row"><input className="field" type="date" value={newMs.due_at} onChange={(e) => setNewMs({ ...newMs, due_at: e.target.value })} /><button className="btn primary">Add</button></div></form></div>
+            <div className="row"><input className="field" type="date" value={newMs.due_at} onChange={(e) => setNewMs({ ...newMs, due_at: e.target.value })} aria-label="Due date" />
+              <label className="tap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}><input type="checkbox" checked={newMs.gate} onChange={(e) => setNewMs({ ...newMs, gate: e.target.checked })} style={{ accentColor: 'var(--accent)' }} />Gate</label>
+              <button className="btn primary">Add</button></div></form></div>
       </div>}
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>

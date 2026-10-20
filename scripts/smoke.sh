@@ -226,6 +226,43 @@ curl "${H[@]}" -X POST $B/api/reports/status -d "$SR" | js "d.ai_summary===null&
 [ "$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')" = "$N1" ] || fail "an offline report made a model call"
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/reports/status -d '{"project_id":"'$W1'","from":"2026-02-30","to":"2026-12-31"}')" = 400 ] || fail "bad date accepted"
 echo "smoke: (r) status report data readable for a work project; cloud -> stub summary; offline -> ai_refused offline_boundary, no model call"
+# Task 12: today's brief on the stub (an offline project's task title must never reach the model input), the export, AI settings, a gate milestone.
+BO=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke brief offline","kind":"work"}' | js d.project.id)
+BC=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke brief cloud","kind":"personal"}' | js d.project.id)
+curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke offline secret $R\",\"project_id\":\"$BO\",\"due_at\":\"2026-01-01\"}" | grep -q '"task"' || fail "brief offline task"
+curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke cloud visible $R\",\"project_id\":\"$BC\",\"due_at\":\"2026-01-02\"}" | grep -q '"task"' || fail "brief cloud task"
+curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke loose personal $R\",\"kind\":\"personal\",\"due_at\":\"2026-01-03\"}" | grep -q '"task"' || fail "brief loose task"
+curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke loose work $R\",\"kind\":\"work\",\"due_at\":\"2026-01-04\"}" | grep -q '"task"' || fail "brief loose work task"
+BR=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/ai/brief); [ "$(printf '%s' "$BR" | tail -1)" = 200 ] || fail "brief: $BR"
+BT=$(printf '%s' "$BR" | head -1 | js d.text)
+case "$BT" in "Stub answer for:"*) ;; *) fail "brief text: $BT";; esac
+case "$BT" in *"Smoke cloud visible $R"*) ;; *) fail "cloud project task missing from the model input";; esac
+case "$BT" in *"Smoke loose personal $R"*) ;; *) fail "personal task without a project missing from the model input";; esac
+case "$BT" in *"Smoke offline secret"*) fail "offline project task reached the model input";; esac
+case "$BT" in *"Smoke loose work"*) fail "work task without a project reached the model input";; esac
+printf '%s' "$BT" | grep -Eq '\+[0-9]+ items from offline projects' || fail "no offline count line: $BT"
+printf '%s' "$BT" | grep -Eq '\+[0-9]+ work items without a project' || fail "no no-project count line: $BT"
+[ "$(D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='brief'" | js 'd[0].results[0].n')" -ge 1 ] || fail "brief not counted in ai_usage"
+echo "smoke: (s) brief on the stub: cloud and personal titles in, offline-project and no-project work titles out, both count lines present"
+EX=$(curl "${H[@]}" -D $J.h -X GET $B/api/export -w '\n%{http_code}' ); [ "$(printf '%s' "$EX" | tail -1)" = 200 ] || fail "export: $(printf '%s' "$EX" | tail -1)"
+curl "${H[@]}" -X POST $B/api/projects/$BO/raid -d "{\"type\":\"risk\",\"text\":\"Smoke export risk $R\",\"probability\":2,\"impact\":2}" | grep -q '"item"' || fail "export raid create"
+curl "${H[@]}" -X DELETE $B/api/projects/$BC >/dev/null # trashed rows are exported too
+EXJ=$(curl "${H[@]}" $B/api/export)
+printf '%s' "$EXJ" | js "d.version===1&&d.raid_items.some(r=>r.text==='Smoke export risk $R')&&d.tasks.some(t=>t.title==='Smoke offline secret $R')&&d.projects.some(p=>p.id==='$BC'&&p.deleted_at)&&!('auth_sessions' in d)&&!('push_subscriptions' in d)&&!('audit_log' in d)&&!('ai_usage' in d)&&d.documents.every(x=>!('r2_key' in x))&&d.raid_items.every(r=>!('enc_v' in r))" | grep -q true || fail "export content"
+grep -qi '^content-disposition: attachment; filename="compass-export-[0-9-]*\.json"' $J.h || fail "export is not an attachment: $(cat $J.h)"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action='export'" | js 'd[0].results[0].n')" -ge 1 ] || fail "export not audited"
+rm -f $J.h
+echo "smoke: (t) export: 200 JSON attachment, work RAID text in plaintext, trashed project included, no sessions, push, audit or usage, audited"
+AIS=$(curl "${H[@]}" -X PATCH $B/api/settings -d '{"ai_monthly_cap_micro":5000000,"default_provider":"gemini"}'); printf '%s' "$AIS" | js 'd.ai_monthly_cap_micro===5000000&&d.default_provider==="gemini"' | grep -q true || fail "ai settings: $AIS"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/settings -d '{"ai_monthly_cap_micro":-1}')" = 400 ] || fail "negative cap accepted"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/settings -d '{"default_provider":"openai"}')" = 400 ] || fail "unknown provider accepted"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"ai_monthly_cap_micro":20000000,"default_provider":"claude"}' >/dev/null
+echo "smoke: (u) AI settings: cap and default provider saved, bad values 400"
+GM=$(curl "${H[@]}" -X POST $B/api/projects/$BO/milestones -d '{"name":"Smoke gate","due_at":"2026-12-01","gate":1}' | js d.milestone.id)
+[ "$(curl "${H[@]}" -X PATCH $B/api/milestones/$GM -d '{"gate":0}' | js d.milestone.gate)" = 0 ] || fail "gate toggle off"
+[ "$(curl "${H[@]}" -X PATCH $B/api/milestones/$GM -d '{"gate":1}' | js d.milestone.gate)" = 1 ] || fail "gate toggle on"
+echo "smoke: (v) milestone created as a gate, toggled off and on"
+curl "${H[@]}" -X DELETE $B/api/projects/$BO >/dev/null
 for x in $TH $TW; do curl "${H[@]}" -X DELETE $B/api/ai/threads/$x | grep -q '"ok":true' || fail "thread trash"; done
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/ai/threads/$TH)" = 404 ] || fail "trashed thread still served"
 curl "${H[@]}" -X DELETE $B/api/projects/$P1 >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$W1 >/dev/null

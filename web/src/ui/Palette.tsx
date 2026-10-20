@@ -5,6 +5,9 @@ import { today } from '../dates.ts';
 import { navigate } from '../router.ts';
 import { toast } from './dialogs.tsx';
 import { TaskSheet } from './TaskSheet.tsx';
+import { useLibrary } from '../library.ts';
+import { useDocs } from '../views/project/Documents.tsx';
+import { askCopilot } from '../views/Copilot.tsx';
 
 const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/settings', 'Settings'], ['/trash', 'Trash']];
 
@@ -14,6 +17,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const { find } = useLibrary();
+  const { docs } = useDocs(null);
   useEffect(() => { ref.current?.showModal(); }, []);
   const jump = q.startsWith('/');
   const needle = q.replace(/^\//, '').toLowerCase();
@@ -25,6 +30,9 @@ export function Palette({ onClose }: { onClose: () => void }) {
         ...(parsed.title ? [{ label: `Add "${parsed.title}"`, hint, run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, tags: JSON.stringify(parsed.tags) }); toast('Added'); } }] : []),
         ...projects.filter((p) => needle && p.name.toLowerCase().includes(needle)).slice(0, 3).map((p) => ({ label: p.name, hint: 'Project', run: () => { navigate(`/projects/${p.id}`); ref.current?.close(); } })),
         ...tasks.filter((t) => needle && !t.deleted_at && t.status !== 'done' && t.title.toLowerCase().includes(needle)).slice(0, 6).map((t) => ({ label: t.title, hint: 'Task', run: () => setOpen(t.id) })),
+        ...(needle ? find(needle, 5) : []).map(({ page }) => ({ label: `Library · ${page.title}`, hint: 'Library', run: () => { navigate(`/library/${page.slug}`); ref.current?.close(); } })),
+        ...docs.filter((d) => needle && d.name.toLowerCase().includes(needle)).slice(0, 5).map((d) => ({ label: d.name, hint: 'Document', run: () => { navigate(d.project_id ? `/projects/${d.project_id}/documents` : '/settings'); ref.current?.close(); } })),
+        ...(q.trim() ? [{ label: `Ask the copilot: ${q.trim()}`, hint: 'Copilot', run: () => { askCopilot(q.trim()); ref.current?.close(); } }] : []),
       ];
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, items.length - 1)); }

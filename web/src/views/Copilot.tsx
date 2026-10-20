@@ -157,6 +157,15 @@ function Answer({ m, project, onSave, onOther }: { m: AiMessage; project: Projec
 }
 
 // ---------------------------------------------------------------- conversation + composer
+/** Text for the composer, handed over by the command palette (a module variable, so it never sits in a URL). */
+let prefill = '';
+const ASK = 'compass:ask';
+export function askCopilot(text: string) {
+  prefill = text;
+  const here = location.pathname.startsWith('/copilot');
+  navigate('/copilot/new');
+  if (here) window.dispatchEvent(new Event(ASK)); // a composer that is already open takes it; a new one reads it on mount
+}
 type Err = { message: string; again: 'send' | Provider };
 function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
   id: string | null; projectId?: string; page?: string; usage: Usage | null; onOpen: (id: string | null, replace?: boolean) => void; onSent: () => void;
@@ -165,7 +174,13 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent }: {
   const [thread, setThread] = useState<AiThread | null>(null);
   const [msgs, setMsgs] = useState<AiMessage[]>([]);
   const [missing, setMissing] = useState(false);
-  const [text, setText] = useState(page ? `About [[${page}]]: ` : '');
+  const [text, setText] = useState(() => prefill || (page ? `About [[${page}]]: ` : ''));
+  useEffect(() => {
+    prefill = ''; // taken by the initial state above
+    const take = () => { if (prefill) { setText(prefill); prefill = ''; } };
+    window.addEventListener(ASK, take);
+    return () => window.removeEventListener(ASK, take);
+  }, []);
   const [preset, setPreset] = useState<PresetId | null>(null);
   const [sel, setSel] = useState('');
   const [provider, setProvider] = useState<Provider>('claude');

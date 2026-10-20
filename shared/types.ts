@@ -117,3 +117,12 @@ export interface ReportModel {
   status: { headline: string; progress: string; next_steps: string };
   ai: { summary: string };
 }
+
+/** GET /api/export: every table the user wrote, decrypted, trashed rows included (deleted_at set). Rows are as stored (JSON columns stay text) minus enc_v. */
+type Raw = Record<string, unknown>[];
+export interface ExportBundle {
+  exported_at: string; version: 1; settings: Settings;
+  projects: Omit<Project, 'enc_v'>[]; milestones: Omit<Milestone, 'enc_v'>[]; tasks: Omit<Task, 'enc_v'>[]; task_events: Raw;
+  raid_items: Omit<RaidItem, 'enc_v'>[]; change_requests: Omit<ChangeRequest, 'enc_v'>[]; decisions: Omit<Decision, 'enc_v'>[]; lessons: Omit<Lesson, 'enc_v'>[];
+  meeting_reviews: Raw; inbox_items: Raw; rules: Raw; documents: Raw; library_pages: Raw; ai_threads: Raw; ai_messages: Raw;
+}

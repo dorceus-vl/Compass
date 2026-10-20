@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
-import type { Settings, Status, PushType } from '../../../shared/types.ts';
+import { strToU8, zipSync } from 'fflate';
+import type { ExportBundle, Provider, Settings, Status, PushType } from '../../../shared/types.ts';
 import { api, logout, online } from '../api.ts';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { Link } from '../router.ts';
@@ -8,6 +9,9 @@ import { replay } from '../store/sync.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
 import { Documents } from './project/Documents.tsx';
+import { loadUsage, providerReady, spend, type Usage } from '../copilot.ts';
+import { saveBytes } from '../docs/download.ts';
+import { exportMarkdown } from '../docs/export-md.ts';
 
 type Patch = Partial<Omit<Settings, 'wip_limits' | 'push'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']> };
 type Save = (patch: Patch) => Promise<void>;
@@ -65,6 +69,8 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Notifications s={s} save={save} />
       <Rules />
       <Email s={s} save={save} />
+      <Ai s={s} save={save} />
+      <ExportCard />
       <div className="card">
         <div className="eyebrow" style={{ marginBottom: 6 }}>Documents</div>
         <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-dim)' }}>Unfiled documents: files that are not in a project. Project files live on the project's Documents tab.</p>
@@ -175,6 +181,58 @@ function Email({ s, save }: { s: Settings; save: Save }) {
       </div>
       <div className="row"><input className="field" style={{ maxWidth: 240 }} placeholder="example.com" value={draft} aria-label="Add a work email domain" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }} /><button type="button" className="btn" onClick={add}>Add domain</button></div>
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Email from these domains becomes a work task.</p>
+    </div>
+  );
+}
+
+const KEY_NAME: Record<Provider, string> = { claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY' };
+const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude', gemini: 'Gemini' };
+
+function Ai({ s, save }: { s: Settings; save: Save }) {
+  const [usage, setUsage] = useState<Usage | null>(null);
+  useEffect(() => { loadUsage().then(setUsage).catch(() => {}); }, [s.ai_monthly_cap_micro]);
+  const dollars = +(s.ai_monthly_cap_micro / 1e6).toFixed(2);
+  const row = (label: string, el: ReactElement) => <label key={label} className="ai-row">{label}{el}</label>;
+  return (
+    <div className="card ai-card">
+      <div className="eyebrow" style={{ marginBottom: 6 }}>AI</div>
+      {row('Default provider', <select className="field" value={s.default_provider} onChange={(e) => void save({ default_provider: e.target.value as Provider })}>
+        {(['claude', 'gemini'] as Provider[]).map((p) => <option key={p} value={p}>{PROVIDER_NAME[p]}</option>)}</select>)}
+      {row('Monthly budget (US dollars)', <input key={dollars} className="field" type="number" min={0} max={1000} step={1} defaultValue={dollars} onBlur={(e) => {
+        const v = Math.round(Number(e.target.value) * 1e6);
+        if (e.target.value === '' || !Number.isFinite(v) || v < 0 || v > 1e9) { toast('Use an amount from $0 to $1000'); e.target.value = String(dollars); return; }
+        if (v !== s.ai_monthly_cap_micro) void save({ ai_monthly_cap_micro: v });
+      }} />)}
+      <div className="ai-row"><span>Spent this month</span><span>{usage ? spend(usage) : 'Needs a connection'}</span></div>
+      {(['claude', 'gemini'] as Provider[]).map((p) => (
+        <div key={p} className="ai-row"><span>{PROVIDER_NAME[p]}{usage && <span style={{ color: 'var(--text-faint)', fontSize: 12 }}> · {usage.models[p]}</span>}</span>
+          <span>{!usage ? '…' : providerReady(usage, p) ? 'Set up' : <>Not set up: run <code>npx wrangler secret put {KEY_NAME[p]}</code> in the Compass folder</>}</span></div>))}
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Work projects are Offline only until you switch them on the project page.</p>
+    </div>
+  );
+}
+
+function ExportCard() {
+  const [busy, setBusy] = useState(false);
+  const run = (kind: 'json' | 'zip') => async () => {
+    setBusy(true);
+    try {
+      const bundle = await api<ExportBundle>('/export'); // api() asks for the passkey and retries
+      const day = bundle.exported_at.slice(0, 10);
+      if (kind === 'json') saveBytes(strToU8(JSON.stringify(bundle, null, 1)), `compass-export-${day}.json`, 'application/json');
+      else saveBytes(zipSync(Object.fromEntries(Object.entries(exportMarkdown(bundle)).map(([name, md]) => [name, strToU8(md)]))), `compass-export-${day}.zip`, 'application/zip');
+      toast('Export saved');
+    } catch (e) { toast((e as Error).message || 'Export needs a connection'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="card export-card">
+      <div className="eyebrow" style={{ marginBottom: 6 }}>Export</div>
+      <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-dim)' }}>Everything you have written, readable, with your passkey. The JSON also holds what is in Trash; the Markdown zip has one file per project.</p>
+      <div className="row">
+        <button type="button" className="btn" disabled={busy} onClick={run('json')}>Export everything (JSON)</button>
+        <button type="button" className="btn" disabled={busy} onClick={run('zip')}>Export as Markdown (zip)</button>
+      </div>
     </div>
   );
 }

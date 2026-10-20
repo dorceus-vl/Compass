@@ -41,6 +41,10 @@ settings.patch('/', async (c) => {
     if (d.length > 10 || !d.every((x) => typeof x === 'string' && DOMAIN.test(x))) return c.json({ error: 'work_email_domains must be up to 10 lowercase domains' }, 400);
     patch.work_email_domains = d;
   }
+  if (Number.isInteger(body.ai_monthly_cap_micro) && body.ai_monthly_cap_micro! >= 0 && body.ai_monthly_cap_micro! <= 1_000_000_000) patch.ai_monthly_cap_micro = body.ai_monthly_cap_micro!;
+  else if (body.ai_monthly_cap_micro !== undefined) return c.json({ error: 'ai_monthly_cap_micro must be a whole number from 0 to 1000000000 (up to $1000)' }, 400);
+  if (body.default_provider === 'claude' || body.default_provider === 'gemini') patch.default_provider = body.default_provider;
+  else if (body.default_provider !== undefined) return c.json({ error: 'default_provider must be one of: claude, gemini' }, 400);
   if (body.last_review_at !== undefined) {
     const r = dateTime()(body.last_review_at, 'last_review_at');
     if ('error' in r) return c.json({ error: r.error }, 400);

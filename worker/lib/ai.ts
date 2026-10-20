@@ -97,7 +97,7 @@ function stubAnswer(call: AiCall): Read {
   const last = [...call.messages].reverse().find((t) => t.role === 'user')?.content ?? '';
   const slug = call.system.match(/<<<data page ([^ \n]+)/)?.[1];
   const meta = { citations: slug ? [slug] : [], proposals: { tasks: [{ title: 'Stub task', horizon: 'short', due_at: null }], raid: [], decisions: [] } };
-  return { text: `Stub answer for: ${last.slice(0, 60)}\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
+  return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
 }
 
 /** One model call, with the key, cap and hourly checks first and the usage row + audit (never content) after. */
