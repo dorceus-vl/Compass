@@ -62,3 +62,45 @@ Install on a simulator: `xcrun simctl install booted build/Build/Products/Debug-
 The project uses CocoaPods (Xcode 27's Swift Package resolver hangs on Capacitor's binary framework). Signing is automatic with team
 K948BT44PM; a device build needs your Apple account in Xcode (Settings, Accounts). The app icon is the 512 px Knocturn badge upscaled to
 1024 px; replace `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png` with a 1024 px original when there is one.
+
+## Install on a device
+
+iPhone or iPad (Debug build, so the push token is a development one):
+1. `npm install && npm run open` (syncs the production URL, opens Xcode).
+2. Xcode, Settings, Accounts: sign in with the Apple account of team K948BT44PM. Select the `App` target and `ShareExtension`: "Automatically manage signing" is on; Xcode registers `com.knocturnlabs.compass` and `com.knocturnlabs.compass.ShareExtension` and the app group `group.com.knocturnlabs.compass` the first time.
+3. Pick the device (trust the Mac on it, turn on Developer Mode), press Run. Distribute with Product, Archive, not a Release run.
+
+Android (USB debugging on, `adb devices` lists the phone):
+1. `npm run build:android` (a production sync, then `assembleDebug`).
+2. `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
+3. Push needs Vlad's `google-services.json` in `android/app/` before the build (never committed).
+
+A release build (`cd android && ./gradlew assembleRelease`) runs `checkReleaseConfig` first and fails unless `capacitor.config.json` says
+`https://compass.knocturnlabs.com` with cleartext off, which a sync after a `COMPASS_URL` build would break: run `npm run sync` (no
+`COMPASS_URL`) first. Keystores (`*.jks`, `*.keystore`) are git-ignored; a release key's SHA-256 also goes into `web/public/.well-known/assetlinks.json`.
+
+## Device checklist (Task 7, once deployed)
+
+Everything below was only reasoned from code or seen on a simulator/emulator; do it on the real devices.
+
+Both platforms
+- Sign in: the system sheet / Custom Tab opens Knocturn ID, the passkey works, the app lands on Today; closing the sheet leaves the button usable.
+- Settings, Notifications on: permission prompt; `POST /api/push/test` arrives (iPhone: Debug build, APNs development token; Android: needs `google-services.json`).
+- Tap a notification with the app in front, in the background and killed: each opens its page in place, keeping `?search#hash`.
+- Share from Safari/Chrome to Compass: quick add opens prefilled, once.
+- Report Word/Markdown and a document download: the share sheet (iOS) or the Save dialog (Android) offers the file.
+- A link to another site opens in the browser and the app stays on Compass; mailto and tel open their apps.
+- Airplane mode: the offline page shows, "Try again" returns when back online.
+- Passkey step-up (export, Empty Trash) works in the web view.
+
+iOS only
+- Universal link `https://compass.knocturnlabs.com/...` opens the app (needs `/.well-known/apple-app-site-association` deployed).
+- The share extension writes to the app group (signed build) and the app picks the text up.
+- iPad: Today, Report download popover, sign-in sheet.
+- `shouldOverrideLoad` / `window.open` paths in `CompassViewController` (a `target=_blank` Compass link opens in place, others in Safari).
+
+Android only
+- Real Knocturn ID round trip on the Samsung: passkey in the Custom Tab, back at `compass://auth`.
+- App Link verification (`adb shell pm get-app-links com.knocturnlabs.compass` says verified; needs `assetlinks.json` deployed and the signing key's fingerprint in it).
+- Android 13+: the notification prompt appears only after Settings, Notifications is turned on.
+- A release build: `checkReleaseConfig` passes after `npm run sync` and fails after a `COMPASS_URL` sync.

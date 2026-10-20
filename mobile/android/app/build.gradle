@@ -59,3 +59,17 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+// Release guard: `cap sync` writes the last COMPASS_URL into assets/capacitor.config.json, so a release built after a local-dev sync would
+// ship cleartext and localhost. Fails the build unless the shell points at production over https. Run `npm run sync` (no COMPASS_URL) first.
+tasks.register('checkReleaseConfig') {
+    def cfg = file('src/main/assets/capacitor.config.json')
+    doLast {
+        def server = new groovy.json.JsonSlurper().parse(cfg).server ?: [:]
+        if (server.url != 'https://compass.knocturnlabs.com' || server.cleartext) {
+            throw new GradleException("Release build refused: capacitor.config.json has server.url=${server.url}, cleartext=${server.cleartext}. " +
+                "Run `npm run sync` in mobile/ without COMPASS_URL, then build again.")
+        }
+    }
+}
+tasks.configureEach { t -> if (t.name == 'preReleaseBuild') t.dependsOn 'checkReleaseConfig' }
