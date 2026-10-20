@@ -168,7 +168,10 @@ knowledge.get('/collections/:id/items', async (c) => {
     const rows = await c.env.DB.prepare(`SELECT c.item_id, max(CASE WHEN ${LIVE} THEN 1 ELSE 0 END) AS live FROM ${HOME} WHERE c.collection_id = ?1 AND c.embedded = 0 GROUP BY c.item_id`).bind(coll.id).all<{ item_id: string; live: number }>();
     for (const r of rows.results) search.set(r.item_id, r.live ? 'reindexing' : 'excluded');
   }
-  return c.json({ items: (await openAll(c.env, 'knowledge_items', results)).map((i) => (i.state === 'ready' && search.has(i.id) ? { ...i, search: search.get(i.id) } : i)) });
+  // A failed item that still has embedded passages was indexed in part (a passage Workers AI refused); those passages stay searchable.
+  const partial = new Set((await c.env.DB.prepare(`SELECT DISTINCT c.item_id FROM knowledge_chunks c JOIN knowledge_items i ON i.id = c.item_id
+    WHERE i.collection_id = ?1 AND i.state = 'failed' AND c.embedded = 1`).bind(coll.id).all<{ item_id: string }>()).results.map((r) => r.item_id));
+  return c.json({ items: (await openAll(c.env, 'knowledge_items', results)).map((i) => (i.state === 'ready' && search.has(i.id) ? { ...i, search: search.get(i.id) } : partial.has(i.id) ? { ...i, partial: true } : i)) });
 });
 
 const BOUNDARY = 'A work collection takes only work files, and a personal collection never does.';

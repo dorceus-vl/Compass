@@ -161,7 +161,7 @@ function ItemRow({ it, coll, onRemove }: { it: KnowledgeItem; coll: Coll; onRemo
         <b className="kn-title">{it.title}</b>
         <div className="kn-meta">
           {it.state === 'indexing' || it.search === 'reindexing' ? <span className="kn-state"><i className="kn-spin" aria-hidden="true" />{it.state === 'indexing' ? 'Indexing' : 'Re-indexing'}</span>
-            : it.state === 'failed' ? <span className="kn-state bad"><Icon name="warn" />Failed</span>
+            : it.state === 'failed' ? <span className="kn-state bad"><Icon name="warn" />{it.partial ? 'Indexed in part' : 'Failed'}</span>
             : it.error && app ? <span className="kn-state bad"><Icon name="warn" />Out of date</span>
             : <span className="kn-state ok"><Icon name="review" />Ready</span>}
           <span className="sub">{it.created_at.slice(0, 10)}</span>

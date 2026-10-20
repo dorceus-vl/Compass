@@ -150,12 +150,17 @@ async function embedSplit(env: Env, texts: string[]): Promise<Embedded[]> {
   }
 }
 export const PART_FAILED = "Couldn't index part of this file";
+/** One short embed (metered like an ingest call when it answers, unbilled when not): true when Workers AI is up. */
+async function probe(env: Env): Promise<boolean> {
+  try { await embedMetered(env, ['Compass knowledge check.'], true); return true; } catch (e) { if (e instanceof AiRefused) return false; throw e; }
+}
 
 /**
  * KN5: embeds up to `limit` waiting passages (embedded = 0) that may hold a vector (LIVE), 50 a batch with one meter call per batch; `only` narrows it
  * to one item or collection (an ingest or a boundary change, so two runs don't embed the same rows). Stops quietly at the cap or the hourly limit; the
  * cron finishes the rest. A batch Workers AI refuses is split (embedSplit): a passage that still fails marks its item `failed` (PART_FAILED, and the
- * item's other waiting passages are no longer picked) while the rest go on; when every passage fails, Workers AI itself is down and the run pauses.
+ * item's other waiting passages are no longer picked) while the rest go on; when every passage fails, a probe decides: Workers AI answers it, so the
+ * passages are failed the same way, or it is down and the run pauses.
  * Then items whose passages are all embedded are `ready`. Returns how many passages were embedded.
  */
 export async function embedPending(env: Env, limit: number, only: { item?: string; collection?: string } = {}): Promise<number> {
@@ -168,7 +173,8 @@ export async function embedPending(env: Env, limit: number, only: { item?: strin
     const texts = await Promise.all(results.map(async (r) => (await open(env, 'knowledge_chunks', { text: r.text, enc_v: r.enc_v })).text));
     const got = await embedSplit(env, texts);
     const refused = results.filter((_, i) => got[i] === 'refused'), ok = results.flatMap((r, i) => (Array.isArray(got[i]) ? [{ ...r, values: got[i] as number[] }] : []));
-    if (refused.length === results.length) { console.warn('[knowledge] embedding paused: provider_error'); break; } // nothing answered: Workers AI is down, not one bad passage
+    // Nothing answered: one probe on a known-good text tells an outage (probe fails too: pause, mark nothing) from passages Workers AI always refuses (probe answers: fail their items).
+    if (refused.length === results.length && !(await probe(env))) { console.warn('[knowledge] embedding paused: provider_error'); break; }
     if (refused.length) {
       const items = [...new Set(refused.map((r) => r.item_id))];
       await env.DB.prepare(`UPDATE knowledge_items SET state = 'failed', error = ?1, updated_at = ?2 WHERE id IN (${items.map((_, i) => `?${i + 3}`).join(',')})`)

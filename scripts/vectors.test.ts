@@ -224,7 +224,14 @@ for (const r of homes) assert.equal(vectorWanted(r), live.has(r.id), 'HOME_COLS 
     calls = 0;
     assert.equal(await embedPending(eenv, 200), 0, "a failed item's waiting passage is not picked again");
     assert.equal(calls, 0, 'so the queue never stalls on it');
-    // Workers AI down: every passage refused -> pause, nothing marked failed, nothing billed
+    // N1: a batch whose every passage is refused while Workers AI is up: the probe answers (billed once), so the item fails instead of being retried forever
+    e.exec(`INSERT INTO knowledge_items VALUES ('D','kp',NULL,NULL,'note',NULL,'indexing',NULL,NULL); INSERT INTO knowledge_chunks VALUES ('d1','D','kp',0,'POISON one',0,0,'t25'),('d2','D','kp',1,'POISON two',0,0,'t25')`);
+    const billedD = n("SELECT count(*) AS n FROM ai_usage");
+    assert.equal(await embedPending(eenv, 200), 0);
+    assert.equal(n(`SELECT count(*) AS n FROM knowledge_items WHERE id = 'D' AND state = 'failed' AND error = '${PART_FAILED.replace("'", "''")}'`), 1, 'all refused, probe answers -> the item fails');
+    assert.equal(n("SELECT count(*) AS n FROM ai_usage"), billedD + 1, 'only the probe is billed');
+    calls = 0; assert.equal(await embedPending(eenv, 200), 0); assert.equal(calls, 0, 'and it is not picked again');
+    // Workers AI down: every passage refused -> the probe fails too -> pause, nothing marked failed, nothing billed
     e.exec(`INSERT INTO knowledge_items VALUES ('C','kp',NULL,NULL,'note',NULL,'indexing',NULL,NULL); INSERT INTO knowledge_chunks VALUES ('c1','C','kp',0,'gamma one',0,0,'t3'),('c2','C','kp',1,'gamma two',0,0,'t3')`);
     down = true; const billed = n("SELECT count(*) AS n FROM ai_usage");
     assert.equal(await embedPending(eenv, 200), 0);
