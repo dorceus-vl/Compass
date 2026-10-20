@@ -857,6 +857,7 @@ DPROJ=$(kid "$(up "@$KS/proj.docx;filename=proj.docx;type=$DOCX" -F "project_id=
 kwait $K1P $IPROJ ready && ks "narwhal+garden" $K1P | grep -q narwhal || fail "a project file was not searchable"
 curl "${H[@]}" -X PATCH $B/api/projects/$K1PP -d '{"data_boundary":"offline"}' | grep -q '"data_boundary":"offline"' || fail "project -> Offline only"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IPROJ' AND embedded=1")" = 0 ] && ! ks "narwhal+garden" $K1P | grep -q narwhal || fail "an Offline-only project's file kept its vectors or stayed searchable"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$K1P/items | js "d.items.find(i=>i.id==='$IPROJ').search")" = excluded ] || fail "item list: an Offline-only project's file is not marked excluded"
 curl "${H[@]}" -X PATCH $B/api/projects/$K1PP -d '{"data_boundary":"cloud"}' >/dev/null
 for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IPROJ' AND embedded=0")" = 0 ] && break; sleep 0.25; done
 ks "narwhal+garden" $K1P | grep -q narwhal || fail "back to Cloud, the project file was not embedded again"
@@ -869,6 +870,7 @@ cron() { curl -s -X POST "$B/cdn-cgi/local/explorer/api/local/scheduled?worker=c
 cron; for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IAXO' AND embedded=1")" = 0 ] && break; sleep 0.25; done
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$IAXO' AND embedded=1")" = 0 ] || fail "the cron sweep left a trashed item's vectors"
 curl "${H[@]}" -X POST $B/api/trash/knowledge_items/$IAXO/restore | grep -q '"ok":true' || fail "restore item"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$K1P/items | js "d.items.find(i=>i.id==='$IAXO').search")" = reindexing ] || fail "item list: a restored, not yet re-embedded item is not marked reindexing"
 cron; for _ in $(seq 1 40); do ks "axolotl" $K1P | grep -q axolotl && break; sleep 0.25; done
 ks "axolotl" $K1P | grep -q axolotl || fail "the cron did not embed the restored item again"
 echo "smoke: (k1) project Offline only / Trash -> its files' vectors go, out of search; back to Cloud -> embedded again; item Trash -> out of search, cron sweep un-embeds, restore -> cron embeds"

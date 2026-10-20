@@ -8,7 +8,7 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
 import { chunk, type Passage } from '../lib/chunk.ts';
-import { boundaryChange, compatible, needsStepUp, HOME } from '../lib/knowledge.ts';
+import { boundaryChange, compatible, needsStepUp, HOME, LIVE } from '../lib/knowledge.ts';
 import { embedPending, hybridSearch, remove } from '../lib/vectors.ts';
 import { AiRefused } from '../lib/ai.ts';
 import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
@@ -133,7 +133,14 @@ knowledge.get('/collections/:id/items', async (c) => {
   const coll = await loadCollection(c.env, c.req.param('id'));
   if (!coll) return c.json({ error: 'Not found' }, 404);
   const { results } = await c.env.DB.prepare('SELECT * FROM knowledge_items WHERE collection_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500').bind(coll.id).all<KnowledgeItem>();
-  return c.json({ items: await openAll(c.env, 'knowledge_items', results) });
+  // A ready Cloud AI item whose passages hold no vector: `reindexing` while the embedder will take them (a restore, or its project back to Cloud), `excluded` while they may not
+  // (an Offline-only project, a trashed document), so the screen doesn't say "ready" about a file that meaning-search can't find.
+  const search = new Map<string, 'reindexing' | 'excluded'>();
+  if (coll.boundary === 'cloud') {
+    const rows = await c.env.DB.prepare(`SELECT c.item_id, max(CASE WHEN ${LIVE} THEN 1 ELSE 0 END) AS live FROM ${HOME} WHERE c.collection_id = ?1 AND c.embedded = 0 GROUP BY c.item_id`).bind(coll.id).all<{ item_id: string; live: number }>();
+    for (const r of rows.results) search.set(r.item_id, r.live ? 'reindexing' : 'excluded');
+  }
+  return c.json({ items: (await openAll(c.env, 'knowledge_items', results)).map((i) => (i.state === 'ready' && search.has(i.id) ? { ...i, search: search.get(i.id) } : i)) });
 });
 
 const BOUNDARY = 'A work collection takes only work files, and a personal collection never does.';
@@ -191,12 +198,12 @@ knowledge.get('/locked/:id/passages', async (c) => {
   const coll = await loadCollection(c.env, c.req.param('id'));
   if (!coll || coll.scope !== 'work' || coll.boundary !== 'locked') return c.json({ error: 'Not found' }, 404);
   // ponytail: the whole collection in one answer; page it if a Locked collection outgrows a response.
-  const { results } = await c.env.DB.prepare(`SELECT c.id, c.item_id, c.ord, c.locator, c.text, c.enc_v, i.title AS item_title, i.enc_v AS item_enc_v FROM ${HOME}
+  const { results } = await c.env.DB.prepare(`SELECT c.id, c.item_id, c.ord, c.locator, c.text, c.enc_v, i.document_id, i.title AS item_title, i.enc_v AS item_enc_v FROM ${HOME}
     WHERE c.collection_id = ?1 AND i.deleted_at IS NULL AND (i.document_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL AND (d.project_id IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL))))
-    ORDER BY i.created_at, c.ord`).bind(coll.id).all<{ id: string; item_id: string; ord: number; locator: string; text: string; enc_v: number; item_title: string; item_enc_v: number }>();
+    ORDER BY i.created_at, c.ord`).bind(coll.id).all<{ id: string; item_id: string; document_id: string | null; ord: number; locator: string; text: string; enc_v: number; item_title: string; item_enc_v: number }>();
   const passages = await Promise.all(results.map(async (r) => {
     const p = await open(c.env, 'knowledge_chunks', { locator: r.locator, text: r.text, enc_v: r.enc_v });
-    return { id: r.id, item_id: r.item_id, ord: r.ord, locator: p.locator, text: p.text, item_title: (await open(c.env, 'knowledge_items', { title: r.item_title, enc_v: r.item_enc_v })).title };
+    return { id: r.id, item_id: r.item_id, document_id: r.document_id, ord: r.ord, locator: p.locator, text: p.text, item_title: (await open(c.env, 'knowledge_items', { title: r.item_title, enc_v: r.item_enc_v })).title };
   }));
   return c.json({ passages }, 200, { 'Cache-Control': 'private, no-store' });
 });

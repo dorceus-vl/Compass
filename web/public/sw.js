@@ -5,6 +5,7 @@ self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  // Every /api path stays out of the cache, /api/knowledge/locked/* (Locked passages, memory only on the device) included: no respondWith, no put.
   if (url.pathname.startsWith('/api') || e.request.method !== 'GET') return;
   if (e.request.mode === 'navigate' || url.pathname === '/') {
     e.respondWith(fetch(e.request).then((r) => keep('/', r)).catch(() => caches.match('/')));

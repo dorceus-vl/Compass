@@ -108,7 +108,7 @@ export function rerank<P extends { id: string; text: string; item_title: string 
   return passages.map((p) => ({ ...p, score: (vectorScores[p.id] ?? 0) + (top ? (0.5 * (kw.get(p.id) ?? 0)) / top : 0) })).sort((a, b) => b.score - a.score);
 }
 
-export interface FoundPassage { id: string; text: string; locator: string; item_title: string; collection: { id: string; name: string; scope: 'work' | 'personal' }; score: number }
+export interface FoundPassage { id: string; item_id: string; document_id: string | null; text: string; locator: string; item_title: string; collection: { id: string; name: string; scope: 'work' | 'personal' }; score: number }
 
 /**
  * KN4: the one meaning-and-keyword search over Cloud AI and personal collections. `collectionIds` narrows it (null = every live Cloud AI collection);
@@ -121,14 +121,14 @@ export async function hybridSearch(env: Env, q: string, collectionIds: string[] 
   const [vector] = await embedMetered(env, [q], false);
   const matches = await query(env, vector, allowed.length === live.length ? null : allowed, TOP); // D1 below keeps only `allowed`
   if (!matches.length) return [];
-  const { results } = await env.DB.prepare(`SELECT c.id, c.text, c.locator, c.enc_v, c.collection_id, i.title AS item_title, i.enc_v AS item_enc_v,
+  const { results } = await env.DB.prepare(`SELECT c.id, c.text, c.locator, c.enc_v, c.collection_id, c.item_id, i.document_id, i.title AS item_title, i.enc_v AS item_enc_v,
       k.name AS collection_name, k.enc_v AS collection_enc_v, k.scope FROM ${HOME} WHERE c.id IN (${ph(matches.length)}) AND c.embedded = 1 AND ${LIVE}`)
-    .bind(...matches.map((m) => m.id)).all<{ id: string; text: string; locator: string; enc_v: number; collection_id: string; item_title: string; item_enc_v: number; collection_name: string; collection_enc_v: number; scope: 'work' | 'personal' }>();
+    .bind(...matches.map((m) => m.id)).all<{ id: string; text: string; locator: string; enc_v: number; collection_id: string; item_id: string; document_id: string | null; item_title: string; item_enc_v: number; collection_name: string; collection_enc_v: number; scope: 'work' | 'personal' }>();
   const passages = await Promise.all(results.filter((r) => allowed.includes(r.collection_id)).map(async (r) => {
     const c = await open(env, 'knowledge_chunks', { text: r.text, locator: r.locator, enc_v: r.enc_v });
     const i = await open(env, 'knowledge_items', { title: r.item_title, enc_v: r.item_enc_v });
     const kc = await open(env, 'knowledge_collections', { name: r.collection_name, enc_v: r.collection_enc_v });
-    return { id: r.id, text: c.text, locator: c.locator, item_title: i.title, collection: { id: r.collection_id, name: kc.name, scope: r.scope } };
+    return { id: r.id, item_id: r.item_id, document_id: r.document_id, text: c.text, locator: c.locator, item_title: i.title, collection: { id: r.collection_id, name: kc.name, scope: r.scope } };
   }));
   return rerank(q, passages, Object.fromEntries(matches.map((m) => [m.id, m.score]))).slice(0, k);
 }

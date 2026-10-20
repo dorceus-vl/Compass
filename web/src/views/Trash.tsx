@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Task, Project, Milestone, RaidItem, ChangeRequest, Decision, Lesson, DocumentRow, AiThread } from '../../../shared/types.ts';
+import type { Task, Project, Milestone, RaidItem, ChangeRequest, Decision, Lesson, DocumentRow, AiThread, KnowledgeCollection, KnowledgeItem } from '../../../shared/types.ts';
 import { api } from '../api.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { accent } from '../ui/colors.ts';
@@ -10,8 +10,9 @@ type TrashAnswer = {
   tasks: Task[]; projects: Project[]; milestones: Milestone[]; purge_after_days: number;
   raid_items: InProject<RaidItem>[]; change_requests: InProject<ChangeRequest>[]; decisions: InProject<Decision>[];
   lessons: InProject<Lesson>[]; documents: InProject<DocumentRow>[]; ai_threads: InProject<AiThread>[];
+  knowledge_collections?: KnowledgeCollection[]; knowledge_items?: (KnowledgeItem & { collection_name: string })[];
 };
-type Table = 'tasks' | 'projects' | 'milestones' | 'raid_items' | 'change_requests' | 'decisions' | 'lessons' | 'documents' | 'ai_threads';
+type Table = 'tasks' | 'projects' | 'milestones' | 'raid_items' | 'change_requests' | 'decisions' | 'lessons' | 'documents' | 'ai_threads' | 'knowledge_collections' | 'knowledge_items';
 type TrashRow = { id: string; deleted_at: string | null; title?: string; name?: string; text?: string; project_name?: string | null };
 
 export function TrashView() {
@@ -35,7 +36,8 @@ export function TrashView() {
       <div className="tlist2">{rows.map((r) => <div key={r.id} className="acard trow" style={accent(c)}><div className="tt">{r.title ?? r.name ?? r.text}{r.project_name ? ` · ${r.project_name}` : ''}</div><span className="chip">{r.deleted_at?.slice(0, 10)}</span><button type="button" className="btn" onClick={() => restore(table, r.id)}>Restore</button></div>)}</div>
     </section>);
   };
-  const total = t.tasks.length + t.projects.length + t.milestones.length + t.raid_items.length + t.change_requests.length + t.decisions.length + t.lessons.length + t.documents.length + t.ai_threads.length;
+  const kc = t.knowledge_collections ?? [], ki = (t.knowledge_items ?? []).map((i) => ({ ...i, project_name: i.collection_name }));
+  const total = kc.length + ki.length + t.tasks.length + t.projects.length + t.milestones.length + t.raid_items.length + t.change_requests.length + t.decisions.length + t.lessons.length + t.documents.length + t.ai_threads.length;
   return (
     <>
       <div className="head"><div><div className="eyebrow">Trash</div><h1 style={{ marginTop: 6 }}>Gone, <b>not forgotten</b></h1><div className="sub">{total} item{total === 1 ? '' : 's'} · they stay {t.purge_after_days} days, then go for good.</div></div>
@@ -43,7 +45,7 @@ export function TrashView() {
       {total === 0 && <p style={{ color: 'var(--text-faint)' }}>Trash is empty.</p>}
       {section('Tasks', 'tasks', t.tasks)}{section('Projects', 'projects', t.projects)}{section('Milestones', 'milestones', t.milestones)}
       {section('RAID', 'raid_items', t.raid_items)}{section('Changes', 'change_requests', t.change_requests)}{section('Decisions', 'decisions', t.decisions)}
-      {section('Lessons', 'lessons', t.lessons)}{section('Documents', 'documents', t.documents)}{section('Athena threads', 'ai_threads', t.ai_threads)}
+      {section('Lessons', 'lessons', t.lessons)}{section('Documents', 'documents', t.documents)}{section('Athena threads', 'ai_threads', t.ai_threads)}{section('Knowledge collections', 'knowledge_collections', kc)}{section('Knowledge items', 'knowledge_items', ki)}
       <dialog ref={dlg} onClose={() => setWord('')}><p>This deletes everything in Trash for good. Type <b>EMPTY</b> to continue; your passkey is asked next.</p>
         <input className="field" aria-label="Type EMPTY to confirm" value={word} onChange={(e) => setWord(e.target.value)} />
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}><button type="button" className="btn" onClick={() => dlg.current?.close()}>Cancel</button>

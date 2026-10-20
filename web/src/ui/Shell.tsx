@@ -13,6 +13,7 @@ const ICONS: Record<string, ReactNode> = {
   upcoming: <><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 10h16M8.5 3v4M15.5 3v4" /></>,
   timeline: <path d="M4 7h8M8 12h10M6 17h7" />,
   projects: <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v7.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z" />,
+  knowledge: <><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z" /><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16 12 20.5 20.5 16" /></>,
   library: <><path d="M5 4.5h10.5A2.5 2.5 0 0 1 18 7v13H7.5A2.5 2.5 0 0 1 5 17.5z" /><path d="M5 17.5A2.5 2.5 0 0 1 7.5 15H18" /></>,
   copilot: <path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9zM18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,
   athena: <><path d="M6 4l2.5 3h7L18 4v8a6 6 0 0 1-12 0z" /><circle cx="9.5" cy="11" r="1.6" /><circle cx="14.5" cy="11" r="1.6" /><path d="M11 14.5l1 1 1-1" /></>,
@@ -27,6 +28,7 @@ const ICONS: Record<string, ReactNode> = {
   review: <><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.3 2.5 2.5 4.5-5" /></>,
   kelly: <path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6a2.5 2.5 0 0 1-2.5 2.5H11l-4 4v-4h-.5A2.5 2.5 0 0 1 5 12.5zM9 9.5h.01M12 9.5h.01M15 9.5h.01" />,
   lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>,
+  warn: <><path d="M12 4 3.5 19h17z" /><path d="M12 10v4M12 16.5h.01" /></>,
   chevron: <path d="m9.5 6 6 6-6 6" />,
   plus: <path d="M12 5v14M5 12h14" strokeWidth={2.2} />,
   bars: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
@@ -40,7 +42,7 @@ export const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" ari
 
 const NAV = [
   ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'],
-  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['athena', '/athena', 'Athena'],
+  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['knowledge', '/knowledge', 'Knowledge'], ['athena', '/athena', 'Athena'],
 ] as const;
 
 /** Slides one absolutely positioned pill (transform only) to the nav's active link (`sel`, default `a.on`); size is set inline and not animated. Hidden when no link is active. */
@@ -89,7 +91,7 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
         <Link to="/" className={on('today')} aria-current={on('today') ? 'page' : undefined}><Icon name="today" />Today</Link><Link to="/board" className={on('board')} aria-current={on('board') ? 'page' : undefined}><Icon name="board" />Board</Link>
         <button type="button" className="add" onClick={onPalette} aria-label="Quick add"><Icon name="plus" /></button>
         <Link to="/projects" className={on('projects')} aria-current={on('projects') ? 'page' : undefined}><Icon name="projects" />Projects</Link>
-        <Link to="/settings" className={on('settings') || on('kelly') || on('inbox') || on('library') || on('athena') || on('calendar')} aria-current={on('settings') || on('kelly') || on('inbox') || on('library') || on('athena') || on('calendar') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+        <Link to="/settings" className={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar')} aria-current={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
       </nav>
     </div>
   );

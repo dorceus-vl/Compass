@@ -104,6 +104,8 @@ export interface KnowledgeCollection {
 export interface KnowledgeItem {
   id: string; collection_id: string; document_id: string | null; source: KnowledgeSource; title: string; state: 'indexing' | 'ready' | 'failed'; error: string | null;
   chunk_count: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
+  /** Only on the item list: a ready Cloud AI item that meaning-search can't find right now (`reindexing`: the embedder will take it; `excluded`: its project is Offline-only or its file is in Trash). */
+  search?: 'reindexing' | 'excluded';
 }
 export interface KnowledgeChunk { id: string; item_id: string; collection_id: string; ord: number; locator: string; text: string; embedded: number; created_at: string; enc_v: number }
 export interface LibraryPage { slug: string; section: string; title: string; body: string; source: 'bundled' | 'import' | 'lesson' }

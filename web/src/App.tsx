@@ -21,6 +21,8 @@ import { ReviewView } from './views/Review.tsx';
 import { LibraryView } from './views/Library.tsx';
 import { LibraryPageView } from './views/LibraryPage.tsx';
 import { AthenaView } from './views/Athena.tsx';
+import { KnowledgeView } from './views/Knowledge.tsx';
+import { dropLocked } from './knowledge-search.ts';
 import { KellyLog } from './views/KellyLog.tsx';
 import { Palette } from './ui/Palette.tsx';
 import { startSync, replay } from './store/sync.ts';
@@ -45,6 +47,7 @@ export function App() {
   useEffect(() => {
     api('/auth/me').then(() => setAuth('in')).catch((e) => setAuth(e instanceof SignedOut ? 'out' : 'in'));
   }, []);
+  useEffect(() => { if (auth === 'out') dropLocked(); }, [auth]); // Locked passages live in memory only: gone with the session
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
   // In an app shell: shared text opens quick add prefilled, links and notification taps move inside Compass, and the push token is kept fresh.
   useEffect(() => {
@@ -63,7 +66,7 @@ export function App() {
     : <><Palette onClose={closeQuickAdd} onAdded={() => void replay().finally(closeQuickAdd)} /><Toasts /><ConfirmDialog /></>;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
   const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, calendar: <Calendar />, timeline: <Timeline />, projects: <Projects />,
-    project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, kelly: <KellyLog />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, athena: <AthenaView id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
+    project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, kelly: <KellyLog />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, athena: <AthenaView id={params.id} />, knowledge: <KnowledgeView key={params.id ?? 'all'} id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;
   return (
     <>
       <Shell onPalette={() => setPalette(true)}>{view}</Shell>
