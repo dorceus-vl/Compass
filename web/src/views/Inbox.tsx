@@ -3,6 +3,7 @@ import { useInbox, safeUrl, reviewPath, openTask } from '../inbox.ts';
 import { InboxCard } from '../ui/AddedStrip.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { navigate } from '../router.ts';
+import { useLens } from '../motion.ts';
 
 export function InboxView({ embedded = false }: { embedded?: boolean } = {}) {
   const inbox = useInbox();
@@ -10,6 +11,8 @@ export function InboxView({ embedded = false }: { embedded?: boolean } = {}) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const last = useRef(0); // the previous index: where the cursor lands when its item disappears
   const [open, setOpen] = useState<string | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  useLens(list, ':scope > .icard');
   const found = items.findIndex((i) => i.id === activeId);
   const at = found >= 0 ? found : Math.min(last.current, Math.max(items.length - 1, 0));
   const item = items[at];
@@ -34,13 +37,12 @@ export function InboxView({ embedded = false }: { embedded?: boolean } = {}) {
   return (
     <>
       {!embedded && <div className="head"><div><div className="eyebrow">Inbox</div><h1 style={{ marginTop: 6 }}>Added by <b>your apps</b></h1>
-        <div className="sub">{offline ? 'Offline: showing the last list. Actions need a connection.' : 'j/k move · Enter keep · s snooze · d dismiss · o open source'}</div></div></div>}
+        <div className="sub">{offline ? 'Offline: showing the last list. Actions need a connection.' : 'j/k move · Enter keep · s snooze · d dismiss · o open source · swipe right to keep, left to dismiss'}</div></div></div>}
       {items.length === 0 && (known || offline) && <div className="card"><p style={{ margin: 0 }}>{known ? 'Inbox zero.' : "Can't reach the inbox right now."}</p></div>}
-      {items.length > 0 && (
-        <div className="auto inbox-list" role="listbox" tabIndex={0} aria-label="Inbox" aria-activedescendant={`inbox-${item.id}`} onKeyDown={onKey}>
-          {items.map((i, n) => <InboxCard key={i.id} item={i} inbox={inbox} onOpen={setOpen} id={`inbox-${i.id}`} active={n === at} />)}
-        </div>
-      )}
+      {/* always mounted so the lens can attach; hidden when empty */}
+      <div className="inbox-list" ref={list} hidden={!items.length} role="listbox" tabIndex={0} aria-label="Inbox" aria-activedescendant={item ? `inbox-${item.id}` : undefined} onKeyDown={onKey}>
+        {items.map((i, n) => <InboxCard key={i.id} item={i} inbox={inbox} onOpen={setOpen} id={`inbox-${i.id}`} active={n === at} />)}
+      </div>
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );

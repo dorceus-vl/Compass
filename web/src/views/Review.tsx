@@ -6,6 +6,7 @@ import { useStore, updateTask, completeTask, trashTask } from '../store/useStore
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { toast, confirmAction } from '../ui/dialogs.tsx';
 import { InboxView } from './Inbox.tsx';
+import { confetti } from '../motion.ts';
 
 const STEPS = ['Inbox to zero', 'Overdue', 'The next 7 days', 'Horizons', 'Waiting on'];
 
@@ -19,9 +20,9 @@ export function ReviewView() {
   const t = today();
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && x.status !== 'done');
   const byDue = (a: Task, b: Task) => (a.due_at ?? '').localeCompare(b.due_at ?? '');
-  const finish = async () => {
+  const finish = async (x: number, y: number) => {
     setBusy(true);
-    try { await api<Settings>('/settings', { method: 'PATCH', json: { last_review_at: new Date().toISOString() } }); setDone(true); }
+    try { await api<Settings>('/settings', { method: 'PATCH', json: { last_review_at: new Date().toISOString() } }); setDone(true); confetti(x, y, 'var(--ok)'); }
     catch (e) { toast((e as Error).message || 'Could not finish the review'); }
     setBusy(false);
   };
@@ -58,16 +59,16 @@ export function ReviewView() {
   return (
     <>
       <div className="head"><div><div className="eyebrow">Weekly review</div><h1 style={{ marginTop: 6 }}>Look back, <b>reset</b></h1></div></div>
-      {done ? <div className="card"><p style={{ margin: 0 }}>Review done. See you next week.</p></div> : (
+      <ol className="steps" aria-label="Review steps">{STEPS.map((s, i) => <li key={s} data-done={i < step || done ? '' : undefined} aria-current={i === step && !done ? 'step' : undefined}>{i + 1}. {s}</li>)}</ol>
+      {done ? <div className="card" role="status"><p style={{ margin: 0 }}>Review done. See you next week.</p></div> : (
         <>
-          <ol className="steps" aria-label="Review steps">{STEPS.map((s, i) => <li key={s} aria-current={i === step ? 'step' : undefined}>{i + 1}. {s}</li>)}</ol>
           <h2 style={{ margin: '4px 0 0' }}>{STEPS[step]}</h2>
           {body}
           <div className="row">
             <button type="button" className="btn" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</button>
             {step < STEPS.length - 1
               ? <button type="button" className="btn primary" onClick={() => setStep(step + 1)}>Next</button>
-              : <button type="button" className="btn primary" disabled={busy} onClick={() => void finish()}>Finish review</button>}
+              : <button type="button" className="btn primary" disabled={busy} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); void finish(r.left + r.width / 2, r.top); }}>Finish review</button>}
           </div>
         </>
       )}

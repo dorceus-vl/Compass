@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Task, Project, Milestone, RaidItem, ChangeRequest, Decision, Lesson, DocumentRow, AiThread } from '../../../shared/types.ts';
 import { api } from '../api.ts';
 import { toast } from '../ui/dialogs.tsx';
+import { accent } from '../ui/colors.ts';
 import { pull } from '../store/sync.ts';
 
 type InProject<T> = T & { project_name: string | null };
@@ -24,13 +25,20 @@ export function TrashView() {
     try { await api(`/trash/${table}/${id}/restore`, { method: 'POST' }); toast('Restored'); await load(); await pull(); }
     catch (e) { toast((e as Error).message || 'Restore needs a connection'); }
   };
-  const section = (title: string, table: Table, rows: TrashRow[]) => rows.length > 0 && (
-    <div className="hz"><div className="hh"><b>{title}</b><small>{rows.length}</small></div>
-      {rows.map((r) => <div key={r.id} className="task"><div className="tt" style={{ flex: 1 }}>{r.title ?? r.name ?? r.text}{r.project_name ? ` · ${r.project_name}` : ''}</div><span className="chip">{r.deleted_at?.slice(0, 10)}</span><button type="button" className="btn" onClick={() => restore(table, r.id)}>Restore</button></div>)}</div>);
+  let g = 0; // each group takes the next swatch
+  const section = (title: string, table: Table, rows: TrashRow[]) => {
+    if (!rows.length) return null;
+    const c = `var(--swatch-${(g++ % 6) + 1})`;
+    return (
+    <section aria-label={title}>
+      <div className="ghead"><b>{title}</b><span className="chip">{rows.length}</span></div>
+      <div className="tlist2">{rows.map((r) => <div key={r.id} className="acard trow" style={accent(c)}><div className="tt">{r.title ?? r.name ?? r.text}{r.project_name ? ` · ${r.project_name}` : ''}</div><span className="chip">{r.deleted_at?.slice(0, 10)}</span><button type="button" className="btn" onClick={() => restore(table, r.id)}>Restore</button></div>)}</div>
+    </section>);
+  };
   const total = t.tasks.length + t.projects.length + t.milestones.length + t.raid_items.length + t.change_requests.length + t.decisions.length + t.lessons.length + t.documents.length + t.ai_threads.length;
   return (
     <>
-      <div className="head"><div><div className="eyebrow">Trash</div><h1 style={{ marginTop: 6 }}>Gone, <b>not forgotten</b></h1><div className="sub">Items stay {t.purge_after_days} days, then go for good.</div></div>
+      <div className="head"><div><div className="eyebrow">Trash</div><h1 style={{ marginTop: 6 }}>Gone, <b>not forgotten</b></h1><div className="sub">{total} item{total === 1 ? '' : 's'} · they stay {t.purge_after_days} days, then go for good.</div></div>
         <button type="button" className="btn" style={{ color: 'var(--danger)' }} disabled={total === 0} onClick={() => dlg.current?.showModal()}>Empty Trash</button></div>
       {total === 0 && <p style={{ color: 'var(--text-faint)' }}>Trash is empty.</p>}
       {section('Tasks', 'tasks', t.tasks)}{section('Projects', 'projects', t.projects)}{section('Milestones', 'milestones', t.milestones)}

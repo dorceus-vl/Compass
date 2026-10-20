@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { MeetingReview } from '../../../shared/types.ts';
 import { api, ApiError, SignedOut } from '../api.ts';
 import { loadMeetings, refreshInbox, safeUrl } from '../inbox.ts';
@@ -8,6 +8,8 @@ import { useStore } from '../store/useStore.ts';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { minutesDoc } from '../docs/templates.ts';
 import { toMarkdown } from '../docs/to-md.ts';
+import { accent } from '../ui/colors.ts';
+import { useReducedMotion } from '../motion.ts';
 import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
 
 interface Act { on: boolean; text: string; owner: string; due: string; at: string }
@@ -31,7 +33,11 @@ export function MeetingView({ id }: { id: string }) {
   const [project, setProject] = useState('');
   const [flags, setFlags] = useState<Record<string, 'risk' | 'issue'>>({}); // q<i> / n<i> → what to log in RAID
   const [busy, setBusy] = useState(false);
+  const [out, setOut] = useState(false); // accepted: the checked cards slide away before we leave
+  const alive = useRef(true);
+  const reduce = useReducedMotion();
   const { projects } = useStore();
+  useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => { // the flag follows the browser, so the buttons come back after reconnecting
     const f = () => setOffline(!navigator.onLine);
     window.addEventListener('online', f); window.addEventListener('offline', f);
@@ -98,7 +104,8 @@ export function MeetingView({ id }: { id: string }) {
       toast(`Added ${parts.join(' and ')}`);
       await pull().catch(() => {});
       void refreshInbox();
-      navigate(project ? `/projects/${project}` : '/');
+      if (!reduce) { setOut(true); await new Promise((r) => setTimeout(r, 450 + 70 * Math.min(nTasks + sendDecs.length, 6))); }
+      if (alive.current) navigate(project ? `/projects/${project}` : '/');
     } catch (e) { fail(e); }
   };
   const dismiss = async () => {
@@ -108,12 +115,14 @@ export function MeetingView({ id }: { id: string }) {
     catch (e) { fail(e); }
   };
   const check = (label: string, on: boolean, change: (b: boolean) => void) => !open ? null :
-    <input type="checkbox" aria-label={label} checked={on} disabled={busy} onChange={(e) => change(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--accent)', flex: 'none' }} />;
+    <span className="tog"><input type="checkbox" aria-label={label} checked={on} disabled={busy} onChange={(e) => change(e.target.checked)} /><i /></span>;
   const flag = (k: string) => !open ? null : (
     <span className="seg" role="group" aria-label="Log in RAID" style={{ marginLeft: 'auto' }}>
       {(['risk', 'issue'] as const).map((t) => <button type="button" key={t} className={flags[k] === t ? 'on' : ''} aria-pressed={flags[k] === t} disabled={busy || !project} title={project ? undefined : 'Pick a project to log risks and issues'}
         onClick={(e) => { e.preventDefault(); setFlags((f) => { const { [k]: cur, ...rest } = f; return cur === t ? rest : { ...rest, [k]: t }; }); }}>{t === 'risk' ? 'Risk' : 'Issue'}</button>)}
     </span>);
+  // a record card in the section's colour; once accepted, the ones that were switched on slide away one after another
+  const card = (color: string, on: boolean, i: number, more = '') => ({ className: `acard mcard${more}${out && on ? ' out' : ''}`, style: { ...accent(color), ['--i' as string]: i } as CSSProperties });
   const h2 = { fontSize: 16, margin: '22px 0 10px' } as const;
   const minutes = () => minutesDoc(m, projects.find((x) => x.id === (m.project_id ?? project))?.name ?? null);
   const minutesName = fileName('Minutes', m.title, m.received_at.slice(0, 10));
@@ -127,16 +136,16 @@ export function MeetingView({ id }: { id: string }) {
       <div className="head"><div><div className="eyebrow"><Link to="/meetings">Meetings</Link></div><h1 style={{ marginTop: 6, overflowWrap: 'anywhere' }}>{m.title}</h1>
         <div className="sub">{new Date(m.received_at).toLocaleDateString(undefined, { dateStyle: 'long' })}{!open && ' · Reviewed'}{offline && ' · Offline: reviewing needs a connection'}</div></div>
         {link && <a className="btn" href={link} target="_blank" rel="noopener noreferrer">Open transcript ↗</a>}</div>
-      {m.summary && <div className="card" style={{ marginTop: 14 }}><p style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.summary}</p></div>}
+      {m.summary && <div className="acard" style={{ ...accent('var(--src-meeting)'), marginTop: 14 }}><p style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.summary}</p></div>}
 
       <h2 style={h2}>Action items</h2>
       {!acts.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>None.</p>}
-      <div style={{ display: 'grid', gap: 8 }}>{acts.map((a, i) => (
-        <div key={i} className="card row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap', padding: 12 }}>
+      <div className="mlist">{acts.map((a, i) => (
+        <div key={i} {...card('var(--src-meeting)', a.on, i)}>
           {check(`Add action item ${i + 1}`, a.on, (on) => patch(setActs, i, { on }))}
-          {!open ? <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{a.text}
+          {!open ? <div className="txt">{a.text}
             <div className="sub">{[a.owner && `Owner: ${a.owner}`, a.due && `Due ${a.due}`].filter(Boolean).join(' · ')}{a.at && <span className="chip">{a.at}</span>}</div></div> :
-          <div style={{ display: 'grid', gap: 6, flex: 1, minWidth: 0 }}>
+          <div className="fields">
             <input className="field" aria-label={`Action item ${i + 1} text`} value={a.text} maxLength={300} disabled={busy} onChange={(e) => patch(setActs, i, { text: e.target.value })} />
             <div className="row" style={{ gap: 6 }}>
               <input className="field" style={{ flex: '1 1 140px', width: 'auto' }} aria-label={`Action item ${i + 1} owner`} placeholder="Owner" value={a.owner} maxLength={200} disabled={busy} onChange={(e) => patch(setActs, i, { owner: e.target.value })} />
@@ -148,18 +157,18 @@ export function MeetingView({ id }: { id: string }) {
 
       <h2 style={h2}>Decisions</h2>
       {!decs.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>None.</p>}
-      <div style={{ display: 'grid', gap: 8 }}>{decs.map((d, i) => (
-        <label key={i} className="card row" style={{ flexWrap: 'nowrap', padding: 12, cursor: open ? 'pointer' : 'default' }}>
+      <div className="mlist">{decs.map((d, i) => (
+        <label key={i} {...card('var(--accent)', d.on, i, open ? ' pick' : '')}>
           {check(`Add decision ${i + 1}`, d.on, (on) => patch(setDecs, i, { on }))}
-          <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{d.text}</span>{d.at && <span className="chip">{d.at}</span>}
+          <span className="txt">{d.text}</span>{d.at && <span className="chip">{d.at}</span>}
         </label>))}</div>
 
       <h2 style={h2}>Open questions</h2>
       {!qs.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>None.</p>}
-      <div style={{ display: 'grid', gap: 8 }}>{qs.map((q, i) => (
-        <label key={i} className="card row" style={{ padding: 12, cursor: open ? 'pointer' : 'default' }}>
+      <div className="mlist">{qs.map((q, i) => (
+        <label key={i} {...card('var(--warn)', q.on, i, ` wrap${open ? ' pick' : ''}`)}>
           {check(`Add follow-up task for question ${i + 1}`, q.on, (on) => patch(setQs, i, { on }))}
-          <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{q.text}</span>{q.at && <span className="chip">{q.at}</span>}
+          <span className="txt" style={{ flexBasis: 160 }}>{q.text}</span>{q.at && <span className="chip">{q.at}</span>}
           {flag(`q${i}`)}
         </label>))}</div>
       {qs.length > 0 && open && <div className="sub">Checked questions become "Follow up" tasks.</div>}

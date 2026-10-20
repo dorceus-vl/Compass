@@ -136,22 +136,9 @@ button.cb{cursor:pointer;background:transparent}
 @media (max-width:640px){.grid3{grid-template-columns:1fr}}
 
 .auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
-.ai{background:var(--card);border:1px solid var(--border-soft);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
-.ai .src{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim)}
-.ai .src::before{content:"";width:6px;height:6px;border-radius:50%;flex:none;background:var(--src)}
-.ai .t{font-weight:600;font-size:14px;line-height:1.3;overflow-wrap:anywhere}
-.ai .m{font-size:12.5px;color:var(--text-dim);overflow-wrap:anywhere}
-.ai .act{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center}
-.ai .act button,.ai .act a{font:inherit;font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--field-border);background:none;color:var(--text-dim);cursor:pointer}
-.ai .act button.p{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
-.ai .act button:disabled{opacity:.5;cursor:not-allowed}
-.ai.active{outline:2px solid var(--accent);outline-offset:1px}
 .inbox-list:focus-visible{outline:none}
 .rail .badge,.ptab .badge{margin-left:4px;min-width:16px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;line-height:16px;text-align:center}
 
-.steps{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap}
-.steps li{font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-faint)}
-.steps li[aria-current="step"]{background:var(--accent);color:var(--on-accent);border-color:transparent}
 .rv-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between}
 .rv-row .act{display:flex;gap:6px;flex-wrap:wrap}
 .rv-row .act button{padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}
@@ -310,11 +297,12 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 /* ---------- Task cards (Phase 3b, docs/ui-directions.html .tcard): accent bar, icon tile, dotted chips, swipe, lens --f ---------- */
 .tlist{display:grid;gap:12px}
 .tcard{--tc:var(--text-dim);position:relative;border-radius:18px;container-type:inline-size;touch-action:pan-y;will-change:transform;-webkit-user-select:none;user-select:none}
-.tcard .reveal{position:absolute;inset:0;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--ok) 85%,transparent),color-mix(in srgb,var(--ok) 15%,transparent));display:flex;align-items:center;padding-left:22px;font-weight:800;color:var(--bg);opacity:0;transition:opacity .2s}
-.tcard .body{position:relative;border-radius:inherit;padding:15px 16px 15px 20px;display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid color-mix(in srgb,var(--tc) calc(12% + var(--f,0)*30%),var(--border-soft));box-shadow:0 calc(var(--f,0)*18px) calc(var(--f,0)*40px) rgba(0,0,0,.5),0 0 calc(var(--f,0)*28px) color-mix(in srgb,var(--tc) 14%,transparent);transition:transform var(--dur-quick) var(--ease-out)}
-.tcard .body::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--tc);opacity:calc(.55 + var(--f,0)*.45)}
-.tcard .ico{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;font:700 15px var(--font);color:var(--tc);background:color-mix(in srgb,var(--tc) 13%,transparent);border:1px solid color-mix(in srgb,var(--tc) 25%,transparent)}
-.tcard .tx{flex:1;min-width:0}
+.tcard .reveal,.icard .reveal{position:absolute;inset:0;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--ok) 85%,transparent),color-mix(in srgb,var(--ok) 15%,transparent));display:flex;align-items:center;padding-left:22px;font-weight:800;color:var(--bg);opacity:var(--sr,0);transition:opacity .2s}
+.tcard .body,.icard .body{position:relative;border-radius:inherit;padding:15px 16px 15px 20px;display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid color-mix(in srgb,var(--tc) calc(12% + var(--f,0)*30%),var(--border-soft));box-shadow:0 calc(var(--f,0)*18px) calc(var(--f,0)*40px) rgba(0,0,0,.5),0 0 calc(var(--f,0)*28px) color-mix(in srgb,var(--tc) 14%,transparent);transform:translateX(var(--sx,0px));transition:transform var(--dur-quick) var(--ease-out)}
+.tcard[data-drag] .body,.icard[data-drag] .body{transition:none}
+.tcard .body::before,.icard .body::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--tc);opacity:calc(.55 + var(--f,0)*.45)}
+.tcard .ico,.icard .ico,.acard .ico{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;font:700 15px var(--font);color:var(--tc);background:color-mix(in srgb,var(--tc) 13%,transparent);border:1px solid color-mix(in srgb,var(--tc) 25%,transparent)}
+.tcard .tx,.icard .tx{flex:1;min-width:0}
 .tcard .t{display:block;background:none;border:0;padding:0;margin:0;text-align:left;cursor:pointer;color:inherit;font:inherit;font-weight:650;font-size:15px;line-height:1.35;overflow-wrap:anywhere}
 .tcard .t::after{content:"";position:absolute;inset:0;border-radius:inherit} /* the whole card opens the task */
 .tcard .m{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
@@ -438,7 +426,7 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 @keyframes ms-pulse{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(2);opacity:0}}
 @media (prefers-reduced-motion: reduce){.hero .layer,.compass .tilt{transform:none !important}}
 @media (max-width:760px),(pointer:coarse){
-  .ai .act button,.ai .act a{min-height:44px;display:inline-flex;align-items:center;padding:0 14px}
+  .icard .act button,.icard .act a{min-height:44px;display:inline-flex;align-items:center;padding:0 14px}
   .bhead h2 a{display:inline-block;padding:10px 0;margin:-10px 0}
 }
 
@@ -561,3 +549,69 @@ dialog.pal{padding:10px;margin-top:12vh;width:min(640px,calc(100vw - 32px));max-
 .doc-row>*{min-width:0}
 .doc-row label.sub{flex-wrap:wrap}
 .doc-row select.field{max-width:100%;min-width:0}
+
+/* Phase 3b Task 6: inbox cards, toggles, review track, meetings, rules, trash */
+.inbox-list{display:grid;gap:12px;min-width:0}
+.inbox-list[hidden]{display:none}
+.icard,.acard{--tc:var(--ac)}
+.icard{--ac:var(--text-dim);position:relative;border-radius:18px;touch-action:pan-y;will-change:transform;-webkit-user-select:none;user-select:none;min-width:0}
+.icard .reveal.keep{padding-left:22px;opacity:var(--sr,0)}
+.icard .reveal.drop{justify-content:flex-end;padding-right:22px;background:linear-gradient(270deg,rgba(169,167,184,.5),rgba(169,167,184,.08));color:var(--text);opacity:var(--sl,0)}
+.icard .body{align-items:flex-start;padding:14px 16px 14px 20px}
+.icard.active .body{outline:2px solid var(--accent);outline-offset:1px}
+.icard .src{display:flex;align-items:center;font:500 10.5px var(--mono);letter-spacing:1.5px;text-transform:uppercase;color:var(--ac)}
+.icard .t{font-weight:650;font-size:15px;line-height:1.35;overflow-wrap:anywhere;margin-top:3px}
+.icard .m{font-size:12.5px;color:var(--text-dim);overflow-wrap:anywhere;margin-top:4px}
+.icard .act{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.icard .act button,.icard .act a{font:inherit;font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--field-border);background:none;color:var(--text-dim);cursor:pointer}
+.icard .act button.p{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
+.icard .act button:disabled{opacity:.5;cursor:not-allowed}
+@media (prefers-reduced-motion: reduce){.icard{transform:none !important}}
+
+.steps{list-style:none;margin:16px 0 8px;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.steps li{position:relative;padding-top:14px;font-size:12px;font-weight:600;line-height:1.3;color:var(--text-faint);overflow-wrap:anywhere}
+.steps li::before,.steps li::after{content:"";position:absolute;left:0;right:0;top:0;height:4px;border-radius:99px}
+.steps li::before{background:rgba(255,255,255,.08)}
+.steps li::after{background:var(--ok);transform:scaleX(0);transform-origin:left;transition:transform var(--dur-move) var(--ease-out)}
+.steps li[data-done]{color:var(--text-dim)}
+.steps li[data-done]::after{transform:scaleX(1)}
+.steps li[aria-current="step"]{color:var(--text)}
+.steps li[aria-current="step"]::after{background:var(--accent);transform:scaleX(.5)}
+@media (max-width:480px){.steps{gap:5px}.steps li{font-size:11px}}
+
+/* a switch that is a real checkbox: the input covers the whole 44px target, the <i> draws it */
+.tog{position:relative;flex:none;display:inline-block;width:52px;height:44px}
+.tog input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.tog i{position:absolute;left:4px;top:9px;width:44px;height:26px;border-radius:99px;background:var(--field);border:1px solid var(--field-border);pointer-events:none;transition:background var(--dur-quick),border-color var(--dur-quick)}
+.tog i::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--text-faint);transition:transform var(--dur-quick) var(--ease-spring),background var(--dur-quick)}
+.tog input:checked+i{background:color-mix(in srgb,var(--ac,var(--accent)) 28%,transparent);border-color:var(--ac,var(--accent))}
+.tog input:checked+i::after{transform:translateX(18px);background:var(--ac,var(--accent))}
+.tog input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+.tog input:disabled{cursor:not-allowed}
+.tog input:disabled+i{opacity:.5}
+
+.mtg{display:flex;gap:14px;align-items:center;color:inherit}
+.mtg .tx{flex:1;min-width:0}
+.mtg h3{margin:0;font-size:16px;font-weight:650;letter-spacing:0;overflow-wrap:anywhere}
+.mtg p{margin:4px 0 0;font:500 12px var(--mono);color:var(--text-dim)}
+.mtg .chip{flex:none}
+.acard.mtg{padding-left:20px}
+.acard.out{transform:translateX(36px) scale(.97);opacity:0;transition:transform .45s var(--ease-out),opacity .45s var(--ease-out);transition-delay:calc(var(--i,0)*70ms)}
+.mcard{display:flex;gap:12px;align-items:flex-start;flex-wrap:nowrap}
+.mcard>.fields{display:grid;gap:6px;flex:1;min-width:0}
+.mcard>.txt{flex:1;min-width:0;overflow-wrap:anywhere}
+.mcard.pick{cursor:pointer}
+.mcard.wrap{flex-wrap:wrap}
+.mlist{display:grid;gap:10px}
+
+.rules{display:grid;gap:10px;margin-top:12px}
+.acard.rule{display:grid;gap:10px}
+.acard.rule.off{opacity:.62}
+.acard.rule .togl{gap:8px;font-size:13px}
+
+.ghead{display:flex;align-items:center;gap:10px;margin:22px 0 10px}
+.ghead b{font-size:15px}
+.trow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.trow .tt{flex:1 1 200px;min-width:0;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.tlist2{display:grid;gap:8px}
+@media (max-width:760px),(pointer:coarse){.trow .btn{min-height:44px}}

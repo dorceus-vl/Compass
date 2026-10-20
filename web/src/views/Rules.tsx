@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode
 import type { Rule, RuleMode, Horizon, Kind } from '../../../shared/types.ts';
 import { api } from '../api.ts';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
+import { accent, sourceColor } from '../ui/colors.ts';
 
 const APPS: [string, string][] = [['*', 'Any app'], ['finance', 'Finance'], ['health', 'Health'], ['home', 'Home'], ['nightowl', 'Night Owl'], ['kelly', 'Kelly'], ['sonarflow', 'SonarFlow'], ['hollow', 'Hollow'], ['email', 'Email']];
 const MODES: [RuleMode, string][] = [['task', 'Task'], ['inbox', 'Wait in inbox'], ['ignore', 'Ignore']];
@@ -47,8 +48,8 @@ export function Rules() {
       <div className="eyebrow" style={{ marginBottom: 6 }}>Sources and rules</div>
       <p style={{ margin: '0 0 6px' }}>Rules run in this order on what your other apps send. The first one that matches decides: add a task, wait in the inbox, or ignore it.</p>
       {rules.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No rules yet.</p>}
-      {rules.map((r) => (
-        <div key={r.id} style={{ borderTop: '1px solid var(--border-soft)', padding: '12px 0', display: 'grid', gap: 8 }}>
+      <div className="rules">{rules.map((r) => (
+        <div key={r.id} className={`acard rule${r.enabled ? '' : ' off'}`} style={accent(r.app === '*' ? 'var(--accent)' : sourceColor(r.app))}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
             <label style={field}>Name<input key={`${rev}:${r.name}`} className="field" defaultValue={r.name} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (!v) { toast('A rule needs a name'); e.target.value = r.name; } else if (v !== r.name) void patch(r, { name: v }); }} /></label>
             <label style={field}>App<select className="field" value={r.app} onChange={(e) => patch(r, { app: e.target.value }, { app: e.target.value as Rule['app'] })}>{APPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
@@ -58,12 +59,12 @@ export function Rules() {
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span style={{ fontSize: 12, color: 'var(--text-faint)', overflowWrap: 'anywhere' }}>{matchText(r)}</span>
             <span className="row">
-              <label className="row" style={{ gap: 6, fontSize: 13 }}><input type="checkbox" checked={!!r.enabled} onChange={(e) => patch(r, { enabled: e.target.checked }, { enabled: e.target.checked ? 1 : 0 })} style={{ accentColor: 'var(--accent)' }} />Enabled</label>
+              <label className="row togl" style={{ gap: 4 }}><span className="tog"><input type="checkbox" checked={!!r.enabled} onChange={(e) => patch(r, { enabled: e.target.checked }, { enabled: e.target.checked ? 1 : 0 })} /><i /></span>Enabled</label>
               <button type="button" className="btn" style={{ color: 'var(--danger)' }} onClick={() => remove(r)}>Delete</button>
             </span>
           </div>
         </div>
-      ))}
+      ))}</div>
       <AddRule onAdded={(r) => setRules((xs) => xs && [...xs, r])} />
     </div>
   );
@@ -94,10 +95,10 @@ function AddRule({ onAdded }: { onAdded: (r: Rule) => void }) {
       onAdded(rule); setOpen(false); toast('Rule added');
     } catch (x) { setErr(msg(x)); } finally { setBusy(false); }
   };
-  if (!open) return <div style={{ marginTop: 6 }}><button type="button" className="btn" onClick={() => setOpen(true)}>Add rule</button></div>;
+  if (!open) return <div style={{ marginTop: 12 }}><button type="button" className="btn" onClick={() => setOpen(true)}>Add rule</button></div>;
   const f = (label: string, el: ReactNode) => <label style={field}>{label}{el}</label>;
   return (
-    <form onSubmit={submit} style={{ borderTop: '1px solid var(--border-soft)', paddingTop: 12, display: 'grid', gap: 10 }}>
+    <form onSubmit={submit} className="acard" style={{ ...accent('var(--accent)'), marginTop: 10, display: 'grid', gap: 10 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {f('Name', <input name="name" className="field" required maxLength={80} />)}
         {f('App', <select name="app" className="field">{APPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>)}

@@ -3,8 +3,9 @@ import { useInbox, reviewPath, safeUrl, openTask } from '../inbox.ts';
 import { navigate } from '../router.ts';
 import { trashTask } from '../store/useStore.ts';
 import { confirmAction, toast } from './dialogs.tsx';
-import { appLabel } from './sources.ts';
-import { sourceColor } from './colors.ts';
+import { appLabel, appGlyph } from './sources.ts';
+import { sourceColor, accent } from './colors.ts';
+import { useSwipe } from './useSwipe.ts';
 import { SectionHead } from './SectionHead.tsx';
 
 type Inbox = ReturnType<typeof useInbox>;
@@ -19,24 +20,37 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
     try { if (await inbox.dismiss(item.id)) await trashTask(item.task_id); } catch { toast('Could not remove the task'); }
   };
   const btn = (label: string, fn: () => void, primary = false) => <button type="button" key={label} className={primary ? 'p' : undefined} disabled={off} title={tip} onClick={fn}>{label}</button>;
+  const meeting = item.kind === 'meeting', fresh = item.state === 'new';
+  const keep = () => void (meeting ? reviewPath(item).then(navigate) : inbox.keep(item.id));
+  const swipe = useSwipe<HTMLDivElement>({
+    right: meeting || (fresh && !off), left: (meeting || fresh) && !off, skip: 'a, button', fly: true,
+    onSwipe: (dir) => (dir === 'right' ? keep() : void inbox.dismiss(item.id)),
+  });
   return (
-    <div className={`ai${active ? ' active' : ''}`} id={id} role={id ? 'option' : undefined} aria-selected={id ? !!active : undefined} style={{ ['--src' as string]: sourceColor(item.app) }}>
-      <span className="src">{appLabel(item.app)}{item.state === 'added' && <span className="chip" style={{ marginLeft: 8 }}>Added</span>}</span>
-      <div className="t">{item.title}</div>
-      {item.body && <div className="m">{item.body}</div>}
-      <div className="act">
-        {item.kind === 'meeting' ? <>
-          <button type="button" className="p" onClick={async () => navigate(await reviewPath(item))}>Review</button>
-          {btn('Dismiss', () => void inbox.dismiss(item.id))}
-        </> : item.state === 'added' ? <>
-          {item.task_id && <button type="button" className="p" onClick={() => void openTask(item.task_id!, onOpen)}>Open</button>}
-          {item.task_id && btn('Undo', () => void undo())}
-        </> : <>
-          {btn('Keep', () => void inbox.keep(item.id), true)}
-          {btn('Snooze', () => void inbox.snooze(item.id))}
-          {btn('Dismiss', () => void inbox.dismiss(item.id))}
-        </>}
-        {link && <a href={link} target="_blank" rel="noopener noreferrer">Source ↗</a>}
+    <div className={`icard${active ? ' active' : ''}`} id={id} role={id ? 'option' : undefined} aria-selected={id ? !!active : undefined} style={accent(sourceColor(item.app))} ref={swipe.ref} {...swipe.props}>
+      <div className="reveal keep" aria-hidden="true">{meeting ? 'Review →' : 'Keep ✓'}</div>
+      <div className="reveal drop" aria-hidden="true">Dismiss</div>
+      <div className="body">
+        <div className="ico" aria-hidden="true">{appGlyph(item.app)}</div>
+        <div className="tx">
+          <span className="src">{appLabel(item.app)}{item.state === 'added' && <span className="chip" style={{ marginLeft: 8 }}>Added</span>}</span>
+          <div className="t">{item.title}</div>
+          {item.body && <div className="m">{item.body}</div>}
+          <div className="act">
+            {meeting ? <>
+              <button type="button" className="p" onClick={async () => navigate(await reviewPath(item))}>Review</button>
+              {btn('Dismiss', () => void inbox.dismiss(item.id))}
+            </> : item.state === 'added' ? <>
+              {item.task_id && <button type="button" className="p" onClick={() => void openTask(item.task_id!, onOpen)}>Open</button>}
+              {item.task_id && btn('Undo', () => void undo())}
+            </> : <>
+              {btn('Keep', () => void inbox.keep(item.id), true)}
+              {btn('Snooze', () => void inbox.snooze(item.id))}
+              {btn('Dismiss', () => void inbox.dismiss(item.id))}
+            </>}
+            {link && <a href={link} target="_blank" rel="noopener noreferrer">Source ↗</a>}
+          </div>
+        </div>
       </div>
     </div>
   );

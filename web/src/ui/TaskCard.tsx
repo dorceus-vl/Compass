@@ -2,17 +2,16 @@ import { useRef, useState } from 'react';
 import type { Project, Task } from '../../../shared/types.ts';
 import { completeTask, updateTask } from '../store/useStore.ts';
 import { fmtDue } from '../dates.ts';
-import { confetti, useLens, useReducedMotion } from '../motion.ts';
+import { confetti, useLens } from '../motion.ts';
+import { useSwipe } from './useSwipe.ts';
 import { taskColor, projectColor } from './colors.ts';
-import { appLabel } from './sources.ts';
+import { appLabel, appGlyph } from './sources.ts';
 
-const GLYPH: Record<string, string> = { finance: '$', health: '+', hollow: 'H', sonarflow: '◷', email: '@', home: '⌂' };
 /** The icon tile's glyph: the source app's mark, else the project's initial. */
 export function iconFor(task: Task, project?: Project): string {
-  return GLYPH[task.source_app] ?? (task.source_app !== 'manual' ? task.source_app[0].toUpperCase() : project ? project.name.trim()[0]?.toUpperCase() ?? '•' : '•');
+  return task.source_app !== 'manual' ? appGlyph(task.source_app) : project ? project.name.trim()[0]?.toUpperCase() ?? '•' : '•';
 }
 const TONE = { over: 'var(--danger)', due: 'var(--accent)', '': 'var(--text-dim)' };
-const SWIPE = 110; // px to the right that completes, as in the preview
 
 /** Ids finished from a view's cards during this visit (gone when the view unmounts), so they stay struck through and the check can undo. */
 export function useFinished(): [ReadonlySet<string>, (id: string) => void] {
@@ -23,11 +22,6 @@ export function useFinished(): [ReadonlySet<string>, (id: string) => void] {
 type CardProps = { task: Task; projects: Project[]; onOpen: (id: string) => void; onFinish?: (id: string) => void };
 
 export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
-  const body = useRef<HTMLDivElement>(null);
-  const reveal = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ x0: number; dx: number } | null>(null);
-  const swiped = useRef(false);
-  const reduce = useReducedMotion();
   const done = task.status === 'done';
   const due = fmtDue(task.due_at), tone = done ? '' : due.tone; // a finished task is not late
   const color = taskColor(task, projects);
@@ -40,40 +34,17 @@ export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
     confetti(x, y, color);
     void completeTask(task.id);
   };
-  const end = (e: React.PointerEvent) => {
-    const d = drag.current; if (!d) return;
-    drag.current = null;
-    if (body.current) { body.current.style.transition = ''; body.current.style.transform = ''; }
-    if (reveal.current) reveal.current.style.opacity = '';
-    swiped.current = e.type === 'pointerup' && d.dx > 6;
-    if (swiped.current) setTimeout(() => { swiped.current = false; }); // only the click that follows this pointerup
-    if (d.dx > SWIPE && e.type === 'pointerup') finish(e.clientX, e.clientY);
-  };
+  const swipe = useSwipe<HTMLElement>({ right: true, skip: '.check, a', onSwipe: (_d, x, y) => finish(x, y) });
 
   return (
     <article
       className={`tcard${done ? ' done' : ''}`}
       style={{ ['--tc' as string]: color }}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || (e.target as Element).closest('.check, a')) return;
-        drag.current = { x0: e.clientX, dx: 0 }; swiped.current = false;
-        if (body.current) body.current.style.transition = 'none';
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current; if (!d) return;
-        d.dx = Math.max(0, e.clientX - d.x0);
-        if (d.dx <= 6) return;
-        if (body.current && !reduce) body.current.style.transform = `translateX(${d.dx}px)`;
-        if (reveal.current) reveal.current.style.opacity = String(Math.min(1, d.dx / SWIPE));
-      }}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onPointerLeave={end}
-      // a drag that ends over the title is not a click on it
-      onClickCapture={(e) => { if (swiped.current) { swiped.current = false; e.preventDefault(); e.stopPropagation(); } }}
+      ref={swipe.ref}
+      {...swipe.props}
     >
-      <div className="reveal" ref={reveal} aria-hidden="true">Done ✓</div>
-      <div className="body" ref={body}>
+      <div className="reveal" aria-hidden="true">Done ✓</div>
+      <div className="body">
         <div className="ico" aria-hidden="true">{ico}</div>
         <div className="tx">
           <button type="button" className="t" onClick={() => onOpen(task.id)}>{task.title}</button>

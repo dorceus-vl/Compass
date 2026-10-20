@@ -3,18 +3,22 @@ import type { MeetingReview } from '../../../shared/types.ts';
 import { loadMeetings } from '../inbox.ts';
 import { Link } from '../router.ts';
 import { SignedOut } from '../api.ts';
+import { accent } from '../ui/colors.ts';
+import { appGlyph } from '../ui/sources.ts';
 
 const when = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 const n = (c: number, w: string) => `${c} ${w}${c === 1 ? '' : 's'}`;
 
 function Row({ m }: { m: MeetingReview }) {
+  const fresh = m.state === 'new';
   return (
-    <Link to={`/meetings/${m.id}`} className="card" style={{ display: 'block', color: 'inherit' }}>
-      <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-        <h3 style={{ fontSize: 18, overflowWrap: 'anywhere' }}>{m.title}</h3>
-        <span className="chip">{m.state === 'new' ? 'New' : 'Reviewed'}</span>
+    <Link to={`/meetings/${m.id}`} className="acard mtg" style={accent('var(--src-meeting)')}>
+      <div className="ico" aria-hidden="true">{appGlyph('sonarflow')}</div>
+      <div className="tx">
+        <h3>{m.title}</h3>
+        <p>{when(m.received_at)} · {n(m.action_items.length, 'action')} · {n(m.decisions.length, 'decision')}</p>
       </div>
-      <p>{when(m.received_at)} · {n(m.action_items.length, 'action')} · {n(m.decisions.length, 'decision')}</p>
+      <span className="chip" style={fresh ? { color: 'var(--src-meeting)', borderColor: 'color-mix(in srgb,var(--src-meeting) 40%,transparent)' } : undefined}>{fresh ? 'New' : 'Reviewed'}</span>
     </Link>
   );
 }
