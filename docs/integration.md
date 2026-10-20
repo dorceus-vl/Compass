@@ -80,19 +80,19 @@ Scopes (all off by default; there is no delete scope, and Kelly never edits titl
 
 | Scope | Routes |
 |---|---|
-| `compass:read.tasks` | `GET /today`, `GET /tasks?view=today\|overdue\|upcoming\|waiting&limit=` (limit 1 to 50, default 20) |
+| `compass:read.tasks` | `GET /today`, `GET /tasks?view=today\|overdue\|upcoming\|waiting&limit=` (limit 1 to 50, default 20), `GET /tasks/:id` -> `{ task }` (open or done; Kelly names the task in her OK box with it before a done) |
 | `compass:write.tasks` | `POST /tasks` `{ title (1-120), due_at?: YYYY-MM-DD, horizon?: short\|medium\|long, project_id?, notes? (2000) }` -> 201 `{ task }`; `POST /tasks/:id/done` -> `{ task }` |
 | `compass:read.projects` | `GET /projects` -> `{ projects: [{ id, name, rag, rag_reason, pct_done, next_milestone, open_risks }] }` |
 
 `AgentTask` is `{ id, title, due_at, horizon, status, project, priority }` (decrypted). `/today` returns `{ date, due_today, overdue, waiting, next_milestones: [{ name, project, due_at }], hidden }`; `/tasks` returns `{ date, view, tasks, hidden }`.
 
-Only shared items are visible: a task with no project if it is personal; otherwise only a task or project whose project is live (not in Trash) with the `cloud` data boundary. Everything else answers 404 as if missing (create with such a `project_id`, done on such a task, or on a task that is already done) and shows up only as the number `hidden`. A task made in a work-and-cloud project is sealed like any work row. Kelly's tasks have `source_app` `kelly`; their events have actor `kelly`.
+Only shared items are visible: a task with no project if it is personal; otherwise only a task or project whose project is live (not in Trash) with the `cloud` data boundary. Everything else answers 404 as if missing (create with such a `project_id`, a lookup or done on such a task, or done on a task that is already done) and shows up only as the number `hidden`. A task made in a work-and-cloud project is sealed like any work row. Kelly's tasks have `source_app` `kelly`; their events have actor `kelly`.
 
 Refusals: `401` bad secret; `403 { error: 'kelly_disabled' }`; `403 { error: 'scope_not_granted', scope }`; `400 { error }` bad body; `404`; `429 { error: 'rate_limited' }` (more than 60 calls in 60 seconds) or `{ error: 'write_limit' }` (more than 30 creates and dones in an hour).
 
-Audit: every authenticated call writes one `audit_log` row: actor `kelly`, action `agent.today`, `agent.tasks.list`, `agent.tasks.create`, `agent.tasks.done` or `agent.projects`, target the task id when there is one, detail `{ "ok": true }` or `{ "refused": "kelly_disabled" | "scope_not_granted" | "not_found" | "rate_limited" | "write_limit" | "invalid" | "error" }`. Never task text. If the handler fails after the checks, the row says `error` and the call answers 500 `{ error: 'internal' }`. What Kelly polls (her agenda, the idle line, the Morning Show) shares one `/today` answer for 40 minutes and remembers a 401, `kelly_disabled` or `scope_not_granted` for an hour without calling, so a Kelly screen left open costs fewer than 40 rows a day; her chat tools always call.
+Audit: every authenticated call writes one `audit_log` row: actor `kelly`, action `agent.today`, `agent.tasks.list`, `agent.tasks.get`, `agent.tasks.create`, `agent.tasks.done` or `agent.projects`, target the task id when there is one, detail `{ "ok": true }` or `{ "refused": "kelly_disabled" | "scope_not_granted" | "not_found" | "rate_limited" | "write_limit" | "invalid" | "error" }`. Never task text. If the handler fails after the checks, the row says `error` and the call answers 500 `{ error: 'internal' }`. What Kelly polls (her agenda, the idle line, the Morning Show) shares one `/today` answer for 40 minutes and remembers a 401, `kelly_disabled` or `scope_not_granted` for an hour without calling, so a Kelly screen left open costs fewer than 40 rows a day; her chat tools always call.
 
-Only top-level tasks are visible: a subtask is never listed and `done` on one is a 404 (subtasks do not inherit their parent's project or kind).
+Only top-level tasks are visible: a subtask is never listed, and a lookup or `done` on one is a 404 (subtasks do not inherit their parent's project or kind).
 
 ## Relay (Compass → Kelly)
 

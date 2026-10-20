@@ -361,10 +361,18 @@ ST=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke agent subtask $R
 agb GET /today | grep -q "Smoke agent subtask $R" && fail "agent today lists a subtask"
 agb GET "/tasks?view=today&limit=50" | grep -q "Smoke agent subtask $R" && fail "agent tasks lists a subtask"
 [ "$(agc POST /tasks/$ST/done)" = 404 ] || fail "agent done on a subtask not 404"
+# The lookup Kelly makes before a done: a shared undated task answers (open, then done); hidden and subtasks are 404 like done.
+UT=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke agent undated $R\"}" | js d.task.id)
+[ "$(agb GET /tasks/$UT | js "d.task.id==='$UT' && d.task.title==='Smoke agent undated $R' && d.task.due_at===null && !('notes' in d.task)")" = true ] || fail "agent lookup of a shared undated task"
+[ "$(agc GET /tasks/$OT)" = 404 ] || fail "agent lookup of a hidden task not 404"
+[ "$(agc GET /tasks/$ST)" = 404 ] || fail "agent lookup of a subtask not 404"
+[ "$(agc GET /tasks/no-such-task)" = 404 ] || fail "agent lookup of a missing task not 404"
+[ "$(agc POST /tasks/$UT/done)" = 200 ] && [ "$(agb GET /tasks/$UT | js d.task.status)" = done ] || fail "agent lookup of a done task"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND action='agent.tasks.get' AND target='$OT' AND detail LIKE '%not_found%'" | js 'd[0].results[0].n')" = 1 ] || fail "hidden lookup not audited as not_found"
 [ "$(task $ST status)" = new ] || fail "agent finished a subtask"
 A1=$(arows); agc GET /today >/dev/null; [ "$(arows)" = $((A1 + 1)) ] || fail "agent call did not write exactly one audit row"
-# 2 creates and 1 done are in: 27 more writes make 30, the 31st is refused.
-for i in $(seq 27); do BULK="{\"title\":\"Smoke agent bulk $i $R\"}"; [ "$(agc POST /tasks "$BULK")" = 201 ] || fail "agent write $i refused early"; done
+# 2 creates and 2 dones are in: 26 more writes make 30, the 31st is refused.
+for i in $(seq 26); do BULK="{\"title\":\"Smoke agent bulk $i $R\"}"; [ "$(agc POST /tasks "$BULK")" = 201 ] || fail "agent write $i refused early"; done
 [ "$(agc POST /tasks '{"title":"one too many"}')" = 429 ] && agb POST /tasks '{"title":"one too many"}' | grep -q write_limit || fail "31st agent write is not 429 write_limit"
 echo "smoke: (y) agent API: 401 w/o audit, off by default, scopes, shared-only (hidden counted), kelly actor, 30 writes then 429"
 kset '{"enabled":false,"scopes":[]}'

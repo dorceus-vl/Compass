@@ -41,6 +41,7 @@ assert.equal(kellyLine('agent.tasks.done', { ok: true }).title, 'Completed a tas
 assert.deepEqual(kellyLine('agent.tasks.create', { refused: 'scope_not_granted' }), { title: 'Refused: no permission', sub: 'Added a task' });
 assert.equal(kellyLine('agent.today', { refused: 'rate_limited' }).title, 'Refused: too many calls');
 assert.equal(kellyLine('agent.today', { refused: 'weird' }).title, 'Refused: not allowed');
+assert.deepEqual(kellyLine('agent.tasks.get', { ok: true }), { title: 'Looked up a task', sub: null });
 assert.deepEqual(kellyLine('kelly.document', { ok: true }), { title: 'Gave Kelly a document', sub: 'She keeps her copy; remove it in Kelly' });
 assert.deepEqual(kellyLine('kelly.document', { ok: false }), { title: "Kelly couldn't take a document", sub: null });
 assert.equal(kellyLine('agent.new_thing', null).title, 'Made a call');

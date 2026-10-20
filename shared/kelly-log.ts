@@ -6,7 +6,7 @@ export const SCOPE_LABEL: Record<AgentScope, string> = {
 };
 
 const ACTION: Record<string, string> = {
-  'agent.today': "Listed today's tasks", 'agent.tasks.list': 'Listed tasks', 'agent.tasks.create': 'Added a task', 'agent.tasks.done': 'Completed a task', 'agent.projects': 'Listed shared projects',
+  'agent.today': "Listed today's tasks", 'agent.tasks.list': 'Listed tasks', 'agent.tasks.get': 'Looked up a task', 'agent.tasks.create': 'Added a task', 'agent.tasks.done': 'Completed a task', 'agent.projects': 'Listed shared projects',
 };
 const REFUSED: Record<string, string> = {
   kelly_disabled: 'Kelly is switched off', scope_not_granted: 'no permission', not_found: 'not found', rate_limited: 'too many calls', write_limit: 'too many changes', invalid: 'bad request', error: 'something went wrong',

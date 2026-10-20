@@ -100,6 +100,15 @@ agent.get('/tasks', (c) => call(c, 'agent.tasks.list', 'compass:read.tasks', asy
   return { body: { date, view, tasks: await Promise.all(rows.slice(0, Math.min(n, 50)).map((r) => agentTask(env, r, projects))), hidden } };
 }));
 
+/** One task by id, open or done, so Kelly can name it in her OK box before completing it. Missing, trashed, a subtask and not-shared all look the same (404). */
+agent.get('/tasks/:id', (c) => call(c, 'agent.tasks.get', 'compass:read.tasks', async () => {
+  const env = c.env, id = c.req.param('id');
+  const projects = await liveProjects(env);
+  const task = await loadTask(env, id);
+  if (!task || task.parent_id || !shared(task, projectOf(projects, task))) return { status: 404, refused: 'not_found', target: id, body: { error: 'Not found' } };
+  return { target: id, body: { task: await agentTask(env, task, projects, true) } };
+}));
+
 agent.post('/tasks', (c) => call(c, 'agent.tasks.create', 'compass:write.tasks', async () => {
   const env = c.env;
   const input = parseNewTask(await c.req.json().catch(() => null));
