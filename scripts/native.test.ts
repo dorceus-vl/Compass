@@ -1,7 +1,7 @@
 // node --experimental-strip-types scripts/native.test.ts
 // The web side of the native shells: PKCE, the sign-in URL, shared text, links, and the sign-in / push flows against a stubbed shell.
 import assert from 'node:assert/strict';
-import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush } from '../web/src/native.ts';
+import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox } from '../web/src/native.ts';
 
 const g = globalThis as any;
 const set = (k: string, v: unknown) => Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
@@ -163,4 +163,27 @@ posts.length = 0;
 await nativeSignIn();
 assert.deepEqual(sent, ['open_external']);
 assert.equal(posts[0].body.code, 'MAC');
+
+// Mac outbox (ruling N3): the first read and a switched-off read only move `since`; then each item is a banner; 401 stops
+const banners: any[] = [];
+set('__TAURI_INTERNALS__', { invoke: async (cmd: string, a: any) => { if (cmd === 'notify') banners.push(a); } });
+const gets: string[] = [];
+let outbox: { status: number; items?: any[] } = { status: 200, items: [] };
+set('fetch', async (url: string) => { gets.push(url); return { ok: outbox.status < 300, status: outbox.status, json: async () => ({ items: outbox.items }) }; });
+store.delete('compass.outbox.since');
+assert.equal(await pollOutbox(true, () => '2026-10-20T10:00:00.000Z'), true);
+assert.equal(gets.length, 0, 'no backlog on the first read');
+assert.equal(store.get('compass.outbox.since'), '2026-10-20T10:00:00.000Z');
+outbox = { status: 200, items: [{ at: '2026-10-20T10:00:30.000Z', title: 'Due soon', body: 'Call Bob', url: '/projects/1' }, { at: '2026-10-20T10:00:40.000Z', title: 'Compass', body: 'x', url: null }] };
+assert.equal(await pollOutbox(true), true);
+assert.equal(gets[0], '/api/push/outbox?since=2026-10-20T10%3A00%3A00.000Z');
+assert.deepEqual(banners, [{ title: 'Due soon', body: 'Call Bob', url: '/projects/1' }, { title: 'Compass', body: 'x', url: '/' }]);
+assert.equal(store.get('compass.outbox.since'), '2026-10-20T10:00:40.000Z');
+assert.equal(await pollOutbox(false, () => '2026-10-20T11:00:00.000Z'), true);
+assert.equal(gets.length, 1, 'switched off: no read');
+assert.equal(store.get('compass.outbox.since'), '2026-10-20T11:00:00.000Z', 'turning it back on shows nothing older');
+outbox = { status: 500 };
+assert.equal(await pollOutbox(true), true, 'a server error keeps polling');
+outbox = { status: 401 };
+assert.equal(await pollOutbox(true), false, 'signed out stops');
 console.log('native: ok');

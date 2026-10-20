@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "compass-quickadd",
+  "description": "The quick-add window's page (/?quickadd=1) may only close itself.",
+  "windows": ["quickadd"],
+  "local": false,
+  "remote": { "urls": ["https://compass.knocturnlabs.com/*"] },
+  "permissions": ["allow-close-quick-add"]
+}

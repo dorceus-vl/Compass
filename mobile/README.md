@@ -17,8 +17,11 @@ starts the app still opens its page. `env` follows the build configuration (Debu
 `App.entitlements` says `aps-environment` development; Xcode's Archive and export rewrite that for TestFlight. So test on a device
 with a Debug build, and distribute with Archive, not a Release build run from Xcode (that would register a sandbox token as production).
 
-Shared text (Task 4's Share Extension): write the text to `UserDefaults(suiteName: "group.com.knocturnlabs.compass")` under the key
-`sharedText`. The app reads and clears it when it comes to the front and sends it to the page once.
+Shared text: the Share Extension (`ios/App/ShareExtension/`, bundle id `com.knocturnlabs.compass.ShareExtension`, iOS 17) takes text or
+a URL from the share sheet, writes the title and URL (`ShareText.swift`) to `UserDefaults(suiteName: "group.com.knocturnlabs.compass")`
+under the key `sharedText`, says "Added to Compass quick add — open Compass to finish" and closes. The app reads and clears it when it
+comes to the front and sends it to the page once, which opens quick add prefilled. `build:sim` signs ad hoc so the simulator applies the
+app group (an unsigned build gives the extension and the app separate stores).
 
 ## Android
 

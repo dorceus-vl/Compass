@@ -9,10 +9,11 @@
 //     takeSharedText  the text a share left; clears it        {}                            { text: string | null }
 //     openExternal    open in the system browser              { url }                       {}
 //     event sharedText { text }       event notificationTap { url }
-//   Tauri (Mac): command open_external { url }; command notify_permission → 'granted' | 'denied'; event compass-auth { url } (payload)
+//   Tauri (Mac): command open_external { url }; command notify_permission → 'granted' | 'denied'; event compass-auth { url } (payload);
+//     command notify { title, body, url } (a banner; the page reads GET /api/push/outbox, ruling N3); command close_quick_add
 //
 // The native side refuses any sign-in url not on id.knocturnlabs.com and any callbackScheme other than `compass`.
-import { api, deviceId } from './api.ts';
+import { api, deviceId, SignedOut } from './api.ts';
 
 export type Shell = 'ios' | 'android' | 'mac';
 type Json = Record<string, unknown>;
@@ -156,6 +157,27 @@ export function openExternal(url: string): void {
   else window.open(url, '_blank', 'noopener');
 }
 
+// ---- Mac: banners from the outbox (ruling N3) and the quick-add window ----
+const SINCE = 'compass.outbox.since';
+const getSince = () => { try { return localStorage.getItem(SINCE); } catch { return null; } };
+const setSince = (v: string) => { try { localStorage.setItem(SINCE, v); } catch { /* private mode */ } };
+/** One outbox read: each new item becomes a banner. Notifications off, or the first read, only moves `since` to now (no backlog).
+ *  Returns false when the session is gone (401): the caller stops polling. */
+export async function pollOutbox(on: boolean, now = () => new Date().toISOString()): Promise<boolean> {
+  const since = getSince();
+  if (!on || !since) { setSince(now()); return true; }
+  try {
+    const { items } = await api<{ items: { at: string; title: string; body: string; url: string | null }[] }>(`/push/outbox?since=${encodeURIComponent(since)}`);
+    for (const it of items) { await invoke('notify', { title: it.title, body: it.body, url: it.url ?? '/' }).catch(() => {}); setSince(it.at); }
+  } catch (e) { if (e instanceof SignedOut) return false; } // offline or a server error: try again next minute
+  return true;
+}
+
+/** The Mac's quick-add window (`/?quickadd=1`) closes itself after a save or Escape. */
+export function closeQuickAdd(): void {
+  if (shell() === 'mac') void invoke('close_quick_add').catch(() => {});
+}
+
 function listenCap(name: string, cb: (data: any) => void) {
   const c = cap()!;
   const add = c.Plugins?.CompassNative?.addListener;
@@ -163,8 +185,9 @@ function listenCap(name: string, cb: (data: any) => void) {
   else c.nativeCallback?.('CompassNative', 'addListener', { eventName: name }, cb);
 }
 
-/** Text shared to the app (a share sheet) and notification taps, plus link handling. Does nothing outside a shell. Returns the stop function. */
-export function startShell(h: { onSharedText: (text: string) => void; onPath: (path: string) => void }): () => void {
+/** Text shared to the app (a share sheet) and notification taps, plus link handling; on the Mac, banners from the outbox every minute
+ *  while `notifyOn()` (the Settings switch). Does nothing outside a shell. Returns the stop function. */
+export function startShell(h: { onSharedText: (text: string) => void; onPath: (path: string) => void; notifyOn?: () => boolean }): () => void {
   const sh = shell();
   if (!sh) return () => {};
   const onClick = (e: MouseEvent) => {
@@ -186,6 +209,11 @@ export function startShell(h: { onSharedText: (text: string) => void; onPath: (p
     document.addEventListener('visibilitychange', onShow);
     void take();
     stop = () => document.removeEventListener('visibilitychange', onShow);
+  } else {
+    const poll = () => void pollOutbox(h.notifyOn?.() ?? false).then((go) => { if (!go) clearInterval(timer); });
+    const timer = setInterval(poll, 60_000);
+    poll();
+    stop = () => clearInterval(timer);
   }
   return () => { document.removeEventListener('click', onClick); stop(); };
 }

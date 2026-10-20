@@ -436,6 +436,7 @@ dialog.pal{padding:10px;margin-top:12vh;width:min(640px,calc(100vw - 32px));max-
 .pal-row .tt{flex:1;min-width:0;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pal-row .kind{flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 10.5px var(--mono);letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint)}
 .pal-row[aria-selected="true"] .kind{color:var(--accent)}
+.quick-out{margin:0;padding:32px 20px;text-align:center;color:var(--text-dim);font-size:14px}
 
 /* ---------- Board, List, Upcoming, Timeline (Phase 3b Task 4) ---------- */
 .lgroup .hh{position:sticky;top:0;z-index:3;margin:-14px -14px 4px;padding:12px 14px;border-radius:18px 18px 0 0;border-bottom:1px solid var(--border-soft);background:color-mix(in srgb,var(--panel) 88%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}

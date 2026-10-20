@@ -21,9 +21,12 @@ import { LibraryView } from './views/Library.tsx';
 import { LibraryPageView } from './views/LibraryPage.tsx';
 import { CopilotView } from './views/Copilot.tsx';
 import { Palette } from './ui/Palette.tsx';
-import { startSync } from './store/sync.ts';
-import { shell, startShell, sharedToQuickAdd } from './native.ts';
+import { startSync, replay } from './store/sync.ts';
+import { shell, startShell, sharedToQuickAdd, closeQuickAdd } from './native.ts';
 import { enablePush, thisDeviceId } from './push.ts';
+
+/** The Mac's quick-add window loads `/?quickadd=1`: the palette alone, which closes the window after a save (once it reached the server, or is queued offline) or Escape. */
+const quickAdd = new URLSearchParams(location.search).get('quickadd') === '1';
 
 export function App() {
   const { path, params } = useRoute();
@@ -36,9 +39,9 @@ export function App() {
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
   // In an app shell: shared text opens quick add prefilled, links and notification taps move inside Compass, and the push token is kept fresh.
   useEffect(() => {
-    if (auth !== 'in' || !shell()) return;
+    if (auth !== 'in' || !shell() || quickAdd) return;
     if (thisDeviceId()) void enablePush().catch(() => {}); // already allowed, so no prompt; the token may have changed
-    return startShell({ onSharedText: (t) => { setShared((s) => ({ n: (s?.n ?? 0) + 1, ...sharedToQuickAdd(t) })); setPalette(true); }, onPath: (p) => navigate(p) });
+    return startShell({ onSharedText: (t) => { setShared((s) => ({ n: (s?.n ?? 0) + 1, ...sharedToQuickAdd(t) })); setPalette(true); }, onPath: (p) => navigate(p), notifyOn: () => thisDeviceId() === 'local' });
   }, [auth]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); } };
@@ -46,6 +49,9 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   if (auth === 'checking') return null;
+  if (quickAdd) return auth === 'out'
+    ? <p className="quick-out">Open Compass and sign in first.</p>
+    : <><Palette onClose={closeQuickAdd} onAdded={() => void replay().finally(closeQuickAdd)} /><Toasts /></>;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
   const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, timeline: <Timeline />, projects: <Projects />,
     project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, copilot: <CopilotView id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} /> }[path] ?? <Today />;

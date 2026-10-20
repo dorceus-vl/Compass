@@ -52,3 +52,18 @@ print("CompassLink: all checks passed")
 SWIFT
 swiftc -o "$out/check" ios/App/App/CompassLink.swift "$out/main.swift"
 "$out/check"
+
+# The Share Extension's text: title, then the page's URL (http(s) only), no repeats.
+mkdir "$out/s"; cat > "$out/s/main.swift" <<'SWIFT'
+import Foundation
+func check(_ ok: Bool, _ what: String) { if !ok { print("FAIL: \(what)"); exit(1) } }
+check(ShareText.compose(title: " Pricing ", url: URL(string: "https://ex.com/p"), text: nil) == "Pricing\nhttps://ex.com/p", "title then url")
+check(ShareText.compose(title: nil, url: nil, text: "buy milk\n") == "buy milk", "text alone")
+check(ShareText.compose(title: "https://ex.com/p", url: URL(string: "https://ex.com/p"), text: nil) == "https://ex.com/p", "no repeat")
+check(ShareText.compose(title: "x", url: URL(string: "file:///etc/hosts"), text: nil) == "x", "file url dropped")
+check(ShareText.compose(title: " ", url: nil, text: "") == nil, "nothing")
+check(ShareText.compose(title: String(repeating: "a", count: 5000), url: nil, text: nil)?.count == ShareText.limit, "capped")
+print("ShareText: all checks passed")
+SWIFT
+swiftc -o "$out/share" ios/App/ShareExtension/ShareText.swift "$out/s/main.swift"
+"$out/share"

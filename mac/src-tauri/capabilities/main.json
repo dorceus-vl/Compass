@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "compass-main",
+  "description": "The main window's page on compass.knocturnlabs.com (web/src/native.ts): sign-in and outside links in the browser, banners from the outbox, the compass-auth event. Nothing else, and no other origin.",
+  "windows": ["main"],
+  "local": false,
+  "remote": { "urls": ["https://compass.knocturnlabs.com/*"] },
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "allow-open-external", "allow-notify-permission", "allow-notify"]
+}
