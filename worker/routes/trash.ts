@@ -69,8 +69,8 @@ trash.post('/empty', async (c) => {
 
 /**
  * Cron: rows in Trash for 30 days are deleted (all = everything in Trash, for Empty Trash).
- * Order respects the foreign keys: events, task parents, tasks, copilot messages then threads, library imports then documents,
- * knowledge passages, items, collections (before the documents they came from),
+ * Order respects the foreign keys: knowledge passages and items first (KN17), events, task parents, tasks, copilot messages then threads, library imports then documents,
+ * knowledge collections (before the documents their items came from),
  * project logs (RAID, changes, lessons, decisions), milestones, project links (tasks, meeting reviews), projects.
  */
 export async function purgeTrash(env: Env, all = false): Promise<Record<string, number>> {
@@ -81,19 +81,22 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const goneDocs = `SELECT id FROM documents WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   // An item goes when it, its collection, or its document is gone; a passage goes with its item or collection.
   const goneColls = 'SELECT id FROM knowledge_collections WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
-  const goneItems = `SELECT id FROM knowledge_items WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR collection_id IN (${goneColls}) OR document_id IN (${goneDocs})`;
+  // KN17: a meeting or email item also goes with its source's project, before the purge unfiles the review and the task below (an Offline-only project's notes never come back as unfiled).
+  const goneItems = `SELECT id FROM knowledge_items WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR collection_id IN (${goneColls}) OR document_id IN (${goneDocs})
+    OR (source = 'meeting' AND source_id IN (SELECT id FROM meeting_reviews WHERE project_id IN (${goneProjects})))
+    OR (source = 'email' AND source_id IN (SELECT ib.id FROM inbox_items ib JOIN tasks t ON t.id = ib.task_id WHERE t.project_id IN (${goneProjects})))`;
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [events, , , tasks, messages, threads, kchunks, kitems, kcolls, , , docs, raid, changes, lessons, decisions, milestones, , , projects, clips] = await env.DB.batch([
+  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, milestones, , , projects, clips] = await env.DB.batch([
+    q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // first, while tasks and reviews still name their project; their vectors go below
+    q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING id`),
     q(`DELETE FROM ai_messages WHERE thread_id IN (${goneThreads}) RETURNING id`), // their read-aloud audio goes below
     q(`DELETE FROM ai_threads WHERE id IN (${goneThreads})`),
-    q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // their vectors go below
-    q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM knowledge_collections WHERE id IN (${goneColls})`),
     q(`DELETE FROM library_pages WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
     q(`DELETE FROM library_pages WHERE import_doc_id IN (${goneDocs})`), // an import goes with its document (FK)

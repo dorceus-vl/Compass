@@ -8,7 +8,7 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
 import { chunk, type Passage } from '../lib/chunk.ts';
-import { boundaryChange, compatible, mayTake, needsStepUp, HOME, KEPT, LIVE, type Scope } from '../lib/knowledge.ts';
+import { boundaryChange, compatible, emailIsWork, mayTake, needsStepUp, HOME, KEPT, LIVE, type Scope } from '../lib/knowledge.ts';
 import { embedPending, hybridSearch, remove } from '../lib/vectors.ts';
 import { AiRefused } from '../lib/ai.ts';
 import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
@@ -226,8 +226,9 @@ knowledge.post('/items/from-inbox/:id', async (c) => {
   const item = await loadInboxItem(c.env, c.req.param('id'));
   if (item && item.kind !== 'email') return c.json({ error: 'Only an email can be saved to knowledge' }, 400);
   // the project of the task it became: Offline only or in Trash counts as Offline (LIVE then keeps following it)
-  const off = item?.task_id ? await c.env.DB.prepare(`SELECT 1 FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?1 AND (p.data_boundary = 'offline' OR p.deleted_at IS NOT NULL)`).bind(item.task_id).first() : null;
-  const side = item ? { scope: (item.work ? 'work' : 'personal') as Scope, offline: !!off } : null;
+  // and its kind: an email is work when its row says so or its task sits in a work project (emailIsWork, as LIVE and the sweep)
+  const tp = item?.task_id ? await c.env.DB.prepare(`SELECT p.kind, (p.data_boundary = 'offline' OR p.deleted_at IS NOT NULL) AS off FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?1`).bind(item.task_id).first<{ kind: Scope; off: number }>() : null;
+  const side = item ? { scope: (emailIsWork(item.work, tp?.kind ?? null) ? 'work' : 'personal') as Scope, offline: !!tp?.off } : null;
   return addText(c, b.collection_id, side, { source: 'email', source_id: item?.id ?? '', title: item?.title ?? '', text: item ? `${item.title}\n\n${emailText(item)}` : '', kind: 'txt' });
 });
 
