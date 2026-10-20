@@ -56,7 +56,7 @@ function Threads({ projectId, openId, onOpen, rev }: { projectId?: string; openI
 
 // ---------------------------------------------------------------- proposals
 type Row = { key: string; group: 'task' | 'raid' | 'decision'; text: string; chips: string[]; noun: string };
-function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null }) {
+function ProposalsPanel({ m, project, kind }: { m: AiMessage; project: Project | null; kind: Kind }) {
   const pr = m.proposals!;
   const rows: Row[] = [
     ...pr.tasks.map((t, i): Row => ({ key: `t${i}`, group: 'task', text: t.title, chips: [t.horizon, ...(t.due_at ? [fmtDue(t.due_at).text || t.due_at] : [])], noun: 'task' })),
@@ -84,7 +84,8 @@ function ProposalsPanel({ m, project }: { m: AiMessage; project: Project | null 
         try {
           if (r.group === 'task') {
             const t = pr.tasks[i];
-            await createTask({ title: t.title, horizon: t.horizon, due_at: t.due_at, project_id: project?.id ?? null, kind: project?.kind ?? 'personal' });
+            // The server takes project and kind from this answer's thread (KN22); the kind here is only the local copy's until the next pull.
+            await createTask({ title: t.title, horizon: t.horizon, due_at: t.due_at, project_id: project?.id ?? null, kind: project?.kind ?? kind }, { from_message: m.id });
             ok = true;
           } else if (r.group === 'raid') {
             const x = pr.raid[i];
@@ -195,7 +196,7 @@ function KnowledgeChip({ s }: { s: Source | undefined }) {
     : <Link to={`/knowledge/${s.collection_id}`} className="chip cite">{label}</Link>;
 }
 
-function Answer({ m, project, onSave, onOther, onShorter }: { m: AiMessage; project: Project | null; onSave: () => void; onOther: false | (() => void); onShorter: false | (() => void) }) {
+function Answer({ m, project, kind, onSave, onOther, onShorter }: { m: AiMessage; project: Project | null; kind: Kind; onSave: () => void; onOther: false | (() => void); onShorter: false | (() => void) }) {
   const { pages } = useLibrary();
   const speech = useSpeech(), mine = speech?.id === m.id;
   const lib = m.citations.filter((c) => !c.startsWith('k:')), kn = m.citations.filter((c) => c.startsWith('k:'));
@@ -207,7 +208,7 @@ function Answer({ m, project, onSave, onOther, onShorter }: { m: AiMessage; proj
       <Markdown text={m.content} />
       {m.citations.length > 0 && <div className="row">{lib.map((s) => <Link key={s} to={`/library/${s}`} className="chip cite"><Icon name="library" />{pages.find((x) => x.slug === s)?.title ?? s}</Link>)}
         {kn.map((k) => <KnowledgeChip key={k} s={sources?.find((x) => x.id === k)} />)}</div>}
-      {m.proposals && <ProposalsPanel m={m} project={project} />}
+      {m.proposals && <ProposalsPanel m={m} project={project} kind={kind} />}
       <div className="row ath-tools" role="group" aria-label="Answer tools">
         <button type="button" className="ath-tool" onClick={() => void copy(m)}>Copy</button>
         <button type="button" className="ath-tool" aria-pressed={mine} disabled={project?.data_boundary === 'offline'} onClick={() => readAloud(m.id, mine)}>
@@ -256,7 +257,8 @@ type Err = { message: string; again: 'send' | Provider };
 type Run = { message: string; preset?: PresetId; docs: Att[]; shorter?: boolean };
 /** The project picker's "No project (work)": a project-less thread created as work (KN2). */
 const WORK = 'work:none';
-/** KN11: what the Knowledge screen's "Ask Athena about this" hands over (`?knowledge=<collection id|all>&q=`). */
+/** KN11: what the Knowledge screen's "Ask Athena about this" hands over: `?knowledge=<collection id|all>`, and the question in sessionStorage (ASK_KEY), never the URL. */
+export const ASK_KEY = 'athena:ask';
 export type Seed = { knowledge: string; q: string };
 type Picked = null | 'all' | string[];
 
@@ -500,7 +502,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
           {msgs.map((m, i) => { const s = m.role === 'user' ? splitAttachments(m.content) : null; return s
             ? <div key={m.id} className="cp-user">{s.text}{s.attachments.length > 0 && <div className="row">{s.attachments.map((a) => <span key={a.id} className="chip file">{a.name}
                 <SaveToKnowledge className="ath-kn-save" label="Save to knowledge" side={{ scope: kind, lockedOnly: project?.data_boundary === 'offline' }} save={(cid) => saveDoc(cid, a.id)} /></span>)}</div>}</div>
-            : <Answer key={m.id} m={m} project={project} onSave={() => void save(m)}
+            : <Answer key={m.id} m={m} project={project} kind={kind} onSave={() => void save(m)}
                 onShorter={i === lastAnswer && !busy && lastUser >= 0 && (() => void run({ message: SHORTER, docs: [], shorter: true }))}
                 onOther={i === lastAnswer && !busy && lastUser >= 0 && providerReady(usage, OTHER[m.provider ?? 'claude'])
                   && !msgs.slice(lastUser).some((y) => y.role === 'assistant' && y.provider === OTHER[m.provider ?? 'claude']) && (() => void askToo(OTHER[m.provider ?? 'claude']))} />; })}
@@ -590,10 +592,17 @@ export function AthenaView({ id }: { id?: string }) {
   const { usage, refresh } = useUsage();
   const page = new URLSearchParams(location.search).get('page') ?? undefined;
   // KN11: "Ask Athena about this" (Knowledge screen) hands over the collection and the question; read once, then cleared from the URL.
-  const [seed] = useState<Seed | undefined>(() => { const p = new URLSearchParams(location.search); return p.has('knowledge') || p.has('q') ? { knowledge: p.get('knowledge') ?? '', q: (p.get('q') ?? '').slice(0, 8000) } : undefined; });
+  // The question rides in sessionStorage, so its words never land in the address bar, history or a request log.
+  const [seed] = useState<Seed | undefined>(() => {
+    const p = new URLSearchParams(location.search);
+    if (!p.has('knowledge')) return undefined;
+    let q = ''; try { q = sessionStorage.getItem(ASK_KEY) ?? ''; } catch { /* storage off: the box starts empty */ }
+    return { knowledge: p.get('knowledge') ?? '', q: q.slice(0, 8000) };
+  });
   useEffect(() => {
     if (!seed) return;
-    const p = new URLSearchParams(location.search); p.delete('knowledge'); p.delete('q');
+    try { sessionStorage.removeItem(ASK_KEY); } catch { /* nothing kept */ }
+    const p = new URLSearchParams(location.search); p.delete('knowledge');
     history.replaceState(history.state, '', location.pathname + (p.size ? `?${p}` : ''));
   }, [seed]);
   return (

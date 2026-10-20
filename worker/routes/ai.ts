@@ -17,7 +17,7 @@ import { attachmentText } from '../lib/extract.ts';
 import { MAX_IMAGE_BYTES } from '../lib/uploads.ts';
 import { retrieve, modelPage } from '../lib/library.ts';
 import { projectAccess, projectContext, threadAccess } from '../lib/project-context.ts';
-import { allowedCollections, pickCollections } from '../lib/knowledge.ts';
+import { allowedCollections, lockedOnly, pickCollections } from '../lib/knowledge.ts';
 import { hybridSearch, type FoundPassage } from '../lib/vectors.ts';
 
 const ai = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -108,6 +108,7 @@ ai.post('/chat', async (c) => {
     for (const pid of new Set(Object.values(docs).flatMap((d) => (d?.project_id ? [d.project_id] : [])))) boundaries[pid] = (await projectAccess(env, pid))?.boundary;
     const verdict = checkAttachments(documentIds, docs, projectId, kind, boundaries);
     if (verdict === 'document_boundary') return c.json({ error: 'document_boundary', message: 'Athena can only read documents from this project (or, with no project, unfiled ones of the same kind: work or personal), and never from an Offline-only project.' }, 409);
+    for (const id of documentIds) if (await lockedOnly(env, id)) return c.json({ error: 'knowledge_boundary', message: 'That file is kept in a Locked collection, so Athena never reads it.' }, 409);
     const attached: Attachment[] = [], fenced: string[] = [], images: AiImage[] = [];
     for (const id of documentIds) {
       const d = docs[id]!, bytes = await readBytes(env, d);

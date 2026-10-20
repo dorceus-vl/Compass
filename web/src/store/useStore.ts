@@ -19,13 +19,14 @@ export async function resolveId(store: Store, id: string): Promise<string> {
   return (await idb.get<{ real: string }>('meta', `idmap:${id}`))?.real ?? id;
 }
 
-export async function createTask(input: Partial<Task> & { title: string }): Promise<Task> {
+/** `send` adds request-only fields the server reads (e.g. `from_message`), never stored on the local copy. */
+export async function createTask(input: Partial<Task> & { title: string }, send: Record<string, unknown> = {}): Promise<Task> {
   const t = now();
   const task: Task = { id: tmp(), project_id: null, parent_id: null, notes: null, kind: 'personal', horizon: 'short', status: 'new', priority: 0, start_at: null, due_at: null, done_at: null,
     estimate_minutes: null, waiting_on: null, waiting_since: null, nudge_every_days: null, recur: null, source_app: 'manual', source_kind: null, source_ref: null, source_url: null,
     sort_in_column: Number.MAX_SAFE_INTEGER, tags: '[]', enc_v: 0, created_at: t, updated_at: t, deleted_at: null, ...input };
   const { id: _id, created_at: _c, updated_at: _u, deleted_at: _d, enc_v: _e, sort_in_column: _s, done_at: _dn, waiting_since: _w, ...json } = task;
-  await enqueue({ method: 'POST', path: '/tasks', json, tempId: task.id, store: 'tasks' }, task);
+  await enqueue({ method: 'POST', path: '/tasks', json: { ...json, ...send }, tempId: task.id, store: 'tasks' }, task);
   return task;
 }
 export async function updateTask(id: string, patch: Partial<Task>): Promise<void> {

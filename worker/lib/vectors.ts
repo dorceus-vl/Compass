@@ -133,33 +133,60 @@ export async function hybridSearch(env: Env, q: string, collectionIds: string[] 
   return rerank(q, passages, Object.fromEntries(matches.map((m) => [m.id, m.score]))).slice(0, k);
 }
 
+type Embedded = number[] | 'refused' | 'paused';
+/**
+ * One ingest batch, split when Workers AI refuses it (KN22): halves, then halves again, down to single passages, so one passage it always refuses
+ * can't hold back the rest. 'refused' marks a passage that failed on its own; the cap or the hourly limit returns 'paused' for what is left.
+ * Only calls that answered are billed (embedMetered writes the usage row after the answer).
+ * ponytail: up to 2n - 1 calls when Workers AI is down for the whole batch; the caller then pauses until the next cron.
+ */
+async function embedSplit(env: Env, texts: string[]): Promise<Embedded[]> {
+  try { return await embedMetered(env, texts, true); } catch (e) {
+    if (!(e instanceof AiRefused)) throw e;
+    if (e.code !== 'provider_error') return texts.map((): Embedded => 'paused');
+    if (texts.length === 1) return ['refused'];
+    const h = Math.ceil(texts.length / 2), a = await embedSplit(env, texts.slice(0, h));
+    return [...a, ...(a.includes('paused') ? texts.slice(h).map((): Embedded => 'paused') : await embedSplit(env, texts.slice(h)))];
+  }
+}
+export const PART_FAILED = "Couldn't index part of this file";
+
 /**
  * KN5: embeds up to `limit` waiting passages (embedded = 0) that may hold a vector (LIVE), 50 a batch with one meter call per batch; `only` narrows it
  * to one item or collection (an ingest or a boundary change, so two runs don't embed the same rows). Stops quietly at the cap or the hourly limit; the
- * cron finishes the rest. Then items whose passages are all embedded are `ready`. Returns how many passages were embedded.
+ * cron finishes the rest. A batch Workers AI refuses is split (embedSplit): a passage that still fails marks its item `failed` (PART_FAILED, and the
+ * item's other waiting passages are no longer picked) while the rest go on; when every passage fails, Workers AI itself is down and the run pauses.
+ * Then items whose passages are all embedded are `ready`. Returns how many passages were embedded.
  */
 export async function embedPending(env: Env, limit: number, only: { item?: string; collection?: string } = {}): Promise<number> {
-  let done = 0;
-  while (done < limit) {
-    const { results } = await env.DB.prepare(`SELECT c.id, c.text, c.enc_v, c.collection_id FROM ${HOME} WHERE c.embedded = 0 AND ${LIVE}
+  let done = 0, seen = 0;
+  while (seen < limit) {
+    const { results } = await env.DB.prepare(`SELECT c.id, c.text, c.enc_v, c.collection_id, c.item_id FROM ${HOME} WHERE c.embedded = 0 AND ${LIVE} AND i.state != 'failed'
       AND (?2 IS NULL OR c.item_id = ?2) AND (?3 IS NULL OR c.collection_id = ?3) ORDER BY c.created_at, c.ord LIMIT ?1`)
-      .bind(Math.min(BATCH, limit - done), only.item ?? null, only.collection ?? null).all<{ id: string; text: string; enc_v: number; collection_id: string }>();
+      .bind(Math.min(BATCH, limit - seen), only.item ?? null, only.collection ?? null).all<{ id: string; text: string; enc_v: number; collection_id: string; item_id: string }>();
     if (!results.length) break;
     const texts = await Promise.all(results.map(async (r) => (await open(env, 'knowledge_chunks', { text: r.text, enc_v: r.enc_v })).text));
-    let vectors: number[][];
-    try { vectors = await embedMetered(env, texts, true); } catch (e) {
-      if (!(e instanceof AiRefused)) throw e;
-      console.warn(`[knowledge] embedding paused: ${e.code}`); // ponytail: a passage Workers AI always refuses blocks the queue head; mark its item failed if that shows up
-      break;
+    const got = await embedSplit(env, texts);
+    const refused = results.filter((_, i) => got[i] === 'refused'), ok = results.flatMap((r, i) => (Array.isArray(got[i]) ? [{ ...r, values: got[i] as number[] }] : []));
+    if (refused.length === results.length) { console.warn('[knowledge] embedding paused: provider_error'); break; } // nothing answered: Workers AI is down, not one bad passage
+    if (refused.length) {
+      const items = [...new Set(refused.map((r) => r.item_id))];
+      await env.DB.prepare(`UPDATE knowledge_items SET state = 'failed', error = ?1, updated_at = ?2 WHERE id IN (${items.map((_, i) => `?${i + 3}`).join(',')})`)
+        .bind(PART_FAILED, now(), ...items).run();
+      console.warn(`[knowledge] ${refused.length} passage(s) refused; ${items.length} item(s) marked failed`);
     }
-    const ids = results.map((r) => r.id);
-    await upsert(env, results.map((r, i) => ({ id: r.id, values: vectors[i], collection_id: r.collection_id })));
-    // Marked only where the passage may still hold a vector: a boundary change or a Trash since the pick un-embeds it, so its vector goes again.
-    const kept = new Set((await env.DB.prepare(`UPDATE knowledge_chunks SET embedded = 1 WHERE id IN (${ph(ids.length)}) AND id IN (SELECT c.id FROM ${HOME} WHERE ${LIVE}) RETURNING id`)
-      .bind(...ids).all<{ id: string }>()).results.map((r) => r.id));
-    const lost = ids.filter((id) => !kept.has(id));
-    if (lost.length) await remove(env, lost);
-    done += ids.length;
+    if (ok.length) {
+      const ids = ok.map((r) => r.id);
+      await upsert(env, ok.map((r) => ({ id: r.id, values: r.values, collection_id: r.collection_id })));
+      // Marked only where the passage may still hold a vector: a boundary change or a Trash since the pick un-embeds it, so its vector goes again.
+      const kept = new Set((await env.DB.prepare(`UPDATE knowledge_chunks SET embedded = 1 WHERE id IN (${ph(ids.length)}) AND id IN (SELECT c.id FROM ${HOME} WHERE ${LIVE}) RETURNING id`)
+        .bind(...ids).all<{ id: string }>()).results.map((r) => r.id));
+      const lost = ids.filter((id) => !kept.has(id));
+      if (lost.length) await remove(env, lost);
+      done += ids.length;
+    }
+    seen += results.length;
+    if (got.includes('paused')) { console.warn('[knowledge] embedding paused: limit'); break; }
   }
   await env.DB.prepare(`UPDATE knowledge_items SET state = 'ready', updated_at = ?1 WHERE state = 'indexing' AND deleted_at IS NULL
     AND collection_id IN (SELECT id FROM knowledge_collections WHERE boundary = 'cloud') AND NOT EXISTS (SELECT 1 FROM knowledge_chunks c WHERE c.item_id = knowledge_items.id AND c.embedded = 0)`).bind(now()).run();

@@ -1,4 +1,5 @@
-// Knowledge: which documents a collection may take, what a boundary change does, and which passages may hold a vector. Pure.
+// Knowledge: which documents a collection may take, what a boundary change does, and which passages may hold a vector. Pure, but for lockedOnly.
+import type { Env } from '../types.ts';
 
 export type Scope = 'work' | 'personal';
 /** What decides a document's side: its project's kind, or (unfiled) whether it was uploaded sealed for a work collection (documents.enc_v = 2). */
@@ -71,6 +72,16 @@ export const LIVE = `k.boundary = 'cloud' AND k.deleted_at IS NULL AND i.deleted
   AND (i.source_id IS NULL OR COALESCE(mr.id, ib.id) IS NOT NULL)
   AND (i.source != 'email' OR i.source_id IS NULL OR ${EMAIL_WORK} = (k.scope = 'work'))
   AND (${HOME_PROJECT} IS NULL OR (p.id IS NOT NULL AND p.deleted_at IS NULL AND p.data_boundary = 'cloud'))`;
+
+/**
+ * KN22: an unfiled document whose only live knowledge items sit in Locked collections was kept for Locked, so no model reads it: Athena can't take it
+ * as an attachment, and a Cloud AI collection takes it only after the passkey. (A filed document follows its project's boundary instead.)
+ */
+export async function lockedOnly(env: Env, documentId: string): Promise<boolean> {
+  const r = await env.DB.prepare(`SELECT max(k.boundary = 'locked') AS l, max(k.boundary = 'cloud') AS c FROM knowledge_items i JOIN knowledge_collections k ON k.id = i.collection_id
+    JOIN documents d ON d.id = i.document_id WHERE i.document_id = ?1 AND d.project_id IS NULL AND i.deleted_at IS NULL AND k.deleted_at IS NULL`).bind(documentId).first<{ l: number | null; c: number | null }>();
+  return !!r?.l && !r.c;
+}
 
 /** KN2: a thread's effective kind is its project's kind when it has a project, else its own `kind`, else personal. It is what the thread is sealed with. */
 export const effectiveKind = (projectKind: Scope | null, threadKind: Scope | null): Scope => projectKind ?? threadKind ?? 'personal';

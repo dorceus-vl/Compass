@@ -3,7 +3,7 @@
 // the KN6 boundary transition and which passages may hold a vector (the pure rule and its SQL twin agree).
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { rerank, embed, embedMetered, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices, sealTurnedWork, unembedStale } from '../worker/lib/vectors.ts';
+import { rerank, embed, embedMetered, embedPending, PART_FAILED, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices, sealTurnedWork, unembedStale } from '../worker/lib/vectors.ts';
 import { boundaryChange, vectorWanted, HOME, HOME_COLS, LIVE, type PassageHome } from '../worker/lib/knowledge.ts';
 import { open } from '../worker/lib/enc.ts';
 import { meter, AiRefused } from '../worker/lib/ai.ts';
@@ -186,6 +186,51 @@ for (const r of homes) assert.equal(vectorWanted(r), live.has(r.id), 'HOME_COLS 
   try { assert.equal(await unembedStale(xenv), 1, 'the stale passage is removed'); } finally { console.error = err; }
   assert.ok(!(await query(xenv, vec, ['kp'], 5)).some((m) => m.id === 'cx'), 'its vector is gone although sealing failed');
   assert.equal((x.prepare("SELECT embedded FROM knowledge_chunks WHERE id = 'cx'").get() as { embedded: number }).embedded, 0);
+}
+
+// KN22: a batch Workers AI refuses is split down to single passages; the one it always refuses marks its item failed (fixed text), the rest are embedded,
+// and only the calls that answered are billed. When nothing answers (Workers AI down) the run pauses and nothing is marked failed.
+{
+  const e = new DatabaseSync(':memory:');
+  e.exec(`CREATE TABLE settings (id INTEGER, json TEXT); CREATE TABLE audit_log (id TEXT, at TEXT, actor TEXT, action TEXT, target TEXT, detail TEXT);
+    CREATE TABLE ai_usage (id TEXT PRIMARY KEY, at TEXT, feature TEXT, provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cost_micro INTEGER);
+    CREATE TABLE knowledge_collections (id TEXT, boundary TEXT, scope TEXT, deleted_at TEXT); CREATE TABLE documents (id TEXT, project_id TEXT, deleted_at TEXT);
+    CREATE TABLE knowledge_items (id TEXT, collection_id TEXT, document_id TEXT, deleted_at TEXT, source TEXT, source_id TEXT, state TEXT, error TEXT, updated_at TEXT);
+    CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, collection_id TEXT, ord INTEGER, text TEXT, enc_v INTEGER, embedded INTEGER, created_at TEXT);
+    CREATE TABLE meeting_reviews (id TEXT, project_id TEXT); CREATE TABLE inbox_items (id TEXT, task_id TEXT, work INTEGER); CREATE TABLE tasks (id TEXT, project_id TEXT);
+    CREATE TABLE projects (id TEXT, data_boundary TEXT, deleted_at TEXT, kind TEXT);
+    INSERT INTO settings VALUES (1, '{"ai_monthly_cap_micro":1000000000}'); INSERT INTO knowledge_collections VALUES ('kp','cloud','personal',NULL);
+    INSERT INTO knowledge_items VALUES ('A','kp',NULL,NULL,'note',NULL,'indexing',NULL,NULL),('B','kp',NULL,NULL,'note',NULL,'indexing',NULL,NULL);
+    INSERT INTO knowledge_chunks VALUES ('a1','A','kp',0,'alpha one',0,0,'t1'),('a2','A','kp',1,'POISON two',0,0,'t1'),('a3','A','kp',2,'alpha three',0,0,'t1'),
+      ('b1','B','kp',0,'beta one',0,0,'t2'),('b2','B','kp',1,'beta two',0,0,'t2')`);
+  const ed1 = { prepare(q: string) {
+    const st = (a: unknown[]) => ({ first: async () => e.prepare(q).get(...(a as never[])) ?? null, run: async () => ({ meta: { changes: Number(e.prepare(q).run(...(a as never[])).changes) } }),
+      all: async () => ({ results: e.prepare(q).all(...(a as never[])) }) });
+    return { ...st([]), bind: (...a: unknown[]) => st(a) };
+  } };
+  let calls = 0, answered = 0, down = false;
+  const AI = { run: async (_m: string, i: { text: string[] }) => { calls++; if (down || i.text.some((t) => t.includes('POISON'))) throw new Error('refused'); answered++; return { data: i.text.map(hashVector) }; } };
+  const eenv = { DB: ed1, AI, KNOWLEDGE_PRICES: '{"embed_per_1k_tokens":0.000012}', COMPASS_DATA_KEY: 'k' } as never;
+  const n = (q: string) => (e.prepare(q).get() as { n: number }).n;
+  const warn = console.warn; console.warn = () => {};
+  try {
+    assert.equal(await embedPending(eenv, 200), 4, 'four passages embedded around the refused one');
+    assert.ok(calls > 1, 'the refused batch was split and retried');
+    assert.equal(n("SELECT count(*) AS n FROM knowledge_chunks WHERE embedded = 1"), 4);
+    assert.equal(n("SELECT embedded AS n FROM knowledge_chunks WHERE id = 'a2'"), 0, 'the refused passage holds no vector');
+    assert.deepEqual(e.prepare("SELECT id, state, error FROM knowledge_items ORDER BY id").all().map((r) => ({ ...r })), [{ id: 'A', state: 'failed', error: PART_FAILED }, { id: 'B', state: 'ready', error: null }]);
+    assert.equal(n("SELECT count(*) AS n FROM ai_usage"), answered, 'only the calls that answered are billed');
+    assert.ok((await query(eenv, hashVector('beta one'), ['kp'], 5)).some((m) => m.id === 'b1'), "the other item's passages are searchable");
+    calls = 0;
+    assert.equal(await embedPending(eenv, 200), 0, "a failed item's waiting passage is not picked again");
+    assert.equal(calls, 0, 'so the queue never stalls on it');
+    // Workers AI down: every passage refused -> pause, nothing marked failed, nothing billed
+    e.exec(`INSERT INTO knowledge_items VALUES ('C','kp',NULL,NULL,'note',NULL,'indexing',NULL,NULL); INSERT INTO knowledge_chunks VALUES ('c1','C','kp',0,'gamma one',0,0,'t3'),('c2','C','kp',1,'gamma two',0,0,'t3')`);
+    down = true; const billed = n("SELECT count(*) AS n FROM ai_usage");
+    assert.equal(await embedPending(eenv, 200), 0);
+    assert.equal(n("SELECT count(*) AS n FROM knowledge_items WHERE id = 'C' AND state = 'indexing' AND error IS NULL"), 1, 'an outage never marks items failed');
+    assert.equal(n("SELECT count(*) AS n FROM ai_usage"), billed, 'refused calls are not billed');
+  } finally { console.warn = warn; }
 }
 
 // meter, on real SQL (node:sqlite): query embeds have their own bucket of 120 an hour, outside the 30 model calls; background ingest batches

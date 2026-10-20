@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { compatible, needsStepUp, effectiveKind, allowedCollections, pickCollections, mayTake } from '../worker/lib/knowledge.ts';
 import { splitAnswer } from '../shared/ai-meta.ts';
 import { buildSystem } from '../worker/lib/prompt.ts';
+import { passagesOf } from '../worker/routes/knowledge.ts';
+import { MAX_TEXT } from '../worker/lib/extract.ts';
 
 const d = (projectKind: 'work' | 'personal' | null, sealed = false) => ({ projectKind, sealed });
 // work collection
@@ -90,4 +92,16 @@ assert.equal(mayTake(coll('work', 'cloud'), { scope: 'personal', offline: false 
 assert.equal(mayTake(coll('work', 'cloud'), { scope: 'work', offline: true }), 'offline_boundary', 'an Offline-only meeting never goes Cloud AI');
 assert.equal(mayTake(coll('work', 'locked'), { scope: 'work', offline: true }), 'ok', 'an Offline-only meeting may go Locked');
 assert.equal(mayTake(coll('personal', 'cloud'), { scope: 'personal', offline: true }), 'offline_boundary', 'Offline-only personal content has nowhere to go');
+// KN22: every kind is cut at MAX_TEXT characters and says so (the item then shows PARTIAL); a short file is whole.
+{
+  const enc = new TextEncoder(), para = 'word '.repeat(100).trim() + '\n\n';
+  for (const kind of ['txt', 'md', 'csv'] as const) {
+    const big = await passagesOf(kind, enc.encode(para.repeat(Math.ceil((MAX_TEXT * 1.25) / para.length))));
+    assert.equal(big.truncated, true, `a long ${kind} is cut`);
+    assert.ok(!big.passages.some((p) => p.text.includes('word word') && p.text.length > 4000), 'passages stay passage-sized');
+    const small = await passagesOf(kind, enc.encode(para.repeat(3)));
+    assert.equal(small.truncated, false, `a short ${kind} is whole`);
+  }
+  assert.deepEqual(await passagesOf('png', new Uint8Array([1])), { passages: [], truncated: false });
+}
 console.log('knowledge: ok');

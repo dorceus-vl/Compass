@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
-import type { Task, TaskEvent, Status } from '../../shared/types.ts';
+import type { Task, TaskEvent, Status, Kind } from '../../shared/types.ts';
 import { checkAll, text, httpsUrl, oneOf, date, num, type Check } from '../lib/validate.ts';
 import { seal, open, openAll, openBytes } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
 import { projectKind } from './projects.ts';
+import { threadAccess } from '../lib/project-context.ts';
+import { unembedStale } from '../lib/vectors.ts';
 import { parseRecur, nextOccurrence } from '../lib/recur.ts';
 import { positionBetween } from '../../shared/position.ts';
 
@@ -124,6 +126,19 @@ tasks.post('/', async (c) => {
   if (!r.values.title) return c.json({ error: 'title is required' }, 400);
   if (badRecur(r.values.recur)) return c.json({ error: 'recur is not a valid rule' }, 400);
   if (badTags(r.values.tags)) return c.json({ error: 'tags must be a JSON array of strings' }, 400);
+  // KN22: "Add to the board" names the Athena answer it came from; project and kind then come from that answer's thread
+  // (a project-less work thread makes sealed work tasks), never from the body.
+  const fm = text(40)(body.from_message, 'from_message');
+  if ('error' in fm) return c.json({ error: fm.error }, 400);
+  const from = fm.value as string | null;
+  if (from) {
+    const th = await c.env.DB.prepare('SELECT t.project_id, t.kind FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE m.id = ?1 AND t.deleted_at IS NULL')
+      .bind(from).first<{ project_id: string | null; kind: Kind | null }>();
+    const a = th && (await threadAccess(c.env, th.project_id, th.kind));
+    if (!th || !a) return c.json({ error: 'message not found' }, 404);
+    r.values.project_id = th.project_id;
+    r.values.kind = a.kind;
+  }
   const kind = await resolveKind(c.env, (r.values.project_id as string) ?? null, r.values.kind);
   if (!kind) return c.json({ error: 'project not found' }, 404);
   const status = (r.values.status as Status) ?? 'new';
@@ -186,13 +201,17 @@ tasks.patch('/:id', async (c) => {
   fields.push('kind');
   if (next.status === 'waiting' && task.status !== 'waiting') { next.waiting_since = next.updated_at; fields.push('waiting_since'); }
   if (next.status !== 'done' && task.status === 'done') { next.done_at = null; fields.push('done_at'); }
+  // KN22: a task moved into a project takes its email's saved knowledge copy with it (work: sealed in place; Offline only: its vectors go) now, not at the next cron.
+  const sweep = () => { if ('project_id' in r.values && next.project_id) c.executionCtx.waitUntil(unembedStale(c.env).catch((e) => console.error(`[knowledge] sweep failed: ${(e as Error).name}`))); };
   if (next.status === 'done' && task.status !== 'done') {
     const res = await completeTask(c.env, next, fields);
     await addEvent(c.env, res.task, 'you', 'edited', fields);
+    sweep();
     return c.json(res);
   }
   await updateTask(c.env, next, fields);
   await addEvent(c.env, next, 'you', 'edited', fields);
+  sweep();
   return c.json({ task: next });
 });
 

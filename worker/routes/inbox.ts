@@ -12,6 +12,7 @@ import { buildTaskFromSource, insertTaskStmt, updateTask, loadTask, addEvent } f
 import { AiRefused, runAi } from '../lib/ai.ts';
 import { buildSplitSystem, fence } from '../lib/prompt.ts';
 import { projectAccess } from '../lib/project-context.ts';
+import { unembedStale } from '../lib/vectors.ts';
 import { parseSplit, splitRefusal, MAX_PROPOSALS, type SplitRefusal } from '../lib/split.ts';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
@@ -226,6 +227,7 @@ inbox.post('/:id/keep', async (c) => {
       source_ref: await claimRef(c.env, item.ref, item.app), source_url: item.url });
     Object.assign(item, { state: 'kept', task_id: fresh.id, work: fresh.kind === 'work' ? 1 : 0, updated_at: now() }); // re-sealed like its task
     await c.env.DB.batch([await insertTaskStmt(c.env, fresh), await saveItemStmt(c.env, item, ['state', 'task_id', 'work'])]);
+    if (fresh.kind === 'work') c.executionCtx.waitUntil(unembedStale(c.env).catch((e) => console.error(`[knowledge] sweep failed: ${(e as Error).name}`))); // KN22: a saved copy of this email is sealed now, not at the next cron
     await addEvent(c.env, fresh, 'you', 'created', { inbox_id: item.id });
     task = fresh;
   } else {

@@ -7,6 +7,7 @@ import { Icon } from '../ui/Shell.tsx';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { lockedStore } from '../knowledge-search.ts';
 import { Highlight } from './Library.tsx';
+import { ASK_KEY } from './Athena.tsx';
 
 type Coll = KnowledgeCollection & { item_count?: number };
 /** One search result, from the server (Cloud AI and personal collections) or from the device (Locked). Text only. */
@@ -24,7 +25,7 @@ const BUDGET_USED = "This month's AI budget is used up. Raise it in Settings →
 const LOCKED_CLEARED = 'Locked results were cleared from this screen. Search again to load them.';
 const BOUNDARY_LINE = { locked: 'No AI ever reads it. You search it by words, on this device.', cloud: 'Athena can read passages in work threads and search works by meaning. Your passkey confirms this.' };
 
-/** Searches the open collection, or all of them: the server for Cloud AI and personal, this device for Locked. Debounced; a stale answer is dropped. */
+/** Searches the open collection, or all of them, for the term asked (Enter, or a pause; see KnowledgeView): the server for Cloud AI and personal, this device for Locked. A stale answer is dropped. */
 function useKnowledgeSearch(q: string, scope: string | undefined, colls: Coll[] | null) {
   const [state, set] = useState<{ q: string; hits: Hit[]; notes: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,7 +53,7 @@ function useKnowledgeSearch(q: string, scope: string | undefined, colls: Coll[] 
       if (d.failed.length) notes.push(`${d.failed.map((id) => byId.get(id)?.name ?? 'A collection').join(', ')} couldn't be loaded; Locked collections are searched on this device and load once per session.`);
       const locked = d.hits.map((h): Hit => ({ key: h.id, document_id: h.document_id, locator: h.locator, title: h.item_title, text: h.snippet, coll: byId.get(h.collection_id)!, locked: true })).filter((h) => h.coll);
       set({ q: term, hits: [...cloud, ...locked], notes }); setBusy(false);
-    }, 350);
+    });
     return () => clearTimeout(t);
   }, [q, scope, ready]);
   return { state, busy };
@@ -60,7 +61,10 @@ function useKnowledgeSearch(q: string, scope: string | undefined, colls: Coll[] 
 
 function Results({ s, busy, scopeName }: { s: { q: string; hits: Hit[]; notes: string[] } | null; busy: boolean; scopeName: string | null }) {
   if (!s) return busy ? <p className="sub" role="status">Searching…</p> : null;
-  const ask = (h: Hit) => navigate(`/athena?knowledge=${encodeURIComponent(h.coll.id)}&q=${encodeURIComponent(s.q)}`);
+  const ask = (h: Hit) => { // KN22: the question goes through sessionStorage (Athena reads it once and clears it), never the URL
+    try { sessionStorage.setItem(ASK_KEY, s.q); } catch { /* storage off: Athena opens with an empty box */ }
+    navigate(`/athena?knowledge=${encodeURIComponent(h.coll.id)}`);
+  };
   return (
     <section className="kn-results" aria-label="Search results">
       <div className="sub" role="status" aria-live="polite">{busy ? 'Searching…' : `${plural(s.hits.length, 'result')} for “${s.q}” ${scopeName ? `in ${scopeName}` : 'in all collections'}`}</div>
@@ -149,6 +153,7 @@ function RefreshNow({ onDone }: { onDone: () => Promise<void> | void }) {
 
 function ItemRow({ it, coll, onRemove }: { it: KnowledgeItem; coll: Coll; onRemove: (i: KnowledgeItem) => void }) {
   const note = it.state === 'ready' && it.search === 'excluded' ? 'Not searched by meaning: its project is Offline-only or its file is in Trash.' : null;
+  const app = it.source.startsWith('app:'); // an app item's error means yesterday's copy stays; on any other item it is a fixed note (e.g. indexed in part)
   return (
     <div className="card kn-item">
       <span className="secico"><Icon name={SOURCE_ICON[it.source] ?? 'doc'} /></span>
@@ -157,13 +162,14 @@ function ItemRow({ it, coll, onRemove }: { it: KnowledgeItem; coll: Coll; onRemo
         <div className="kn-meta">
           {it.state === 'indexing' || it.search === 'reindexing' ? <span className="kn-state"><i className="kn-spin" aria-hidden="true" />{it.state === 'indexing' ? 'Indexing' : 'Re-indexing'}</span>
             : it.state === 'failed' ? <span className="kn-state bad"><Icon name="warn" />Failed</span>
-            : it.error ? <span className="kn-state bad"><Icon name="warn" />Out of date</span>
+            : it.error && app ? <span className="kn-state bad"><Icon name="warn" />Out of date</span>
             : <span className="kn-state ok"><Icon name="review" />Ready</span>}
           <span className="sub">{it.created_at.slice(0, 10)}</span>
           {it.state !== 'failed' && <span className="sub">{plural(it.chunk_count, 'passage')}</span>}
         </div>
         {it.state === 'failed' && it.error && <div className="kn-note">{it.error}</div>}
-        {it.state === 'ready' && it.error && <div className="kn-note" role="status">{it.error} Showing the copy from {it.created_at.slice(0, 10)}.</div>}
+        {it.state === 'ready' && it.error && app && <div className="kn-note" role="status">{it.error} Showing the copy from {it.created_at.slice(0, 10)}.</div>}
+        {it.state !== 'failed' && it.error && !app && <div className="sub" role="status">{it.error}.</div>}
         {note && <div className="sub">{note}</div>}
       </div>
       <div className="kn-item-acts">
@@ -291,7 +297,16 @@ export function KnowledgeView({ id }: { id?: string }) {
     catch (e) { if (!(e instanceof SignedOut)) setErr(true); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
-  const { state, busy } = useKnowledgeSearch(q, id, colls);
+  // Each search spends one of the 120 query embeds an hour (shared with Athena and Kelly): it runs on Enter, or after an 800 ms pause once 3 characters are typed.
+  const [asked, setAsked] = useState('');
+  useEffect(() => {
+    const t = q.trim();
+    if (!t) { setAsked(''); return; }
+    if (t.length < 3) return;
+    const h = setTimeout(() => setAsked(t), 800);
+    return () => clearTimeout(h);
+  }, [q]);
+  const { state, busy } = useKnowledgeSearch(asked, id, colls);
   const coll = id ? colls?.find((c) => c.id === id) : undefined;
   const searching = q.trim() !== '';
   const missing = !!id && !!colls && !coll;
@@ -303,7 +318,9 @@ export function KnowledgeView({ id }: { id?: string }) {
         <div className="sub">{colls ? (id ? 'Search this collection, or add files to it' : `${plural(colls.length, 'collection')}. Search them all by meaning and words.`) : 'Loading…'}</div></div>
         {!id && <button type="button" className="btn primary" onClick={() => setCreating(true)} disabled={!online()}>New collection</button>}
       </div>
-      <input className="field kn-search" type="search" aria-label={coll ? `Search ${coll.name}` : 'Search all collections'} placeholder={coll ? `Search in ${coll.name}` : 'Search all collections'} value={q} onChange={(e) => setQ(e.target.value)} />
+      <form role="search" onSubmit={(e) => { e.preventDefault(); setAsked(q.trim()); }}>
+        <input className="field kn-search" type="search" enterKeyHint="search" aria-label={coll ? `Search ${coll.name}` : 'Search all collections'} placeholder={coll ? `Search in ${coll.name}` : 'Search all collections'} value={q} onChange={(e) => setQ(e.target.value)} />
+      </form>
       {searching && <Results s={state} busy={busy} scopeName={coll?.name ?? null} />}
       {err && !colls && <div className="card"><p style={{ margin: 0 }}>Knowledge needs a connection. <button type="button" className="btn" onClick={() => void reload()}>Try again</button></p></div>}
       {missing && <div className="card"><p style={{ margin: 0 }}>That collection isn’t here. <Link to="/knowledge">Back to Knowledge</Link></p></div>}

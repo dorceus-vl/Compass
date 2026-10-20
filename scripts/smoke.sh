@@ -915,6 +915,20 @@ A3WT=$(printf '%s' "$A3W" | js d.thread.id)
 [ "$(kn "SELECT count(*) AS n FROM ai_threads WHERE id='$A3WT' AND kind='work' AND enc_v=2 AND title NOT LIKE '%quokka%'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM ai_messages WHERE thread_id='$A3WT' AND enc_v=2 AND content NOT LIKE '%quokka%'")" = 2 ] || fail "a project-less work thread is not sealed as work"
 A3N=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"thread_id\":\"$A3WT\",\"message\":\"quokka$R vendor\",\"knowledge\":{\"collections\":[\"$K3C\"]}}")
 [ "$(printf '%s' "$A3N" | js 'd.messages[1].citations.includes("k:'$CW'")&&d.thread.kind==="work"')" = true ] || fail "the work thread kept its kind and read the named Cloud AI collection: $A3N"
+# KN22 (C1): "Add to the board" names the answer; the server takes project and kind from its thread, whatever the body says. A project-less work
+# thread makes sealed work tasks that Kelly never sees (and, in (k4), the Compass digest leaves out).
+A3WM=$(printf '%s' "$A3W" | js 'd.messages[1].id')
+BT=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke WORKBOARD $R\",\"kind\":\"personal\",\"due_at\":\"2000-01-01\",\"from_message\":\"$A3WM\"}" | js d.task.id)
+[ "$(kn "SELECT count(*) AS n FROM tasks WHERE id='$BT' AND kind='work' AND project_id IS NULL AND enc_v=2 AND title NOT LIKE '%WORKBOARD%'")" = 1 ] || fail "a board add from a work thread is not a sealed work task"
+BTP=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke PERSONALBOARD $R\",\"kind\":\"work\",\"from_message\":\"$A3M\"}" | js d.task.id)
+[ "$(kn "SELECT count(*) AS n FROM tasks WHERE id='$BTP' AND kind='personal' AND enc_v=0")" = 1 ] || fail "a board add from a personal thread is not personal"
+[ "$(kst "$(kj -X POST $B/api/tasks -d '{"title":"x","from_message":"no-such-answer"}')")" = 404 ] || fail "a board add naming no answer is not 404"
+kset '{"enabled":true,"scopes":["compass:read.tasks"]}'
+[ "$(agc GET /tasks/$BT)" = 404 ] || fail "Kelly can look up a work board add"
+agb GET "/tasks?view=overdue&limit=50" | grep -q "WORKBOARD" && fail "Kelly lists a work board add"
+agb GET /today | grep -q "WORKBOARD" && fail "Kelly's today shows a work board add"
+kset '{"enabled":false,"scopes":[]}'
+echo "smoke: (k3) KN22: board adds take the thread's kind: a project-less work thread -> sealed work task (body kind ignored), hidden from Kelly; a personal thread -> personal; an unknown answer -> 404"
 # refused before anything is stored or sent
 N0=$(NMSG); Q0=$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND output_tokens=0")
 kj -X POST $B/api/ai/chat -d "{\"message\":\"x\",\"knowledge\":{\"collections\":[\"$K3C\"]}}" | grep -q '"error":"knowledge_boundary"' || fail "a personal thread naming a work collection"
@@ -926,6 +940,11 @@ kj -X POST $B/api/ai/chat -d "{\"thread_id\":\"$A3WT\",\"message\":\"x\",\"knowl
 KA=$(kj -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"read\",\"document_ids\":[\"$D3W\"]}"); [ "$(kst "$KA")" = 200 ] || fail "a sealed upload in a project-less work thread: $(printf '%s' "$KA" | tail -c 300)"
 kj -X POST $B/api/ai/chat -d "{\"message\":\"read\",\"document_ids\":[\"$D3W\"]}" | grep -q '"error":"document_boundary"' || fail "a sealed upload in a personal thread"
 kj -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"read\",\"document_ids\":[\"$D3P\"]}" | grep -q '"error":"document_boundary"' || fail "a plain upload in a project-less work thread"
+# KN22 (minor 1): a file kept only in a Locked collection is never read by a model: no Athena attachment, no Cloud AI add without the passkey answer
+kj -X POST $B/api/ai/chat -d "{\"kind\":\"work\",\"message\":\"read\",\"document_ids\":[\"$D3L\"]}" | grep -q '"error":"knowledge_boundary"' || fail "a Locked-only file was attached in Athena"
+KLC=$(kitem $K3C $D3L); [ "$(kst "$KLC")" = 409 ] && kbody "$KLC" | grep -q '"error":"knowledge_boundary"' || fail "a Locked-only file went into Cloud AI without the passkey: $KLC"
+KLS=$(kj -X POST $B/api/knowledge/items -H 'X-Step-Up: dev' -d "{\"collection_id\":\"$K3C\",\"document_id\":\"$D3L\"}"); [ "$(kst "$KLS")" = 201 ] || fail "the passkey answer did not let a Locked-only file into Cloud AI: $KLS"
+curl "${H[@]}" -X DELETE $B/api/knowledge/items/$(kid "$KLS" item) >/dev/null # out of search again for the checks below
 # a cited item in Trash: its chip says Removed
 curl "${H[@]}" -X DELETE $B/api/knowledge/items/$I3P >/dev/null
 [ "$(curl "${H[@]}" $B/api/ai/messages/$A3M/sources | js 'd.sources.find(x=>x.id==="k:'$CP'").removed===true')" = true ] || fail "a trashed item's citation is not Removed"
@@ -1033,6 +1052,7 @@ A1=$(curl -s localhost:8791/digest-hits | js d.hits); SYSEMB || fail "the digest
 OLDI=$(D1X "$SYSQ" | js 'd[0].results.map(r=>r.id).sort().join()'); OLDC=$(D1X "SELECT c.id FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1" | js 'd[0].results.map(r=>r.id).sort().join()')
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_items i ON i.id=c.item_id WHERE i.source='app:compass' AND c.text LIKE '%pelican personal $R%'")" -ge 1 ] || fail "the Compass digest lacks the personal task"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1 AND (c.text LIKE '%WORKONLY%' OR c.text LIKE '%$K4WP%')")" = 0 ] || fail "a work task reached the Compass digest"
+[ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1 AND c.text LIKE '%WORKBOARD%'")" = 0 ] || fail "a work board add (KN22) reached the Compass digest"
 ks "Stubhealth" $SYS | grep -q 'refills due' || fail "the digest is not searchable by meaning/words"
 ks "Stubhealth" $SYS | grep -qi 'Medications' || fail "the Health passage did not come back with its heading"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks c JOIN knowledge_collections k ON k.id=c.collection_id WHERE k.system=1 AND c.enc_v != 0")" = 0 ] || fail "personal digest passages are sealed"

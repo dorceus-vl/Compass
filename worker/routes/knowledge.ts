@@ -7,11 +7,11 @@ import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { checkAll, text, oneOf, type Check } from '../lib/validate.ts';
-import { chunk, type Passage } from '../lib/chunk.ts';
-import { boundaryChange, compatible, emailIsWork, mayTake, needsStepUp, HOME, KEPT, LIVE, type Scope } from '../lib/knowledge.ts';
+import { chunk, MAX_CHUNKS, type Passage } from '../lib/chunk.ts';
+import { boundaryChange, compatible, emailIsWork, lockedOnly, mayTake, needsStepUp, HOME, KEPT, LIVE, type Scope } from '../lib/knowledge.ts';
 import { embedPending, hybridSearch, remove } from '../lib/vectors.ts';
 import { AiRefused } from '../lib/ai.ts';
-import { docxText, pdfPages, pptxText, xlsxText } from '../lib/extract.ts';
+import { docxText, pdfPages, pptxText, xlsxText, MAX_TEXT } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
 import { loadMeeting } from './meetings.ts';
 import { loadItem as loadInboxItem, emailText } from './inbox.ts';
@@ -29,12 +29,12 @@ const loadCollection = async (env: Env, id: string): Promise<KnowledgeCollection
 
 /**
  * Stores one item and its passages (sealed when the collection is work). A Locked collection's item is `ready` at once; any other is `indexing` with
- * `embedded = 0` until the embedder runs (callers kick `embedPending(env, …, { item })` in waitUntil; the cron finishes anything left). `error` stores a failed item (no passages); it is stored plain, so it must be a fixed message, never document content. Task 3 and 4 call this for text that is not a document.
+ * `embedded = 0` until the embedder runs (callers kick `embedPending(env, …, { item })` in waitUntil; the cron finishes anything left). `error` stores a failed item (no passages); `note` goes in the same column on a stored one (PARTIAL); both are stored plain, so they must be fixed messages, never document content. Task 3 and 4 call this for text that is not a document.
  */
-export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: KnowledgeSource; title: string; document_id: string | null; source_id?: string | null; passages: Passage[]; error?: string }): Promise<KnowledgeItem> {
+export async function addItem(env: Env, coll: KnowledgeCollection, a: { source: KnowledgeSource; title: string; document_id: string | null; source_id?: string | null; passages: Passage[]; error?: string; note?: string }): Promise<KnowledgeItem> {
   const id = crypto.randomUUID(), t = now(), failed = !!a.error || a.passages.length === 0;
   const state = failed ? 'failed' : coll.boundary === 'locked' ? 'ready' : 'indexing';
-  const item: KnowledgeItem = { id, collection_id: coll.id, document_id: a.document_id, source_id: a.source_id ?? null, source: a.source, title: a.title, state, error: a.error ?? (failed ? 'No text found in that document.' : null),
+  const item: KnowledgeItem = { id, collection_id: coll.id, document_id: a.document_id, source_id: a.source_id ?? null, source: a.source, title: a.title, state, error: a.error ?? (failed ? 'No text found in that document.' : a.note ?? null),
     chunk_count: failed ? 0 : a.passages.length, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
   const si = await seal(env, 'knowledge_items', { ...item }, coll.scope);
   const insItem = env.DB.prepare('INSERT INTO knowledge_items (id, collection_id, document_id, source_id, source, title, state, error, chunk_count, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10,?11)')
@@ -61,11 +61,25 @@ const kick = (c: Ctx, item: KnowledgeItem) => {
   if (item.state === 'indexing') c.executionCtx.waitUntil(embedPending(c.env, 200, { item: item.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
 };
 
-/** The passages of a stored document: its text extracted with the existing readers (a PDF per page, a Word file with its headings), then chunked. */
-async function passagesOf(kind: DocKind, bytes: Uint8Array): Promise<Passage[]> {
-  const t = kind === 'pdf' ? await pdfPages(bytes) : kind === 'docx' ? docxText(bytes, true) : kind === 'pptx' ? pptxText(bytes) : kind === 'xlsx' ? xlsxText(bytes).text
-    : kind === 'png' || kind === 'jpg' ? '' : new TextDecoder().decode(bytes);
-  return chunk(t, kind);
+/** What a document's item says when its text went past a cap (KN22): the first 200,000 characters (or the workbook cap, or 2,000 passages) are indexed. A fixed message. */
+export const PARTIAL = 'Indexed in part (file too long)';
+/**
+ * The passages of a stored document: its text extracted with the existing readers (a PDF per page, a Word file with its headings), cut at MAX_TEXT characters
+ * for every kind (a PDF across its pages), then chunked. `truncated` says a cap cut it, so the item can say so.
+ */
+export async function passagesOf(kind: DocKind, bytes: Uint8Array): Promise<{ passages: Passage[]; truncated: boolean }> {
+  if (kind === 'png' || kind === 'jpg') return { passages: [], truncated: false };
+  let truncated = false;
+  const cap = (s: string, room = MAX_TEXT) => { if (s.length > room) truncated = true; return s.slice(0, Math.max(0, room)); };
+  let t: string | string[];
+  if (kind === 'pdf') {
+    let room = MAX_TEXT;
+    t = (await pdfPages(bytes)).map((p) => { const kept = cap(p, room); room -= kept.length; return kept; });
+  } else if (kind === 'xlsx') { const x = xlsxText(bytes); truncated = x.truncated; t = x.text; }
+  else if (kind === 'docx') { t = docxText(bytes, true); truncated = t.length >= MAX_TEXT; } // docxText is already cut at MAX_TEXT
+  else t = cap(kind === 'pptx' ? pptxText(bytes) : new TextDecoder().decode(bytes));
+  const passages = chunk(t, kind);
+  return { passages, truncated: truncated || passages.length >= MAX_CHUNKS };
 }
 
 knowledge.get('/collections', async (c) => {
@@ -174,12 +188,17 @@ knowledge.post('/items', async (c) => {
   if (!compatible(coll.scope, { projectKind, sealed: doc.enc_v === 2 })) return c.json({ error: 'knowledge_boundary', message: BOUNDARY }, 409);
   if (offline && coll.boundary === 'cloud') return c.json({ error: 'offline_boundary', message: 'That file is from an Offline-only project, so only a Locked collection can take it.' }, 409);
   if (await c.env.DB.prepare('SELECT 1 FROM knowledge_items WHERE collection_id = ?1 AND document_id = ?2 AND deleted_at IS NULL').bind(coll.id, doc.id).first()) return c.json({ error: 'already_in_collection' }, 409);
+  // KN22: a file kept only in Locked collections reaches Cloud AI (a model) only with the passkey, like Locked -> Cloud AI; without the X-Step-Up answer it is refused.
+  if (coll.boundary === 'cloud' && (await lockedOnly(c.env, doc.id))) {
+    if (!c.req.header('x-step-up')) return c.json({ error: 'knowledge_boundary', message: 'That file is kept in a Locked collection. Confirm with your passkey to let Cloud AI read it.', step_up: true }, 409);
+    const refused = await requireStepUp(c); if (refused) return refused;
+  }
   const bytes = await readBytes(c.env, doc);
   if (!bytes) return c.json({ error: 'Not found' }, 404);
-  let passages: Passage[] = [], error: string | undefined;
+  let passages: Passage[] = [], error: string | undefined, note: string | undefined;
   if (doc.kind === 'png' || doc.kind === 'jpg') error = 'Images are not read yet.';
-  else try { passages = await passagesOf(doc.kind, bytes); } catch { error = 'That file could not be read.'; }
-  const item = await addItem(c.env, coll, { source: 'upload', title: doc.name, document_id: doc.id, passages, error });
+  else try { const r = await passagesOf(doc.kind, bytes); passages = r.passages; if (r.truncated) note = PARTIAL; } catch { error = 'That file could not be read.'; }
+  const item = await addItem(c.env, coll, { source: 'upload', title: doc.name, document_id: doc.id, passages, error, note });
   kick(c, item);
   return c.json({ item }, 201);
 });
