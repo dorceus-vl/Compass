@@ -28,7 +28,7 @@ Nothing in the family generates Word, Excel or PowerPoint files today. That part
 | **Gantt chart?** | Yes. A Timeline view per project and across projects: bars from start to due, milestones as diamonds, finish-to-start dependencies drawn as arrows, drag to reschedule, a baseline you can save and compare against, critical path highlighted, today line, zoom day / week / month. Personal horizons can show on the same timeline. Built with plain SVG, no chart library. | v1 basic (bars, milestones, drag), v2 dependencies, baseline, critical path |
 | **Link back to the source app?** | Yes. Every task created from another app keeps a deep link: the Finance task opens the subscription row, the Health task the medication, the Hollow task the folder, the Aura task the device, the meeting task the transcript at the right minute. On the phone the link opens the native app when installed, else the site. | v1 |
 | **Tasks from email?** | Yes, through Kelly-Cloud's connected Gmail and Outlook accounts. Three sources of tasks: (1) "needs a reply" emails become a Waiting-on-me task with the sender and subject; (2) commitments detected in your own sent mail ("I'll send the SOW Friday") become tasks with the due date; (3) a forward-to address (`tasks@compass…` via Cloudflare Email Routing) turns any email you forward into a task with the email attached. **Bell caveat below.** | v1 forward-to address and needs-reply rule, v2 commitments |
-| **Use-cases in the copilot?** | Yes. You describe a situation ("vendor slipping, steering nervous, 3 weeks to cutover") and the copilot answers with a diagnosis, options with trade-offs, a recommended plan with tasks and dates, the stakeholders to inform, and the risk entries to add, each grounded in library pages and your own post-mortems. One tap puts the plan on the board. Also: estimate a WBS, build a schedule from a scope statement, write a status report from the board, review a plan for gaps, prepare a difficult conversation, rehearse a steering question. | v1 |
+| **Use-cases in Athena?** | Yes. You describe a situation ("vendor slipping, steering nervous, 3 weeks to cutover") and Athena answers with a diagnosis, options with trade-offs, a recommended plan with tasks and dates, the stakeholders to inform, and the risk entries to add, each grounded in library pages and your own post-mortems. One tap puts the plan on the board. Also: estimate a WBS, build a schedule from a scope statement, write a status report from the board, review a plan for gaps, prepare a difficult conversation, rehearse a steering question. | v1 |
 | **Create documents and summaries?** | Yes. Markdown, Word, Excel, PowerPoint and PDF, generated on the device (no file goes to a server you don't own). Summaries of a project, a week, a meeting, a thread of emails. | v1 Markdown + Word + PDF, v2 Excel + PowerPoint |
 | **My own template, filled in?** | Yes for Word and Excel: you upload a `.docx` or `.xlsx` with placeholders like `{{project.name}}`, `{{risks.table}}`, `{{status.summary}}`, Compass fills it from the project and the copilot writes the prose parts. PowerPoint templates are harder (no good filler library): v1 generates slides from a layout you pick, v2 fills a `.pptx` template slide by slide using its placeholders. | v1 Word, v2 Excel + PowerPoint |
 
@@ -104,7 +104,7 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Change requests: description, impact on scope / time / cost, decision, approver, date | PMBOK, PRINCE2 | v1 |
 | Decision log and action log, linked to the meeting they came from | | v1 |
 | Stakeholder register: power / interest grid, communication plan per stakeholder | PMBOK | v2 |
-| Lessons learned per project, searchable across projects, fed to the copilot | PMBOK closing | v1 |
+| Lessons learned per project, searchable across projects, fed to Athena | PMBOK closing | v1 |
 | Programs: group projects, roll up RAG, milestones and risks | PgMP | v2 |
 | Baselines: save schedule and compare (slip per task, per milestone) | MS Project | v2 |
 | Earned value: PV, EV, AC, SPI, CPI from estimates and % complete | PMBOK | later |
@@ -128,14 +128,14 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Feature | From | Tier |
 | --- | --- | --- |
 | Generate: Markdown, Word (.docx), PDF; Excel (.xlsx) and PowerPoint (.pptx) | ClickUp docs, Notion | v1 md/docx/pdf, v2 xlsx/pptx |
-| Your own Word / Excel templates with placeholders, filled from project data and copilot prose | | v1 Word, v2 Excel, v2 pptx |
+| Your own Word / Excel templates with placeholders, filled from project data and Athena's prose | | v1 Word, v2 Excel, v2 pptx |
 | Built-in templates: charter, RAID log, RACI, WBS, status report, change request, exception report, lessons learned, communication plan, risk register, project closure, business case outline, steering deck | PMBOK, PRINCE2 | v1 (first 8), v2 (rest) |
 | Status report in one tap: RAG, progress, milestones, risks, decisions needed, generated from the board for a date range | Asana status updates | v1 |
 | Weekly summary (personal and work) and project summary on demand | | v1 |
 | Export everything: CSV, JSON, Markdown bundle; print-friendly views | all | v1 |
 | Project wiki pages (Markdown, linked to tasks) | Notion, Confluence | v2 |
 
-## 8. PM Copilot
+## 8. Athena (the PM copilot)
 
 | Feature | From | Tier |
 | --- | --- | --- |
@@ -149,8 +149,13 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Library citations on every answer; "show me the page" opens it | | v1 |
 | Offline mode: library search, templates, saved answers; no model | | v1 |
 | Data boundary per project (Cloud AI / Offline only / On-this-Mac only) | | v1 (first two), later (local model) |
-| Daily brief and weekly review written by the copilot (through Kelly where you prefer her voice) | | v1 |
+| Daily brief and weekly review written by Athena (through Kelly where you prefer her voice) | | v1 |
 | Prompt library: your reusable prompts ("write my status in Bell's format") | | v2 |
+| Athena: the copilot's name and persona, a screen of her own (`/athena`), four one-tap helps | | done, Phase 5b |
+| Any document in the chat: PDF, Word, Excel, PowerPoint, CSV, Markdown, text, PNG and JPG (images go to the model as pictures), under the same data boundary | | done, Phase 5b |
+| Athena's face: your own idle, listening, thinking and speaking loops and a still portrait, uploaded in Settings → Athena | | done, Phase 5b |
+| Voice: she reads an answer aloud and you dictate a question (ElevenLabs, called only from the Worker, counted against the monthly cap, boundary checked on the server) | | done, Phase 5b |
+| Split an email into tasks: Athena proposes, you tick and edit, nothing is created until you add them; the original can go to Trash | | done, Phase 5b |
 
 ## 9. Knowledge library
 
@@ -160,7 +165,7 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Templates with guidance on each field | v1 |
 | French ↔ English glossary of PM terms (Bell works in both) | v1 |
 | Your imports: PDFs, Word, Markdown, notes, past decks, indexed with Kelly's document pipeline | v1 |
-| Post-mortems and lessons learned feed the copilot | v1 |
+| Post-mortems and lessons learned feed Athena | v1 |
 | PDU / certification tracker (PMP renewal cycle, PgMP plan) | v2 |
 | Flashcards / quick review for certification study | later |
 
@@ -222,5 +227,5 @@ through the Mac app, later). Work projects default to Offline only until you cha
 
 - Multi-user collaboration, assignees who log in, comments from others. It's your tool; "owner" on a task is a name, not an account.
 - Habit and health tracking (Health owns it), money (Finance owns it), files (Hollow owns it). Compass links to them.
-- A general chat with Kelly (Kelly owns it); Compass's copilot is project-scoped.
+- A general chat with Kelly (Kelly owns it); Athena (Compass's copilot) is project-scoped.
 - Bundling PMBOK, PRINCE2 or the Scrum Guide verbatim.

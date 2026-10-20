@@ -4,6 +4,9 @@ set -euo pipefail
 B=${BASE:-http://localhost:8790}; J=/tmp/compass-smoke.jar; rm -f $J
 H=(-s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json")
 fail() { echo "smoke: FAIL $1"; exit 1; }
+# The hourly AI limits count the local ai_usage rows, so a run starts from none. Local only: --local touches the dev D1 file, never a remote database, and a non-local BASE is refused.
+case "$B" in http://localhost:*|http://127.0.0.1:*) ;; *) fail "BASE must be a local wrangler dev (got $B)";; esac
+npx wrangler d1 execute compass-db --local --command "DELETE FROM ai_usage" >/dev/null 2>&1 || fail "could not clear the local ai_usage"
 curl "${H[@]}" -X POST $B/api/auth/dev-login | grep -q '"ok":true' || fail dev-login
 P=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke project","kind":"work"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).project.id')
 T=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke task\",\"project_id\":\"$P\",\"due_at\":\"2026-01-01\"}" | node -pe 'JSON.parse(require("fs").readFileSync(0)).task.id')
