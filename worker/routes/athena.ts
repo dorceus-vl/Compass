@@ -206,10 +206,11 @@ athena.post('/listen', async (c) => {
   if (sniffAudio(audio) !== type.slice(6)) return c.json({ error: 'That recording is not the audio it says it is.' }, 415);
   try {
     // Billed on the longer of the declared length and a floor from the size (128 kbps, above what the recorder asks for), so a wrong header can't under-bill.
-    const cost_micro = sttCostMicro(Math.max(ms, Math.ceil(audio.length / 16)), parseVoicePrices(env.ELEVENLABS_PRICES));
+    const billedMs = Math.max(ms, Math.ceil(audio.length / 16));
+    const cost_micro = sttCostMicro(billedMs, parseVoicePrices(env.ELEVENLABS_PRICES));
     const record = await meter(env, 'athena_listen', cost_micro);
     const text = await transcribe(env, audio, type);
-    await record({ provider: 'elevenlabs', input_tokens: Math.ceil(ms / 1000), output_tokens: 0, cost_micro });
+    await record({ provider: 'elevenlabs', input_tokens: Math.ceil(billedMs / 1000), output_tokens: 0, cost_micro });
     return c.json({ text });
   } catch (e) { return refused(e); }
 });

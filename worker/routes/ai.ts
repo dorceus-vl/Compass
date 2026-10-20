@@ -75,7 +75,10 @@ ai.post('/chat', async (c) => {
         const stored = splitAttachments(turns[cut].content);
         message = stored.text; documentIds = stored.attachments.map((a) => a.id);
       }
-      history = turns.slice(0, cut).map((m) => ({ role: m.role, content: m.content }));
+      history = turns.slice(0, cut).map((m) => { // the stored `[[attachments]]` line (ids) is noise for the model: keep the text and the names
+        const { text, attachments } = splitAttachments(m.content);
+        return { role: m.role, content: attachments.length ? `${text}\n\n(attached: ${attachments.map((a) => a.name).join(', ')})` : text };
+      });
     }
 
     // 4b. Attachments: each must belong to this thread's project (or be unfiled while the thread is personal), live, in a cloud project. Nothing is stored or sent before this passes.

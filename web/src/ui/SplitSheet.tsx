@@ -25,6 +25,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
   const token = useRef(''); // what the split returned; the accept sends it back, so one split makes one set of tasks
+  const [canTrash, setCanTrash] = useState(false); // the split says whether the item's task is the email's original (not one an earlier split made)
   const [trash, setTrash] = useState(true); // the email already became a task: move that one to Trash when the new ones are added
   const [offline, setOffline] = useState(!navigator.onLine);
   const live = useRef(true);
@@ -41,9 +42,9 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
     if (offline) return;
     setPhase('loading');
     try {
-      const { proposals, token: t } = await api<{ proposals: SplitProposal[]; token: string }>(`/inbox/${item.id}/split`, { method: 'POST', json: { project_id: project || null } });
+      const { proposals, token: t, can_trash_original } = await api<{ proposals: SplitProposal[]; token: string; can_trash_original?: boolean }>(`/inbox/${item.id}/split`, { method: 'POST', json: { project_id: project || null } });
       if (!live.current) return;
-      token.current = t;
+      token.current = t; setCanTrash(!!can_trash_original);
       setRows(proposals.map((p) => ({ on: true, title: p.title, due: p.due_at && YMD.test(p.due_at) ? p.due_at : '', horizon: p.horizon, notes: p.notes })));
       setPhase('review');
     } catch (e) {
@@ -59,7 +60,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
     if (busy || offline || !ticked.length) return;
     setBusy(true);
     try {
-      await api(`/inbox/${item.id}/split/accept`, { method: 'POST', json: { project_id: project || null, trash_original: !!item.task_id && trash, token: token.current,
+      await api(`/inbox/${item.id}/split/accept`, { method: 'POST', json: { project_id: project || null, trash_original: canTrash && trash, token: token.current,
         tasks: ticked.map((r) => ({ title: r.title.trim().slice(0, 120), due_at: r.due || null, horizon: r.horizon, notes: r.notes })) } });
       toast(`Added ${ticked.length} task${ticked.length === 1 ? '' : 's'}`);
       await pull().catch(() => {});
@@ -128,7 +129,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
               <option value="">No project</option>
               {choices.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select></label>)}
-        {item.task_id && (
+        {canTrash && (
           <label className="row split-trash"><span className="tog"><input type="checkbox" checked={trash} disabled={busy} onChange={(e) => setTrash(e.target.checked)} /><i /></span>Also move the original task to Trash</label>)}
         <div className="row split-actions">
           <button type="button" className="btn" disabled={busy} onClick={() => ref.current?.close()}>Cancel</button>

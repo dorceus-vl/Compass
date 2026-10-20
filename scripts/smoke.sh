@@ -672,8 +672,10 @@ SPT=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); SPT1=${SPT%% *}
 [ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').state")" = added ] || fail "the email was not marked added"
 [ "$(D1X "SELECT count(*) AS n FROM task_events WHERE type='created' AND task_id IN ('$(echo $SPT | sed "s/ /','/")')" | js 'd[0].results[0].n')" = 2 ] || fail "split tasks have no created events"
 [ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').task_id")" = "$SPT1" ] || fail "the added email does not point at the first new task"
-[ "$(sapi $SPE/split '{}')" = 200 ] || fail "an added email could not be split again: $(cat $AV/s)"
-[ "$(acc $SPE null true)" = 201 ] && [ "$(js d.trashed < $AV/s)" = "$SPT1" ] || fail "a second accept (an added email may be split again, trashing its first task): $(cat $AV/s)"
+[ "$(sapi $SPE/split '{}')" = 200 ] && [ "$(js d.can_trash_original < $AV/s)" = false ] || fail "an added email could not be split again, or offered to trash its first split task: $(cat $AV/s)"
+[ "$(acc $SPE null true)" = 409 ] && grep -q '"error":"original_from_split"' $AV/s || fail "a second split trashing the first split's task was not refused: $(cat $AV/s)"
+[ "$(acc $SPE null false)" = 201 ] && [ "$(js d.trashed < $AV/s)" = null ] || fail "a second accept (an added email may be split again, the first tasks stay): $(cat $AV/s)"
+[ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id IN ('$(echo $SPT | sed "s/ /','/")') AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 2 ] || fail "the earlier split's tasks did not stay"
 SPT="$SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s)"
 [ "$(acc $SWE "\"$SWP2\"" false)" = 201 ] || fail "work accept: $(cat $AV/s)"
 SWT=$(js 'd.tasks[0].id' < $AV/s)
@@ -681,13 +683,13 @@ SWT=$(js 'd.tasks[0].id' < $AV/s)
 for x in $SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 for x in $SWP2 $SPP2; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
 curl "${H[@]}" -X POST $B/api/inbox/$SNI/dismiss >/dev/null; curl "${H[@]}" -X DELETE $B/api/rules/$SRID >/dev/null; rm -rf $AV
-echo "smoke: (a5) email split: proposals for personal and cloud-work email; work without a cloud work project, Offline-only, personal-kind refused (409, not billed); accept 2 of 3 -> 2 tasks, item added, events written, an added email can be split again (trashing its first task); work tasks sealed"
+echo "smoke: (a5) email split: proposals for personal and cloud-work email; work without a cloud work project, Offline-only, personal-kind refused (409, not billed); accept 2 of 3 -> 2 tasks, item added, events written, an added email can be split again but never offers to trash the earlier split's tasks (409 original_from_split); the earlier tasks stay; work tasks sealed"
 # (a6) An email the default rule already turned into a task (Task 4b fix, ruling A18): split it, with the original moved to Trash or left, or refused when the original is done.
 AV=$(mktemp -d)
 dmail() { post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke default $R $1\",\"ref\":\"smoke:default:$R:$1\",\"body\":\"Send the budget by Friday and book the room.\",\"payload\":{\"from\":\"Ann\",\"account\":\"me@gmail.com\"}}"; }
 DM1=$(dmail one); DI1=$(printf '%s' "$DM1" | js d.id); DO1=$(printf '%s' "$DM1" | js d.task_id)
 [ "$(printf '%s' "$DM1" | js d.state)" = added ] && [ -n "$DO1" ] && [ "$DO1" != null ] || fail "the default rule did not make a task from the email: $DM1"
-[ "$(sapi $DI1/split '{}')" = 200 ] && [ "$(js d.proposals.length < $AV/s)" = 3 ] || fail "split of an email already made a task: $(cat $AV/s)"
+[ "$(sapi $DI1/split '{}')" = 200 ] && [ "$(js 'd.proposals.length+","+d.can_trash_original' < $AV/s)" = "3,true" ] || fail "split of an email already made a task: $(cat $AV/s)"
 [ "$(acc $DI1 null true)" = 201 ] || fail "accept with the original to Trash: $(cat $AV/s)"
 DN1=$(js 'd.tasks[0].id' < $AV/s); DN2=$(js 'd.tasks[1].id' < $AV/s)
 [ "$(js 'd.tasks.length+","+d.item.state+","+(d.item.task_id===d.tasks[0].id)+","+(d.trashed==="'$DO1'")' < $AV/s)" = "2,added,true,true" ] || fail "accept answer: $(cat $AV/s)"

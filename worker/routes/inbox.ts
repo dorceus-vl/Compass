@@ -275,6 +275,11 @@ async function splitGate(env: Env, item: InboxItem | null, projectId: string | n
 }
 /** The live task an email already became (by a rule, Keep or an earlier split), if any; trashed tasks don't count. */
 const originalTask = (env: Env, item: InboxItem): Promise<Task | null> => (item.task_id ? loadTask(env, item.task_id) : Promise.resolve(null));
+/** True when the task is one an earlier split made (its created event says so): that is Vlad's work, not the email's original, so a later split never offers to trash it. */
+async function madeBySplit(env: Env, task: Task): Promise<boolean> {
+  const evs = await env.DB.prepare(`SELECT * FROM task_events WHERE task_id = ?1 AND type = 'created'`).bind(task.id).all<TaskEvent>();
+  return (await openAll(env, 'task_events', evs.results)).some((e) => { try { return JSON.parse(e.data ?? '{}').split === true; } catch { return false; } });
+}
 const STALE = { error: 'already_split', message: 'This email changed since Athena read it (it may already have been split). Split it again to review the current state.' };
 const projectIdOf = (b: unknown): string | null | undefined => {
   const v = (b as { project_id?: unknown } | null)?.project_id;
@@ -300,7 +305,8 @@ inbox.post('/:id/split', async (c) => {
       provider: settings.default_provider, maxTokens: 3000, system: buildSplitSystem({ today: localDate(settings.tz), tz: settings.tz }),
       messages: [{ role: 'user', content: fence('email', `Subject: ${item!.title}\n\n${emailText(item!)}`) }],
     });
-    return c.json({ proposals: parseSplit(out.text), token: item!.updated_at }); // the token: this accept's compare-and-swap (the item as it was when Athena read it)
+    const orig = await originalTask(c.env, item!);
+    return c.json({ proposals: parseSplit(out.text), token: item!.updated_at, can_trash_original: !!orig && !(await madeBySplit(c.env, orig)) }); // the token: this accept's compare-and-swap (the item as it was when Athena read it)
   } catch (e) {
     if (e instanceof AiRefused) return c.json({ error: e.code, message: e.message }, e.status as ContentfulStatusCode);
     throw e;
@@ -328,6 +334,7 @@ inbox.post('/:id/split/accept', async (c) => {
   if (item!.updated_at !== token) return c.json(STALE, 409);
   const original = await originalTask(c.env, item!);
   const trash = (body as { trash_original?: unknown }).trash_original === true && !!original;
+  if (trash && await madeBySplit(c.env, original!)) return c.json({ error: 'original_from_split', message: 'That task came from an earlier split of this email, so it is not the original. Add the new tasks without moving it to Trash.' }, 409);
   const t = now();
   // Compare-and-swap: errors (rolling the batch back) unless the item is still exactly as the split read it (its updated_at is the token, and the batch below bumps it), so of two accepts of one split only one wins; also when the item was handled meanwhile or, when the original is being trashed, that was trashed or finished meanwhile.
   const guard = c.env.DB.prepare(`SELECT CASE WHEN (SELECT state FROM inbox_items WHERE id = ?1) IN ('new','kept','added') AND (SELECT updated_at FROM inbox_items WHERE id = ?1) = ?3 AND (?2 IS NULL OR (SELECT 1 FROM tasks WHERE id = ?2 AND deleted_at IS NULL AND status != 'done')) THEN 1 ELSE json('not json') END`)
