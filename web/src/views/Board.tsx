@@ -20,6 +20,7 @@ export function Board() {
   const drag = useRef<{ id: string; moved: boolean; el: HTMLElement | null } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const stopDrag = useRef<(() => void) | null>(null);
+  const [landed, setLanded] = useState<string | null>(null); // the card just dropped, for its settle animation
   const lastDrag = useRef(0); // a drag released over its own card still fires click; ignore it
   useEffect(() => { api<{ wip_limits: Record<string, number | null> }>('/settings').then((s) => setWip(s.wip_limits)).catch(() => {}); }, []);
   useEffect(() => localStorage.setItem('compass.board.kind', kind), [kind]);
@@ -43,10 +44,13 @@ export function Board() {
     let armed = !touch, timer = 0;
     const block = (ev: TouchEvent) => ev.preventDefault(); // once dragging, the page must not scroll under the finger
     if (touch) timer = window.setTimeout(() => { armed = true; window.addEventListener('touchmove', block, { passive: false }); }, 300);
+    let lastX = start.x, tilt = 0, calm = 0;
+    const calmer = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const stop = () => {
-      clearTimeout(timer); window.removeEventListener('touchmove', block);
+      clearTimeout(timer); clearTimeout(calm); window.removeEventListener('touchmove', block);
       window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel);
       drag.current?.el?.remove(); drag.current = null; stopDrag.current = null; setDragId(null);
+      document.querySelectorAll('.col.over').forEach((c) => c.classList.remove('over'));
     };
     stopDrag.current = stop;
     const onMove = (ev: PointerEvent) => {
@@ -59,10 +63,21 @@ export function Board() {
       if (!d.moved) {
         d.moved = true; setDragId(id);
         d.el = card.cloneNode(true) as HTMLElement;
-        d.el.style.cssText = `position:fixed;pointer-events:none;width:${r0.width}px;z-index:60;opacity:.9`;
+        d.el.style.cssText = `position:fixed;pointer-events:none;width:${r0.width}px;z-index:60`;
+        d.el.classList.add('lift');
         document.body.appendChild(d.el);
+        lastX = ev.clientX;
       }
       d.el!.style.left = `${ev.clientX - grab.x}px`; d.el!.style.top = `${ev.clientY - grab.y}px`;
+      // Lift is CSS (.kc.lift); the tilt follows the pointer's horizontal speed, up to 2 degrees, and settles when it stops.
+      if (!calmer) {
+        tilt = Math.max(-2, Math.min(2, tilt * 0.6 + (ev.clientX - lastX) * 0.25));
+        d.el!.style.setProperty('--tilt', `${tilt}deg`);
+        clearTimeout(calm); calm = window.setTimeout(() => d.el?.style.setProperty('--tilt', '0deg'), 90);
+      }
+      lastX = ev.clientX;
+      document.querySelectorAll('.col.over').forEach((c) => c.classList.remove('over'));
+      document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-col]')?.classList.add('over'); // the target column glows
     };
     const onCancel = (ev: PointerEvent) => { if (ev.pointerId === pid) stop(); };
     const onUp = async (ev: PointerEvent) => {
@@ -86,6 +101,7 @@ export function Board() {
       if (tasks.find((t) => t.id === id)?.status === status && byCol(status).findIndex((t) => t.id === id) === bi) return; // same place
       const limit = wip[status];
       if (limit && status !== 'done' && column.length >= limit) toast(`${COLS.find((c) => c[0] === status)![1]} is at its limit of ${limit}`);
+      setLanded(id); setTimeout(() => setLanded(null), 600);
       await moveTask(id, status, beforeId, positionBetween(column[bi - 1]?.sort_in_column ?? null, column[bi]?.sort_in_column ?? null));
     };
     window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('pointercancel', onCancel);
@@ -94,10 +110,12 @@ export function Board() {
   const column = (s: Status, label: string, colour: string, pid?: string | null) => {
     const xs = byCol(s, pid);
     const limit = wip[s];
+    const state = !limit || s === 'done' ? undefined : xs.length > limit ? 'over' : xs.length === limit ? 'at' : 'ok';
     return (
-      <div className="col" data-col={s} key={`${s}-${pid ?? ''}`} style={{ ['--c' as string]: colour }}>
-        <div className="ch"><i /><b>{label}</b><small style={limit && xs.length > limit ? { color: 'var(--danger)' } : undefined}>{xs.length}{limit ? ` / ${limit}` : ''}</small></div>
-        {xs.map((t) => <Card key={t.id} task={t} project={projects.find((p) => p.id === t.project_id)} subtasks={subs(t.id)} onOpen={(i) => Date.now() - lastDrag.current > 300 && setOpen(i)} dragging={dragId === t.id} onPointerDown={onPointerDown} />)}
+      <div className="col" data-col={s} data-wip={state} key={`${s}-${pid ?? ''}`} style={{ ['--c' as string]: colour }}>
+        <div className="ch"><i /><b>{label}</b><small>{xs.length}{limit ? ` / ${limit}` : ''}</small></div>
+        {limit && s !== 'done' ? <div className="wip" role="img" aria-label={`${xs.length} of ${limit}`} style={{ ['--w' as string]: Math.min(1, xs.length / limit) }}><i /></div> : null}
+        {xs.map((t) => <Card key={t.id} task={t} project={projects.find((p) => p.id === t.project_id)} projects={projects} landed={landed === t.id} subtasks={subs(t.id)} onOpen={(i) => Date.now() - lastDrag.current > 300 && setOpen(i)} dragging={dragId === t.id} onPointerDown={onPointerDown} />)}
       </div>
     );
   };

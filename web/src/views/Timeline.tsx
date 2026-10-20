@@ -3,6 +3,7 @@ import { useStore, updateTask } from '../store/useStore.ts';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { layout, dayIndex, shiftDates } from '../timeline-math.ts';
 import { today, addDays } from '../dates.ts';
+import { taskColor, projectColor } from '../ui/colors.ts';
 
 const ZOOM = { day: 48, week: 18, month: 6 } as const;
 const ROW = 34, LEFT = 220;
@@ -23,7 +24,8 @@ export function Timeline() {
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && x.status !== 'done' && x.due_at && (!project || x.project_id === project)).sort((a, b) => (a.start_at ?? a.due_at!).localeCompare(b.start_at ?? b.due_at!));
   const rows = layout(live, from, px, ROW);
   const ms = milestones.filter((m) => m.due_at && !m.done_at && !m.deleted_at && (!project || m.project_id === project));
-  const height = (rows.length + 1) * ROW + 40;
+  const height = (rows.length + 1) * ROW + 40 + (ms.length > 1 ? 18 : 0); // two milestone lines when there are several, so labels overlap less
+  const pcolor = (id: string | null) => { const p = projects.find((x) => x.id === id); return p ? projectColor(p) : 'var(--text-dim)'; };
 
   // Bar drag: body moves both dates, right edge moves the due date. A press with no movement on the body opens the sheet.
   const onDown = (e: ReactPointerEvent, id: string, edge: boolean) => {
@@ -61,15 +63,17 @@ export function Timeline() {
       <div className="card" style={{ overflowX: 'auto', padding: 0 }}>
         <svg width={LEFT + days * px} height={height} style={{ display: 'block', fontFamily: 'var(--font)', fontSize: 12 }} aria-label="Timeline">
           {ticks.map((d) => <g key={d}><line x1={LEFT + dayIndex(d, from) * px} y1={0} x2={LEFT + dayIndex(d, from) * px} y2={height} stroke="rgba(255,255,255,.06)" /><text x={LEFT + dayIndex(d, from) * px + 4} y={14} fill="var(--text-faint)" className="mono" fontSize={10}>{label(d)}</text></g>)}
-          <line x1={LEFT + dayIndex(t, from) * px} y1={0} x2={LEFT + dayIndex(t, from) * px} y2={height} stroke="var(--accent)" strokeDasharray="3 3" />
-          {rows.map((r) => { const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === r.id ? d : 0), px); return (
-            <g key={r.id} transform={`translate(0, ${r.y + 24})`}>
-              <text x={8} y={ROW / 2 + 4} fill="var(--text)" style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)}>{r.title.slice(0, 32)}</text>
-              {r.due ? <path d={`M${x + px / 2} 8 l8 9 l-8 9 l-8 -9 z`} fill="var(--accent)" style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
-                : <><rect x={x} y={8} width={w} height={18} rx={6} fill="rgba(var(--accent-rgb),.25)" stroke="var(--accent)" style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
-                  <rect x={x + w - 6} y={8} width={6} height={18} fill="var(--accent)" style={{ cursor: 'ew-resize', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, true)} /></>}
+          <line className="tl-today" x1={LEFT + dayIndex(t, from) * px} y1={0} x2={LEFT + dayIndex(t, from) * px} y2={height} />
+          {rows.map((r) => { const task = live.find((x) => x.id === r.id)!, tc = taskColor(task, projects); const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === r.id ? d : 0), px); return (
+            <g key={r.id} className={`tl-row${drag?.id === r.id ? ' lifted' : ''}`} style={{ ['--tc' as string]: tc }} transform={`translate(0, ${r.y + 24})`}>
+              <circle cx={12} cy={ROW / 2} r={4} fill={pcolor(task.project_id)} />
+              <text x={24} y={ROW / 2 + 4} fill="var(--text)" style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)}>{r.title.length > 28 ? `${r.title.slice(0, 27)}…` : r.title}</text>
+              {r.due ? <path className="tl-fill" d={`M${x + px / 2} 8 l8 9 l-8 9 l-8 -9 z`} style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
+                : <><rect className="tl-fill" x={x} y={8} width={w} height={18} rx={6} style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
+                  <path className="tl-cap" d={`M${x + 6} 8 a6 6 0 0 0 -6 6 v6 a6 6 0 0 0 6 6 z`} pointerEvents="none" />
+                  <rect className="tl-edge" x={x + w - 6} y={8} width={6} height={18} rx={3} style={{ cursor: 'ew-resize', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, true)} /></>}
             </g>); })}
-          {ms.map((m) => <g key={m.id} transform={`translate(${LEFT + dayIndex(m.due_at!, from) * px + px / 2}, ${height - 16})`}><title>{m.name}</title><path d="M0 -8 l7 8 l-7 8 l-7 -8 z" fill="var(--nightowl)" /><text x={10} y={4} fill="var(--text-dim)" fontSize={11}>{m.name}{projects.length > 1 ? ` · ${projects.find((p) => p.id === m.project_id)?.name ?? ''}` : ''}</text></g>)}
+          {ms.map((m, i) => <g key={m.id} className="tl-ms" style={{ ['--tc' as string]: pcolor(m.project_id) }} transform={`translate(${LEFT + dayIndex(m.due_at!, from) * px + px / 2}, ${height - 16 - (ms.length > 1 && i % 2 === 0 ? 18 : 0)})`}><title>{m.name}</title><path d="M0 -9 l8 9 l-8 9 l-8 -9 z" /><text x={10} y={4} fill="var(--text-dim)" fontSize={11}>{m.name}{projects.length > 1 ? ` · ${projects.find((p) => p.id === m.project_id)?.name ?? ''}` : ''}</text></g>)}
         </svg>
       </div>
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}

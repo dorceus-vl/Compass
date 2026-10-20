@@ -7,6 +7,10 @@ import { taskColor, projectColor } from './colors.ts';
 import { appLabel } from './sources.ts';
 
 const GLYPH: Record<string, string> = { finance: '$', health: '+', hollow: 'H', sonarflow: '◷', email: '@', home: '⌂' };
+/** The icon tile's glyph: the source app's mark, else the project's initial. */
+export function iconFor(task: Task, project?: Project): string {
+  return GLYPH[task.source_app] ?? (task.source_app !== 'manual' ? task.source_app[0].toUpperCase() : project ? project.name.trim()[0]?.toUpperCase() ?? '•' : '•');
+}
 const TONE = { over: 'var(--danger)', due: 'var(--accent)', '': 'var(--text-dim)' };
 const SWIPE = 110; // px to the right that completes, as in the preview
 
@@ -28,7 +32,7 @@ export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
   const due = fmtDue(task.due_at), tone = done ? '' : due.tone; // a finished task is not late
   const color = taskColor(task, projects);
   const project = task.project_id ? projects.find((p) => p.id === task.project_id) : undefined;
-  const ico = GLYPH[task.source_app] ?? (task.source_app !== 'manual' ? task.source_app[0].toUpperCase() : project ? project.name.trim()[0]?.toUpperCase() ?? '•' : '•');
+  const ico = iconFor(task, project);
 
   const finish = (x: number, y: number) => {
     if (done) { void updateTask(task.id, { status: 'new' }); return; }

@@ -50,7 +50,7 @@ export function List() {
         </div>
       </div>
       {views.length > 0 && <div className="row">{views.map((v) => <button type="button" key={v.name} className="chip" onClick={() => setQ(v.query)}>{v.name}</button>)}</div>}
-      {groups.map((g) => <div className="hz" key={g || 'all'}>{g && <div className="hh"><b>{g}</b></div>}{rows.filter((t) => key(t) === g).map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} />)}</div>)}
+      {groups.map((g) => { const xs = rows.filter((t) => key(t) === g); return <div className="hz lgroup" key={g || 'all'}><div className="hh"><b>{g || 'All tasks'}</b><small>{xs.length}</small></div>{xs.map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} />)}</div>; })}
       <dialog ref={dlg}>
         <form onSubmit={saveView}>
           <p style={{ marginTop: 0 }}>Name this view</p>

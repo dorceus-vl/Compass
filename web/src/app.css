@@ -57,20 +57,36 @@ button.tt{background:none;border:0;padding:0;margin:0;text-align:left;cursor:poi
 .mtask{display:flex;gap:8px;align-items:center;padding:9px 10px;border-radius:12px;background:var(--field);margin-bottom:6px;font-size:12.5px}
 .mtask i{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--text-faint);flex:none}
 .board{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
-.col{background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:560px}
-.col .ch{display:flex;align-items:center;gap:8px;padding:2px 4px 8px}
-.col .ch i{width:8px;height:8px;border-radius:99px;background:var(--c)}
+.col{--c:var(--text-faint);background:linear-gradient(180deg,color-mix(in srgb,var(--c) 5%,var(--panel)),var(--panel) 120px);border:1px solid var(--border-soft);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:560px;transition:box-shadow .25s,border-color .25s}
+.col.over{border-color:color-mix(in srgb,var(--c) 45%,var(--border-soft));box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 25%,transparent),0 0 42px -10px color-mix(in srgb,var(--c) 40%,transparent)}
+.col .ch{display:flex;align-items:center;gap:8px;padding:2px 4px 0}
+.col .ch i{width:8px;height:8px;border-radius:99px;background:var(--c);box-shadow:0 0 8px color-mix(in srgb,var(--c) 70%,transparent)}
 .col .ch b{font-size:14px}
-.col .ch small{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint)}
-.kc{touch-action:pan-y;user-select:none;background:var(--field);border:1px solid var(--field-border);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:7px;cursor:grab;transition:transform .15s}
-.kc:hover{transform:translateY(-2px);border-color:rgba(var(--accent-rgb),.45)}
-.kc .tt{font-size:13.5px;font-weight:600;line-height:1.3}
+.col .ch small{margin-left:auto;font:500 11px var(--mono);color:var(--text-dim);border:1px solid var(--border-soft);border-radius:999px;padding:2px 8px}
+.col[data-wip=over] .ch small{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent)}
+.col[data-wip=at] .ch small{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.wip{height:3px;margin:-2px 4px 2px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+.wip i{display:block;height:100%;border-radius:inherit;background:var(--ok);transform-origin:left;transform:scaleX(var(--w));transition:transform .5s var(--ease-out),background .25s}
+.col[data-wip=at] .wip i{background:var(--warn)}
+.col[data-wip=over] .wip i{background:var(--danger)}
+.kc{--tc:var(--text-dim);position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none;display:flex;flex-direction:column;gap:9px;background:var(--card);border:1px solid color-mix(in srgb,var(--tc) 14%,var(--border-soft));border-radius:14px;padding:12px 12px 12px 17px;cursor:grab;transition:transform .2s var(--ease-out),border-color .2s,box-shadow .2s}
+.kc::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--tc);opacity:.6;transition:opacity .2s}
+.kc:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--tc) 38%,var(--border-soft));box-shadow:0 10px 24px rgba(0,0,0,.4),0 0 22px color-mix(in srgb,var(--tc) 10%,transparent)}
+.kc:hover::before{opacity:1}
+.kc .ico{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;font:700 13px var(--font);color:var(--tc);background:color-mix(in srgb,var(--tc) 13%,transparent);border:1px solid color-mix(in srgb,var(--tc) 25%,transparent)}
+.kc .kh{display:flex;gap:10px;align-items:flex-start}
+.kc .kx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.kc .tt{font-size:13.5px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
 .kc .pj{font-size:11.5px;color:var(--text-faint)}
 .kc .ft{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .kc .prog{height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
-.kc .prog i{display:block;height:100%;background:var(--accent);width:var(--w)}
-.kc.ghost{opacity:.5;border-style:dashed;transform:rotate(-2deg)}
-.kc.block{border-left:3px solid var(--danger)}
+.kc .prog i{display:block;height:100%;background:var(--tc);width:var(--w)}
+.kc.ghost{opacity:.4;border-style:dashed;transform:none}
+.kc.block::before{background:var(--danger);opacity:1}
+.kc.lift{cursor:grabbing;opacity:.97;transform:scale(1.03) rotate(var(--tilt,0deg));transition:transform .12s var(--ease-out);border-color:color-mix(in srgb,var(--tc) 55%,var(--border-soft));box-shadow:0 24px 48px rgba(0,0,0,.65),0 0 32px color-mix(in srgb,var(--tc) 24%,transparent)}
+.kc.landed{animation:kc-land .45s var(--ease-spring)}
+@keyframes kc-land{from{transform:scale(1.05);opacity:.6}}
+@media (prefers-reduced-motion: reduce){.kc,.kc:hover,.kc.lift{transform:none !important}}
 .sub{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-faint)}
 .sub i{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--text-faint)}
 .sub i.d{background:var(--accent);border-color:var(--accent)}
@@ -302,8 +318,8 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 .tcard .t::after{content:"";position:absolute;inset:0;border-radius:inherit} /* the whole card opens the task */
 .tcard .m{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
 .tcard .m:empty{display:none}
-.tcard .chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 11px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-dim);background:rgba(255,255,255,.035);border:1px solid var(--border-soft);border-radius:999px;padding:4px 9px}
-.tcard .chip i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--sc)}
+.tcard .chip,.kc .chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 11px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-dim);background:rgba(255,255,255,.035);border:1px solid var(--border-soft);border-radius:999px;padding:4px 9px}
+.tcard .chip i,.kc .chip i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--sc)}
 .tcard a.chip,.tcard .check{position:relative;z-index:1}
 .tcard .m .when{display:none}
 .tcard .due{margin-left:auto;display:flex;gap:12px;align-items:center;flex:none}
@@ -441,3 +457,20 @@ dialog.pal{padding:10px;margin-top:12vh;width:min(640px,calc(100vw - 32px));max-
 .pal-row .tt{flex:1;min-width:0;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pal-row .kind{flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 10.5px var(--mono);letter-spacing:1.5px;text-transform:uppercase;color:var(--text-faint)}
 .pal-row[aria-selected="true"] .kind{color:var(--accent)}
+
+/* ---------- Board, List, Upcoming, Timeline (Phase 3b Task 4) ---------- */
+.lgroup .hh{position:sticky;top:0;z-index:3;margin:-14px -14px 4px;padding:12px 14px;border-radius:18px 18px 0 0;border-bottom:1px solid var(--border-soft);background:color-mix(in srgb,var(--panel) 88%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.lgroup .hh b{font:500 11px var(--mono);letter-spacing:2.4px;text-transform:uppercase;color:var(--text-dim)}
+.lgroup .tcard:hover .body{background:color-mix(in srgb,var(--tc) 6%,var(--card));border-color:color-mix(in srgb,var(--tc) 32%,var(--border-soft))}
+.upcoming{display:flex;flex-direction:column;gap:28px;min-width:0}
+.upcoming .bhead{margin-bottom:12px}
+.tl-today{stroke:var(--accent);stroke-width:1.5;animation:tl-pulse 3.2s ease-in-out infinite}
+@keyframes tl-pulse{50%{opacity:.3}}
+.tl-row .tl-fill{fill:color-mix(in srgb,var(--tc) 30%,transparent);stroke:color-mix(in srgb,var(--tc) 45%,transparent);stroke-width:1;transition:fill .2s}
+.tl-row:hover .tl-fill{fill:color-mix(in srgb,var(--tc) 44%,transparent)}
+.tl-row path.tl-fill{fill:var(--tc);stroke:none}
+.tl-cap{fill:var(--tc)}
+.tl-edge{fill:color-mix(in srgb,var(--tc) 50%,transparent);transition:fill .2s}
+.tl-row:hover .tl-edge{fill:var(--tc)}
+.tl-row.lifted{filter:drop-shadow(0 6px 10px rgba(0,0,0,.55)) drop-shadow(0 0 8px color-mix(in srgb,var(--tc) 55%,transparent))}
+.tl-ms path{fill:var(--tc);filter:drop-shadow(0 0 4px var(--tc)) drop-shadow(0 0 12px color-mix(in srgb,var(--tc) 60%,transparent))}
