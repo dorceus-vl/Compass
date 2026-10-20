@@ -64,19 +64,19 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
         <span className="slide" ref={railPill} aria-hidden="true" />
         <img className="logo" src="/icons/icon-192.png" width={42} height={42} alt="Compass, Knocturn Labs" />
         {NAV.map(([k, to, label]) => k === 'inbox'
-          ? <Link key={k} to={to} className={on(k)} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}><Icon name={k} />Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
-          : <Link key={k} to={to} className={on(k)}><Icon name={k} />{label}</Link>)}
+          ? <Link key={k} to={to} className={on(k)} aria-current={on(k) ? 'page' : undefined} aria-label={fresh ? `Inbox, ${fresh} new` : 'Inbox'}><Icon name={k} />Inbox{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+          : <Link key={k} to={to} className={on(k)} aria-current={on(k) ? 'page' : undefined}><Icon name={k} />{label}</Link>)}
         <button className="btn rk" onClick={onPalette} aria-label="Command palette">⌘K</button>
         <div className="spacer" />
-        <Link to="/settings" className={on('settings')}><Icon name="settings" />Settings</Link>
+        <Link to="/settings" className={on('settings')} aria-current={on('settings') ? 'page' : undefined}><Icon name="settings" />Settings</Link>
       </nav>
       <div className="main">{children}</div>
       <nav className="ptab phone-only" aria-label="Main" ref={tab}>
         <span className="slide" ref={tabPill} aria-hidden="true" />
-        <Link to="/" className={on('today')}><Icon name="today" />Today</Link><Link to="/board" className={on('board')}><Icon name="board" />Board</Link>
+        <Link to="/" className={on('today')} aria-current={on('today') ? 'page' : undefined}><Icon name="today" />Today</Link><Link to="/board" className={on('board')} aria-current={on('board') ? 'page' : undefined}><Icon name="board" />Board</Link>
         <button type="button" className="add" onClick={onPalette} aria-label="Quick add"><Icon name="plus" /></button>
-        <Link to="/projects" className={on('projects')}><Icon name="projects" />Projects</Link>
-        <Link to="/settings" className={on('settings') || on('inbox') || on('library') || on('copilot')} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+        <Link to="/projects" className={on('projects')} aria-current={on('projects') ? 'page' : undefined}><Icon name="projects" />Projects</Link>
+        <Link to="/settings" className={on('settings') || on('inbox') || on('library') || on('copilot')} aria-current={on('settings') || on('inbox') || on('library') || on('copilot') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
       </nav>
     </div>
   );

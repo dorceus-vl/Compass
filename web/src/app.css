@@ -6,6 +6,7 @@
 .card.rec{border-color:rgba(var(--accent-rgb),.45);box-shadow:0 0 40px -14px rgba(var(--accent-rgb),.6)}
 .btn{display:inline-flex;align-items:center;gap:8px;border-radius:12px;padding:12px 16px;font-weight:600;font-size:14px;border:1px solid var(--field-border);background:var(--field);color:var(--text);cursor:pointer}
 .btn.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.btn.danger{background:var(--danger);color:var(--on-accent);border-color:transparent}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .shell{display:grid;grid-template-columns:84px 1fr;gap:16px;min-height:760px;padding:24px 20px 60px;max-width:1380px;margin:0 auto}
 .rail{position:relative;background:var(--panel);border:1px solid var(--border-soft);border-radius:26px;padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:4px;view-transition-name:rail}
@@ -13,6 +14,7 @@
 .rail a{position:relative;z-index:1;width:56px;padding:8px 0 7px;border-radius:14px;color:var(--text-faint);font-size:10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform var(--dur-quick) var(--ease-out),color var(--dur-quick)}
 .rail a svg,.ptab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .rail a:hover{transform:translateY(-2px);color:var(--text)}.rail a.on{color:var(--accent)}
+@media (prefers-reduced-motion: reduce){.rail a:hover{transform:none}}
 .rail .spacer{flex:1}
 .rail a .badge{position:absolute;top:2px;left:calc(50% + 4px);margin:0}
 .rail .rk{position:relative;z-index:1;width:56px;padding:8px 0;font-size:11px;justify-content:center;margin-top:4px}
@@ -103,7 +105,8 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(6px)}
 .field{width:100%;background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:12px 14px;color:var(--text);font:inherit}
 .field:focus{outline:2px solid var(--accent);outline-offset:1px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none !important;animation:none !important}}
+@media (prefers-reduced-motion: reduce){.toast::after{display:none}}
 .phone-only{display:none}
 @media (max-width:760px){.rail{display:none}.phone-only{display:grid}.shell{grid-template-columns:1fr;padding:16px 16px calc(78px + env(safe-area-inset-bottom))}.toasts{bottom:calc(98px + env(safe-area-inset-bottom))}
 .ptab{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(5,5,7,.72);backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);border-top:1px solid var(--border-soft);padding:6px 8px max(8px, env(safe-area-inset-bottom));margin:0}}
@@ -412,7 +415,7 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 @media (prefers-reduced-motion: reduce){.hero .layer,.compass .tilt{transform:none !important}}
 @media (max-width:760px),(pointer:coarse){
   .icard .act button,.icard .act a{min-height:44px;display:inline-flex;align-items:center;padding:0 14px}
-  .bhead h2 a{display:inline-block;padding:10px 0;margin:-10px 0}
+  .bhead h2 a{display:inline-block;padding:11px 0;margin:-11px 0}
 }
 
 /* page transitions (ruling D6): the rail and tab bar are named so they stay put; everything else cross-fades with an 8px rise */
@@ -658,13 +661,13 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
 @media (min-width:761px){.cp-compose{position:sticky;bottom:12px;z-index:5}}
 
 /* settings: "More" list (large rows on a phone, a quiet grid on a wide screen) */
-.more{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.more-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 .more-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:9px 12px;border-radius:16px;background:var(--card);border:1px solid var(--border-soft);color:var(--text);font-size:15px;font-weight:600;transition:border-color var(--dur-quick),background var(--dur-quick)}
 .more-row:hover{border-color:rgba(var(--accent-rgb),.35)}
 .more-row>span:nth-child(2){flex:1}
 .more-row .chev{color:var(--text-faint);display:flex}
 .more-row .chev svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
-@media (max-width:760px){.more{grid-template-columns:1fr;gap:10px}.more-row{min-height:64px;font-size:16.5px;padding:10px 14px;border-radius:18px}}
+@media (max-width:760px){.more-list{grid-template-columns:1fr;gap:10px}.more-row{min-height:64px;font-size:16.5px;padding:10px 14px;border-radius:18px}}
 
 /* sign-in: the Knocturn ID card stays; on wide screens the left stage carries the shapes and the cursor compass */
 .sstage{display:contents}
@@ -677,3 +680,15 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
   .stage .compass{right:50%;top:50%;width:min(320px,62%);transform:translate(50%,-50%)}
 }
 .cp-lock b{font-family:var(--font);font-weight:700}
+
+/* ---------- Task 8 audit: 44px targets the earlier screens missed ---------- */
+.chip .x{background:none;border:0;color:inherit;cursor:pointer;padding:0;font:inherit}
+@media (max-width:760px),(pointer:coarse){
+  .btn,.field:not(textarea),.rv-row .act button,.pname,.rv-row .tt{min-height:44px}
+  .rv-row .tt{min-width:44px;text-align:left}
+  .chip .x{min-width:44px;min-height:44px;margin:-12px -10px -12px -6px} /* the hit area grows, the chip keeps its size */
+  .head .eyebrow a{display:inline-block;padding:15px 0;margin:-15px 0}
+  .signin .lr a{padding:12px 0;margin:-12px 0}
+  .signin .link{min-height:44px}
+}
+.tl-title:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px} /* the keyboard way to a bar: open the task, move its dates there */

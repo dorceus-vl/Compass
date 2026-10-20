@@ -6,7 +6,7 @@ import { today, addDays } from '../dates.ts';
 import { taskColor, projectColor } from '../ui/colors.ts';
 
 const ZOOM = { day: 48, week: 18, month: 6 } as const;
-const ROW = 34, LEFT = 220;
+const LEFT = 220;
 const label = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }); };
 
 export function Timeline() {
@@ -19,6 +19,7 @@ export function Timeline() {
   useEffect(() => () => stopDrag.current?.(), []); // unmount mid-drag: drop the listeners
   if (!ready) return null;
   const px = ZOOM[zoom];
+  const ROW = matchMedia('(max-width:760px),(pointer:coarse)').matches ? 44 : 34; // a row is a 44px target on a phone
   const t = today();
   const from = addDays(t, -14), days = zoom === 'month' ? 180 : zoom === 'week' ? 90 : 45;
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && x.status !== 'done' && x.due_at && (!project || x.project_id === project)).sort((a, b) => (a.start_at ?? a.due_at!).localeCompare(b.start_at ?? b.due_at!));
@@ -67,11 +68,16 @@ export function Timeline() {
           {rows.map((r) => { const task = live.find((x) => x.id === r.id)!, tc = taskColor(task, projects); const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === r.id ? d : 0), px); return (
             <g key={r.id} className={`tl-row${drag?.id === r.id ? ' lifted' : ''}`} style={{ ['--tc' as string]: tc }} transform={`translate(0, ${r.y + 24})`}>
               <circle cx={12} cy={ROW / 2} r={4} fill={pcolor(task.project_id)} />
-              <text x={24} y={ROW / 2 + 4} fill="var(--text)" style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)}><title>{r.title}</title>{r.title.length > 28 ? `${r.title.slice(0, 27)}…` : r.title}</text>
+              <g className="tl-title" tabIndex={0} role="button" aria-label={r.title} style={{ cursor: 'pointer' }} onClick={() => setOpen(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(r.id); } }}>
+                <rect x={0} y={0} width={LEFT - 6} height={ROW} fill="transparent" />
+                <text x={24} y={ROW / 2 + 4} fill="var(--text)"><title>{r.title}</title>{r.title.length > 28 ? `${r.title.slice(0, 27)}…` : r.title}</text>
+              </g>
+              <g transform={`translate(0 ${(ROW - 34) / 2})`}>
               {r.due ? <path className="tl-fill" d={`M${x + px / 2} 8 l8 9 l-8 9 l-8 -9 z`} style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
                 : <><rect className="tl-fill" x={x} y={8} width={w} height={18} rx={6} style={{ cursor: 'grab', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, false)} />
                   <path className="tl-cap" d={`M${x + 6} 8 a6 6 0 0 0 -6 6 v6 a6 6 0 0 0 6 6 z`} pointerEvents="none" />
                   <rect className="tl-edge" x={x + w - 6} y={8} width={6} height={18} rx={3} style={{ cursor: 'ew-resize', touchAction: 'none' }} onPointerDown={(e) => onDown(e, r.id, true)} /></>}
+              </g>
             </g>); })}
           {ms.map((m, i) => <g key={m.id} className="tl-ms" style={{ ['--tc' as string]: pcolor(m.project_id) }} transform={`translate(${LEFT + dayIndex(m.due_at!, from) * px + px / 2}, ${height - 16 - (ms.length > 1 && i % 2 === 0 ? 18 : 0)})`}><title>{m.name}</title><path d="M0 -9 l8 9 l-8 9 l-8 -9 z" /><text x={10} y={4} fill="var(--text-dim)" fontSize={11}>{m.name}{projects.length > 1 ? ` · ${projects.find((p) => p.id === m.project_id)?.name ?? ''}` : ''}</text></g>)}
         </svg>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task } from '../../../shared/types.ts';
 import { useStore } from '../store/useStore.ts';
-import { TaskCard } from '../ui/TaskCard.tsx';
+import { TaskCard, useFinished } from '../ui/TaskCard.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { parseQuery, applyQuery } from '../query.ts';
 import { today } from '../dates.ts';
@@ -21,11 +21,17 @@ export function List() {
   const [views, setViews] = useState<View[]>([]);
   const [name, setName] = useState('');
   const [viewsLoaded, setViewsLoaded] = useState(false); // saving before the GET succeeds would overwrite the server's list
+  const [finished, onFinish] = useFinished();
   const dlg = useRef<HTMLDialogElement>(null);
   useEffect(() => { api<{ saved_views: View[] }>('/settings').then((s) => { setViews(s.saved_views); setViewsLoaded(true); }).catch(() => {}); }, []);
   if (!ready) return null;
-  const rows = applyQuery(tasks.filter((t) => !t.parent_id), parseQuery(q), projects, today()).sort((a, b) =>
-    sort === 'due' ? (a.due_at ?? '9').localeCompare(b.due_at ?? '9') : sort === 'priority' ? b.priority - a.priority : sort === 'title' ? a.title.localeCompare(b.title) : b.updated_at.localeCompare(a.updated_at));
+  const pq = parseQuery(q), cmp = (a: Task, b: Task) =>
+    sort === 'due' ? (a.due_at ?? '9').localeCompare(b.due_at ?? '9') : sort === 'priority' ? b.priority - a.priority : sort === 'title' ? a.title.localeCompare(b.title) : b.updated_at.localeCompare(a.updated_at);
+  const top = tasks.filter((t) => !t.parent_id);
+  const live = applyQuery(top, pq, projects, today()).sort(cmp);
+  // what was finished from this list during this visit stays, struck through, after the open ones (as on the other lists), whatever the status filter says
+  const struck = applyQuery(top.filter((t) => t.status === 'done' && finished.has(t.id)), { ...pq, status: 'all' }, projects, today()).filter((t) => !live.includes(t)).sort(cmp);
+  const rows = [...live, ...struck];
   const key = (t: Task) => group === 'project' ? projects.find((p) => p.id === t.project_id)?.name ?? 'No project' : group === 'horizon' ? t.horizon : group === 'status' ? t.status : '';
   const groups = [...new Set(rows.map(key))];
   // No prompt(): the name comes from the <dialog>; submit saves, Esc/Cancel discards.
@@ -41,7 +47,7 @@ export function List() {
   return (
     <>
       <div className="head">
-        <div><div className="eyebrow">List</div><h1 style={{ marginTop: 6 }}>Every <b>task</b></h1><div className="sub">{rows.length} shown</div></div>
+        <div><div className="eyebrow">List</div><h1 style={{ marginTop: 6 }}>Every <b>task</b></h1><div className="sub">{live.length} shown</div></div>
         <div className="row">
           <input className="field" style={{ maxWidth: 380 }} placeholder="risk kind:work status:progress due:<2026-10-31 tag:x" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter" />
           <select className="field" style={{ width: 'auto' }} value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort"><option value="due">Sort: due</option><option value="priority">Sort: priority</option><option value="title">Sort: title</option><option value="updated">Sort: updated</option></select>
@@ -50,7 +56,7 @@ export function List() {
         </div>
       </div>
       {views.length > 0 && <div className="row">{views.map((v) => <button type="button" key={v.name} className="chip" onClick={() => setQ(v.query)}>{v.name}</button>)}</div>}
-      {groups.map((g) => { const xs = rows.filter((t) => key(t) === g); return <div className="hz lgroup" key={g || 'all'}><div className="hh"><b>{g || 'All tasks'}</b><small>{xs.length}</small></div>{xs.map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} />)}</div>; })}
+      {groups.map((g) => { const xs = rows.filter((t) => key(t) === g); return <div className="hz lgroup" key={g || 'all'}><div className="hh"><b>{g || 'All tasks'}</b><small>{xs.length}</small></div>{xs.map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} onFinish={onFinish} />)}</div>; })}
       <dialog ref={dlg}>
         <form onSubmit={saveView}>
           <p style={{ marginTop: 0 }}>Name this view</p>

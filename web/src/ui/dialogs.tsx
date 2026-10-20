@@ -23,7 +23,7 @@ export function ConfirmDialog() {
         <p style={{ marginTop: 0 }}>{state.text}</p>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn" onClick={() => close(false)}>Cancel</button>
-          <button className="btn primary" style={state.danger ? { background: 'var(--danger)', color: '#fff' } : undefined} onClick={() => close(true)}>Confirm</button>
+          <button className={`btn ${state.danger ? 'danger' : 'primary'}`} onClick={() => close(true)}>Confirm</button>
         </div>
       </>}
     </dialog>

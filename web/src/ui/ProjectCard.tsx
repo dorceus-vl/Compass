@@ -32,7 +32,7 @@ export function ProjectCard({ p }: { p: PortfolioRow }) {
         <div className="prow"><RagPill rag={p.rag} /><span className="chip" style={vars({ '--sc': color })}><i />{p.kind}</span></div>
         <div className="pmain">
           <Ring pct={p.pct_done} color={color} />
-          <div className="ptx"><h3>{p.name}</h3><p>{p.rag_reason || (p.status === 'on_hold' ? 'On hold' : `${p.open_tasks} open task${p.open_tasks === 1 ? '' : 's'}`)}</p></div>
+          <div className="ptx"><h3>{p.name}</h3>{p.rag_reason && <p>{p.rag_reason}</p>}<p>{[p.status === 'on_hold' && 'On hold', `${p.pct_done}% done`, `${p.open_tasks} open task${p.open_tasks === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</p></div>
         </div>
         <div className="prow"><span>{ms ? `Next: ${ms.name} · ${fmtDue(ms.due_at).text}` : 'No upcoming milestone'}</span></div>
         <div className="prow"><span>{p.open_risks} open risk{p.open_risks === 1 ? '' : 's'}</span>

@@ -27,7 +27,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   useEffect(() => { api<Settings>('/settings').then(setS).catch(() => toast('Settings need a connection')); }, []);
   // Also shown while settings can't load (offline): on a phone this is the only way to the views that have no tab.
   const goTo = (
-    <nav className="more" aria-label="More">
+    <nav className="more-list" aria-label="More">
       {MORE.map(([icon, to, label]) => <Link key={to} to={to} className="more-row"><span className="secico"><Icon name={icon} /></span><span>{label}</span><span className="chev"><Icon name="chevron" /></span></Link>)}
     </nav>
   );
@@ -179,7 +179,7 @@ function Email({ s, save }: { s: Settings; save: Save }) {
       <div className="eyebrow" style={{ margin: '14px 0 6px' }}>Work email domains</div>
       <div className="row" style={{ marginBottom: 8 }}>
         {s.work_email_domains.length === 0 && <span style={{ color: 'var(--text-faint)', fontSize: 13 }}>None. Email from every domain is personal.</span>}
-        {s.work_email_domains.map((d) => <span key={d} className="chip work" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{d}<button type="button" aria-label={`Remove ${d}`} onClick={() => save({ work_email_domains: s.work_email_domains.filter((x) => x !== d) })} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', padding: 0, font: 'inherit' }}>x</button></span>)}
+        {s.work_email_domains.map((d) => <span key={d} className="chip work" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{d}<button type="button" className="x" aria-label={`Remove ${d}`} onClick={() => save({ work_email_domains: s.work_email_domains.filter((x) => x !== d) })}>x</button></span>)}
       </div>
       <div className="row"><input className="field" style={{ maxWidth: 240 }} placeholder="example.com" value={draft} aria-label="Add a work email domain" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); }} /><button type="button" className="btn" onClick={add}>Add domain</button></div>
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Email from these domains becomes a work task.</p>

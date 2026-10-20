@@ -8,9 +8,9 @@ type Opts = {
   right?: boolean; left?: boolean;
   /** A pointerdown inside an element matching this does not start a swipe. */
   skip: string;
-  /** Called when a swipe passes the threshold (x, y: where the pointer let go). */
-  onSwipe: (dir: Dir, x: number, y: number) => void;
-  /** After a commit, the card flies off the side (and springs back after 800ms if it is still here); otherwise it springs back at once. */
+  /** Called when a swipe passes the threshold (x, y: where the pointer let go). May return a promise. */
+  onSwipe: (dir: Dir, x: number, y: number) => unknown;
+  /** After a commit, the card flies off the side and stays there until what onSwipe returned settles (then springs back if it is still here); otherwise it springs back at once. */
   fly?: boolean;
 };
 
@@ -39,8 +39,10 @@ export function useSwipe<E extends HTMLElement>({ right, left, skip, onSwipe, fl
     if (dir && fly) {
       const w = ref.current?.offsetWidth ?? 400;
       paint(dir === 'right' ? w : -w, true);
-      setTimeout(() => paint(null), 800);
-    } else paint(null);
+      Promise.resolve(onSwipe(dir, e.clientX, e.clientY)).catch(() => {}).finally(() => paint(null));
+      return;
+    }
+    paint(null);
     if (dir) onSwipe(dir, e.clientX, e.clientY);
   };
   return {

@@ -21,10 +21,10 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
   };
   const btn = (label: string, fn: () => void, primary = false) => <button type="button" key={label} className={primary ? 'p' : undefined} disabled={off} title={tip} onClick={fn}>{label}</button>;
   const meeting = item.kind === 'meeting', fresh = item.state === 'new';
-  const keep = () => void (meeting ? reviewPath(item).then(navigate) : inbox.keep(item.id));
+  const keep = () => (meeting ? reviewPath(item).then(navigate) : inbox.keep(item.id));
   const swipe = useSwipe<HTMLDivElement>({
     right: meeting || (fresh && !off), left: (meeting || fresh) && !off, skip: 'a, button', fly: true,
-    onSwipe: (dir) => (dir === 'right' ? keep() : void inbox.dismiss(item.id)),
+    onSwipe: (dir) => (dir === 'right' ? keep() : inbox.dismiss(item.id)),
   });
   return (
     <div className={`icard${active ? ' active' : ''}`} id={id} role={id ? 'option' : undefined} aria-selected={id ? !!active : undefined} style={accent(sourceColor(item.app))} ref={swipe.ref} {...swipe.props}>

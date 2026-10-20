@@ -45,9 +45,9 @@ export function TrashView() {
       {section('RAID', 'raid_items', t.raid_items)}{section('Changes', 'change_requests', t.change_requests)}{section('Decisions', 'decisions', t.decisions)}
       {section('Lessons', 'lessons', t.lessons)}{section('Documents', 'documents', t.documents)}{section('Copilot threads', 'ai_threads', t.ai_threads)}
       <dialog ref={dlg} onClose={() => setWord('')}><p>This deletes everything in Trash for good. Type <b>EMPTY</b> to continue; your passkey is asked next.</p>
-        <input className="field" value={word} onChange={(e) => setWord(e.target.value)} />
+        <input className="field" aria-label="Type EMPTY to confirm" value={word} onChange={(e) => setWord(e.target.value)} />
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}><button type="button" className="btn" onClick={() => dlg.current?.close()}>Cancel</button>
-          <button type="button" className="btn primary" style={{ background: 'var(--danger)', color: '#fff' }} disabled={word !== 'EMPTY'} onClick={async () => { try { await api('/trash/empty', { method: 'POST' }); toast('Trash emptied'); dlg.current?.close(); await load(); } catch (e) { toast((e as Error).message); } }}>Empty Trash</button></div></dialog>
+          <button type="button" className="btn danger" disabled={word !== 'EMPTY'} onClick={async () => { try { await api('/trash/empty', { method: 'POST' }); toast('Trash emptied'); dlg.current?.close(); await load(); } catch (e) { toast((e as Error).message); } }}>Empty Trash</button></div></dialog>
     </>
   );
 }

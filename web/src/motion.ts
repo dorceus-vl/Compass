@@ -88,8 +88,11 @@ export function useLens(ref: { current: HTMLElement | null }, selector = ':scope
     const cards = () => root.querySelectorAll<HTMLElement>(selector);
     const apply = () => {
       const mid = innerHeight / 2;
-      cards().forEach((c) => {
-        const r = c.getBoundingClientRect(), cy = r.top + r.height / 2;
+      // all reads first, then all writes: one style recalculation per frame, not one per card; cards more than a screen away are left alone
+      const els = [...cards()], tops = els.map((c) => c.getBoundingClientRect());
+      els.forEach((c, i) => {
+        const r = tops[i], cy = r.top + r.height / 2;
+        if (cy < -innerHeight || cy > innerHeight * 2) return;
         const f = lensFactor(cy, mid, innerHeight), off = lensOffset(cy, mid, innerHeight);
         c.style.setProperty('--f', f.toFixed(3));
         c.style.opacity = (0.5 + f * 0.5).toFixed(3);
