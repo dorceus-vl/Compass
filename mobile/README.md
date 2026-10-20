@@ -1,6 +1,6 @@
 # Compass on iPhone, iPad and Android (Capacitor 8)
 
-A shell around https://compass.knocturnlabs.com: nothing of the app is bundled except `www/offline.html`. The native side
+A shell around https://compass.knocturnlabs.com: nothing of the app is bundled except `www/offline.html` (and a placeholder `www/index.html`). The native side
 (`ios/App/App/`, `android/app/src/main/java/com/knocturnlabs/compass/`) adds what the page can't do itself; `web/src/native.ts` is
 its caller. Both platforms follow the same rules.
 
@@ -41,17 +41,19 @@ silently once push is on).
 
 ## Commands (in `mobile/`)
 
+Prerequisites: Xcode with CocoaPods (iOS), JDK 21 and the Android SDK at `~/Library/Android/sdk` (`ANDROID_HOME`), Node.
+
 ```bash
 npm install
-npm run build:sim        # cap sync + unsigned simulator build (CODE_SIGNING_ALLOWED=NO) into build/
+npm run build:sim        # cap sync + ad hoc signed simulator build (CODE_SIGN_IDENTITY=-) into build/
 npm test                 # CompassLink's rules, checked with swiftc and javac alone
 npm run build:android    # cap sync android + ./gradlew assembleDebug (Java 21, ANDROID_HOME=~/Library/Android/sdk)
 COMPASS_URL=http://localhost:5173 npm run build:sim   # point a build at local dev (npm run dev:worker + npm run dev at the root)
 npm run open             # syncs the production URL, then opens Xcode, for signing and installing on a device
 ```
 
-Android against local dev: `adb reverse tcp:5173 tcp:5173`, then `COMPASS_URL=http://localhost:5173 npm run build:android` and
-`adb install -r android/app/build/outputs/apk/debug/app-debug.apk` (localhost, not 10.0.2.2: only localhost is a secure context, which
+Android against local dev: `~/Library/Android/sdk/platform-tools/adb reverse tcp:5173 tcp:5173`, then `COMPASS_URL=http://localhost:5173 npm run build:android` and
+`~/Library/Android/sdk/platform-tools/adb install -r android/app/build/outputs/apk/debug/app-debug.apk` (localhost, not 10.0.2.2: only localhost is a secure context, which
 sign-in's PKCE and the dev sign-in need). Cleartext is allowed only in such a build. Rebuild without `COMPASS_URL` before installing it
 anywhere else.
 
@@ -70,12 +72,12 @@ iPhone or iPad (Debug build, so the push token is a development one):
 2. Xcode, Settings, Accounts: sign in with the Apple account of team K948BT44PM. Select the `App` target and `ShareExtension`: "Automatically manage signing" is on; Xcode registers `com.knocturnlabs.compass` and `com.knocturnlabs.compass.ShareExtension` and the app group `group.com.knocturnlabs.compass` the first time.
 3. Pick the device (trust the Mac on it, turn on Developer Mode), press Run. Distribute with Product, Archive, not a Release run.
 
-Android (USB debugging on, `adb devices` lists the phone):
+Android (USB debugging on; `~/Library/Android/sdk/platform-tools/adb devices` lists the phone):
 1. `npm run build:android` (a production sync, then `assembleDebug`).
-2. `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
+2. `~/Library/Android/sdk/platform-tools/adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
 3. Push needs Vlad's `google-services.json` in `android/app/` before the build (never committed).
 
-A release build (`cd android && ./gradlew assembleRelease`) runs `checkReleaseConfig` first and fails unless `capacitor.config.json` says
+A release build (`cd android && ./gradlew assembleRelease`) is an unsigned APK until a release keystore and `signingConfig` exist; it runs `checkReleaseConfig` first and fails unless `capacitor.config.json` says
 `https://compass.knocturnlabs.com` with cleartext off, which a sync after a `COMPASS_URL` build would break: run `npm run sync` (no
 `COMPASS_URL`) first. Keystores (`*.jks`, `*.keystore`) are git-ignored; a release key's SHA-256 also goes into `web/public/.well-known/assetlinks.json`.
 
@@ -100,7 +102,7 @@ iOS only
 - `shouldOverrideLoad` / `window.open` paths in `CompassViewController` (a `target=_blank` Compass link opens in place, others in Safari).
 
 Android only
-- Real Knocturn ID round trip on the Samsung: passkey in the Custom Tab, back at `compass://auth`.
-- App Link verification (`adb shell pm get-app-links com.knocturnlabs.compass` says verified; needs `assetlinks.json` deployed and the signing key's fingerprint in it).
+- Real Knocturn ID round trip on the Samsung: passkey in the Custom Tab, back at `compass://auth`. Passkeys need `https://knocturnlabs.com/.well-known/assetlinks.json` to name the app (deployed in Task 6 Step 4).
+- App Link verification (`~/Library/Android/sdk/platform-tools/adb shell pm get-app-links com.knocturnlabs.compass` says verified; needs `https://compass.knocturnlabs.com/.well-known/assetlinks.json` deployed (Task 6 Step 4) and the signing key's fingerprint in it).
 - Android 13+: the notification prompt appears only after Settings, Notifications is turned on.
 - A release build: `checkReleaseConfig` passes after `npm run sync` and fails after a `COMPASS_URL` sync.

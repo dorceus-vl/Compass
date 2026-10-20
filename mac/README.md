@@ -1,6 +1,6 @@
 # Compass for Mac (Tauri 2)
 
-A menu-bar app around https://compass.knocturnlabs.com: nothing of the app is bundled. `web/src/native.ts` is its caller.
+A menu-bar app around https://compass.knocturnlabs.com: nothing of the app is bundled (a blank window if the site can't load). `web/src/native.ts` is its caller.
 
 | File | What |
 |---|---|
@@ -15,6 +15,8 @@ in Settings (ruling N3) and hands each item to `notify`; a click opens its url i
 download into ~/Downloads and are shown in Finder; the status report prints through the macOS print panel (Save as PDF). A passkey
 step-up the Mac app can't run offers the same page in the browser. A local build started with `COMPASS_BANNER_TEST=1`
 (`Compass.app/Contents/MacOS/compass`) asks for notifications and posts one test banner, logging to stderr.
+
+Prerequisites: Rust (cargo) and Node; the first build downloads the crates.
 
 ```bash
 npm install
@@ -45,6 +47,7 @@ The Mac UI was never driven in an automated run (no Screen Recording or Accessib
 - Launch at login toggles and starts the app hidden.
 - Report Word/Markdown/export lands in ~/Downloads and is revealed in Finder; status report, Print, Save as PDF.
 - Export or Empty Trash shows "Continue in your browser" and opens the page in the default browser (the Mac app cannot run the passkey step-up yet).
+- `compass://` returns to the app only once Compass.app is in /Applications and has been opened there (macOS registers the handler then): check sign-in from that copy.
 - A link to another site opens in the default browser; the window stays on Compass.
 - The IPC rules: the commands work from compass.knocturnlabs.com (menu, banners, sign-in).
 - With the site unreachable the window is blank (no offline page on the Mac yet).
