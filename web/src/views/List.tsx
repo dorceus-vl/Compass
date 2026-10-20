@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task } from '../../../shared/types.ts';
 import { useStore } from '../store/useStore.ts';
-import { TaskRow } from '../ui/TaskRow.tsx';
+import { TaskCard } from '../ui/TaskCard.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { parseQuery, applyQuery } from '../query.ts';
 import { today } from '../dates.ts';
@@ -50,7 +50,7 @@ export function List() {
         </div>
       </div>
       {views.length > 0 && <div className="row">{views.map((v) => <button type="button" key={v.name} className="chip" onClick={() => setQ(v.query)}>{v.name}</button>)}</div>}
-      {groups.map((g) => <div className="hz" key={g || 'all'}>{g && <div className="hh"><b>{g}</b></div>}{rows.filter((t) => key(t) === g).map((t) => <TaskRow key={t.id} task={t} onOpen={setOpen} />)}</div>)}
+      {groups.map((g) => <div className="hz" key={g || 'all'}>{g && <div className="hh"><b>{g}</b></div>}{rows.filter((t) => key(t) === g).map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} />)}</div>)}
       <dialog ref={dlg}>
         <form onSubmit={saveView}>
           <p style={{ marginTop: 0 }}>Name this view</p>

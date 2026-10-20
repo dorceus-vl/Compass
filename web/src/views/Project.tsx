@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Project, Rag } from '../../../shared/types.ts';
 import { useStore, resolveId, updateProject, trashProject, createMilestone, updateMilestone, createTask } from '../store/useStore.ts';
-import { TaskRow } from '../ui/TaskRow.tsx';
+import { TaskList, shownInList } from '../ui/TaskCard.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { navigate, Link } from '../router.ts';
@@ -46,7 +46,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
     </label>
   );
   const ms = milestones.filter((m) => m.project_id === p.id && !m.deleted_at).sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'));
-  const openTasks = tasks.filter((t) => t.project_id === p.id && !t.deleted_at && !t.parent_id && t.status !== 'done').sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'));
+  const openTasks = tasks.filter((t) => t.project_id === p.id && !t.deleted_at && !t.parent_id && shownInList(t)).sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'));
   // Direct call, not the offline queue: a queued PATCH cannot answer the passkey prompt. api() retries with the step-up answer.
   const setBoundary = async (data_boundary: Project['data_boundary']) => {
     if (data_boundary === p.data_boundary || boundaryBusy) return;
@@ -91,8 +91,8 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
               <div style={{ marginTop: 4 }}>Offline only: the copilot never sends this project to Claude or Gemini.</div></div>
             <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 10 }}>{inp('objectives', 'Objectives', 'area')}{inp('scope_in', 'In scope', 'area')}{inp('scope_out', 'Out of scope', 'area')}{inp('success_criteria', 'Success criteria', 'area')}</div>
           </div>
-          <div className="hz"><div className="hh"><b>Open tasks</b><small>{openTasks.length}</small></div>
-            {openTasks.map((t) => <TaskRow key={t.id} task={t} onOpen={setOpen} />)}
+          <div className="hz"><div className="hh"><b>Open tasks</b><small>{openTasks.filter((t) => t.status !== 'done').length}</small></div>
+            <TaskList tasks={openTasks} projects={projects} onOpen={setOpen} />
             <form onSubmit={async (e) => { e.preventDefault(); if (!newTask.trim()) return; await createTask({ title: newTask.trim(), project_id: p.id, kind: p.kind }); setNewTask(''); }}>
               <input className="field" placeholder="Add a task to this project…" value={newTask} onChange={(e) => setNewTask(e.target.value)} /></form></div>
         </div>

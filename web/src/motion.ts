@@ -48,35 +48,48 @@ const schedule = () => {
   requestAnimationFrame(() => { framePending = false; frameCbs.forEach((f) => f()); });
 };
 
-/** Runs cb on every animation frame after a scroll or resize, and once on mount; one shared loop for the whole app. */
-export function useScrollFrame(cb: () => void, deps: unknown[]): void {
-  useEffect(() => {
-    if (frameCbs.size === 0) { addEventListener('scroll', schedule, { passive: true, capture: true }); addEventListener('resize', schedule, { passive: true }); }
-    frameCbs.add(cb);
-    cb();
-    return () => {
-      frameCbs.delete(cb);
-      if (frameCbs.size === 0) { removeEventListener('scroll', schedule, { capture: true }); removeEventListener('resize', schedule); }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+/** Adds cb to the shared loop (runs it once now); returns the remover. */
+function onFrame(cb: () => void): () => void {
+  if (frameCbs.size === 0) { addEventListener('scroll', schedule, { passive: true, capture: true }); addEventListener('resize', schedule, { passive: true }); }
+  frameCbs.add(cb);
+  cb();
+  return () => {
+    frameCbs.delete(cb);
+    if (frameCbs.size === 0) { removeEventListener('scroll', schedule, { capture: true }); removeEventListener('resize', schedule); }
+  };
 }
 
-/** Applies the lens effect (--f, opacity, transform) to every child matching `selector` inside ref. */
+/** Runs cb on every animation frame after a scroll or resize, and once on mount; one shared loop for the whole app. */
+export function useScrollFrame(cb: () => void, deps: unknown[]): void {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onFrame(cb), deps);
+}
+
+/** Applies the lens effect (--f, opacity, transform) to every element matching `selector` inside ref: on scroll, resize,
+ *  and whenever the list's children change (added, removed, filtered); clears what it set on unmount or reduced motion. */
 export function useLens(ref: { current: HTMLElement | null }, selector = ':scope > *'): void {
   const reduce = useReducedMotion();
-  useScrollFrame(() => {
+  useEffect(() => {
     const root = ref.current;
-    if (!root) return;
-    const mid = innerHeight / 2;
-    root.querySelectorAll<HTMLElement>(selector).forEach((c) => {
-      if (reduce) { c.style.removeProperty('--f'); c.style.opacity = ''; c.style.transform = ''; return; }
-      const r = c.getBoundingClientRect(), cy = r.top + r.height / 2;
-      const f = lensFactor(cy, mid, innerHeight), off = lensOffset(cy, mid, innerHeight);
-      c.style.setProperty('--f', f.toFixed(3));
-      c.style.opacity = (0.5 + f * 0.5).toFixed(3);
-      c.style.transform = `perspective(900px) rotateX(${(-off * 30).toFixed(2)}deg) scale(${(0.94 + f * 0.06).toFixed(3)})`;
-    });
+    if (!root || reduce) return;
+    const cards = () => root.querySelectorAll<HTMLElement>(selector);
+    const apply = () => {
+      const mid = innerHeight / 2;
+      cards().forEach((c) => {
+        const r = c.getBoundingClientRect(), cy = r.top + r.height / 2;
+        const f = lensFactor(cy, mid, innerHeight), off = lensOffset(cy, mid, innerHeight);
+        c.style.setProperty('--f', f.toFixed(3));
+        c.style.opacity = (0.5 + f * 0.5).toFixed(3);
+        c.style.transform = `perspective(900px) rotateX(${(-off * 30).toFixed(2)}deg) scale(${(0.94 + f * 0.06).toFixed(3)})`;
+      });
+    };
+    const off = onFrame(apply);
+    const mo = new MutationObserver(apply); // our own style writes are attributes, not childList: no loop
+    mo.observe(root, { childList: true, subtree: true });
+    return () => {
+      off(); mo.disconnect();
+      cards().forEach((c) => { c.style.removeProperty('--f'); c.style.opacity = ''; c.style.transform = ''; });
+    };
   }, [ref, selector, reduce]);
 }
 
@@ -101,12 +114,15 @@ export function useTilt(ref: { current: HTMLElement | null }, max = 12): void {
 
 export function confetti(x: number, y: number, color: string): void {
   if (reducedNow()) return;
-  const cols = [color, '#EDE3C9', '#5CC98B'];
+  const cols = [color, 'var(--accent)', 'var(--ok)'];
   for (let i = 0; i < 18; i++) {
     const s = document.createElement('i');
     const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 70;
+    s.className = 'confetti';
     s.setAttribute('aria-hidden', 'true');
-    s.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:6px;height:6px;border-radius:2px;pointer-events:none;z-index:80;background:${cols[i % cols.length]}`;
+    s.style.left = `${x}px`;
+    s.style.top = `${y}px`;
+    s.style.background = cols[i % cols.length];
     document.body.appendChild(s);
     s.animate(
       [{ transform: 'none', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d - 24}px) rotate(${Math.random() * 400}deg)`, opacity: 0 }],

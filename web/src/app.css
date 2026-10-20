@@ -276,3 +276,32 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
   .ai-card .field{min-height:44px}
   .ai-row{grid-template-columns:1fr}
 }
+/* ---------- Task cards (Phase 3b, docs/ui-directions.html .tcard): accent bar, icon tile, dotted chips, swipe, lens --f ---------- */
+.tlist{display:grid;gap:12px}
+.tcard{--tc:var(--text-dim);position:relative;border-radius:18px;container-type:inline-size;touch-action:pan-y;will-change:transform;-webkit-user-select:none;user-select:none}
+.tcard .reveal{position:absolute;inset:0;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--ok) 85%,transparent),color-mix(in srgb,var(--ok) 15%,transparent));display:flex;align-items:center;padding-left:22px;font-weight:800;color:var(--bg);opacity:0;transition:opacity .2s}
+.tcard .body{position:relative;border-radius:inherit;padding:15px 16px 15px 20px;display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid color-mix(in srgb,var(--tc) calc(12% + var(--f,0)*30%),var(--border-soft));box-shadow:0 calc(var(--f,0)*18px) calc(var(--f,0)*40px) rgba(0,0,0,.5),0 0 calc(var(--f,0)*28px) color-mix(in srgb,var(--tc) 14%,transparent);transition:transform var(--dur-quick) var(--ease-out)}
+.tcard .body::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--tc);opacity:calc(.55 + var(--f,0)*.45)}
+.tcard .ico{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;font:700 15px var(--font);color:var(--tc);background:color-mix(in srgb,var(--tc) 13%,transparent);border:1px solid color-mix(in srgb,var(--tc) 25%,transparent)}
+.tcard .tx{flex:1;min-width:0}
+.tcard .t{display:block;background:none;border:0;padding:0;margin:0;text-align:left;cursor:pointer;color:inherit;font:inherit;font-weight:650;font-size:15px;line-height:1.35;overflow-wrap:anywhere}
+.tcard .t::after{content:"";position:absolute;inset:0;border-radius:inherit} /* the whole card opens the task */
+.tcard .m{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.tcard .m:empty{display:none}
+.tcard .chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 11px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-dim);background:rgba(255,255,255,.035);border:1px solid var(--border-soft);border-radius:999px;padding:4px 9px}
+.tcard .chip i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--sc)}
+.tcard a.chip,.tcard .check{position:relative;z-index:1}
+.tcard .m .when{display:none}
+.tcard .due{margin-left:auto;display:flex;gap:12px;align-items:center;flex:none}
+.tcard .due b{font:500 12px var(--mono);color:var(--text-dim)}
+.tcard .due b.due{color:var(--accent)}
+.tcard .due b.over{color:var(--danger)}
+.tcard .check{width:28px;height:28px;padding:0;border:0;background:none;display:grid;place-items:center;cursor:pointer}
+.tcard .check i{width:28px;height:28px;border-radius:9px;border:1.5px solid rgba(var(--accent-rgb),.4);display:grid;place-items:center}
+.tcard.done .check i{background:var(--ok);border-color:var(--ok)}
+.tcard.done .check i::after{content:"";width:10px;height:5px;border-left:2.5px solid var(--bg);border-bottom:2.5px solid var(--bg);transform:rotate(-45deg) translate(1px,-1px)}
+.tcard.done .t{text-decoration:line-through;color:var(--text-faint)}
+@container (max-width:420px){.tcard .due b{display:none}.tcard .m .when{display:inline-flex}}
+@media (max-width:760px),(pointer:coarse){.tcard .check{width:44px;height:44px}}
+@media (prefers-reduced-motion: reduce){.tcard{transform:none !important}}
+.confetti{position:fixed;width:6px;height:6px;border-radius:2px;pointer-events:none;z-index:80}

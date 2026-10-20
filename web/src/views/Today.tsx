@@ -6,7 +6,7 @@ import { idb } from '../store/db.ts';
 import { loadUsage, providerReady } from '../copilot.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { useStore } from '../store/useStore.ts';
-import { TaskRow } from '../ui/TaskRow.tsx';
+import { TaskList, shownInList } from '../ui/TaskCard.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { today, startOfWeek, fmtDue } from '../dates.ts';
 import { Link } from '../router.ts';
@@ -30,14 +30,17 @@ export function Today() {
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && (kind === 'all' || x.kind === kind));
   const openTasks = live.filter((x) => x.status !== 'done').sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : 1);
   const overdue = openTasks.filter((x) => x.due_at && x.due_at < t);
+  // the lists also keep what was just finished from a card, so its check can undo it
+  const shown = live.filter(shownInList).sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : 1);
+  const overdueShown = shown.filter((x) => x.due_at && x.due_at < t);
   const doneWeek = live.filter((x) => x.status === 'done' && x.done_at && x.done_at >= startOfWeek(t)).length;
   const col = (h: 'short' | 'medium' | 'long', title: string) => {
-    const xs = openTasks.filter((x) => x.horizon === h);
+    const xs = shown.filter((x) => x.horizon === h), open = xs.filter((x) => x.status !== 'done').length;
     return (
       <div className="hz">
-        <div className="hh"><b>{title}</b><small>{xs.length}</small></div>
+        <div className="hh"><b>{title}</b><small>{open}</small></div>
         {xs.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Nothing here. ⌘K or + to add.</p>}
-        {xs.slice(0, 12).map((x) => <TaskRow key={x.id} task={x} onOpen={setOpen} />)}
+        <TaskList tasks={xs.slice(0, 12)} projects={projects} onOpen={setOpen} />
         {xs.length > 12 && <Link to="/list" className="chip">+{xs.length - 12} more in List</Link>}
       </div>
     );
@@ -76,7 +79,7 @@ export function Today() {
         {!ai && canAsk && online() && <button type="button" className="btn" disabled={writing} onClick={() => void writeIt()}>{writing ? 'Writing…' : 'Write it with the copilot'}</button>}
       </section>
       <AddedStrip onOpen={setOpen} />
-      {overdue.length > 0 && <div className="inbox" style={{ borderColor: 'rgba(255,77,94,.35)' }}><div className="top"><h2>Overdue <small>{overdue.length}</small></h2></div>{overdue.map((x) => <TaskRow key={x.id} task={x} onOpen={setOpen} />)}</div>}
+      {overdueShown.length > 0 && <div className="inbox" style={{ borderColor: 'rgba(255,77,94,.35)' }}><div className="top"><h2>Overdue <small>{overdue.length}</small></h2></div><TaskList tasks={overdueShown} projects={projects} onOpen={setOpen} /></div>}
       <div className="horizons">{col('short', 'Short · this week')}{col('medium', 'Medium · this quarter')}{col('long', 'Long · this year and beyond')}</div>
       {next.length > 0 && <div className="inbox"><div className="top"><h2>Next milestones</h2></div>
         {next.map((m) => <div key={m.id} className="task"><div className="tt">{m.name}</div><span className="chip" style={{ marginLeft: 'auto' }}>{projects.find((p) => p.id === m.project_id)?.name} · {fmtDue(m.due_at).text}</span></div>)}</div>}
