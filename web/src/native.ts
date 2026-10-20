@@ -173,6 +173,12 @@ export async function pollOutbox(on: boolean, now = () => new Date().toISOString
   return true;
 }
 
+/** A passkey step-up that can't run in the Mac app (no WebAuthn there, or it refused: NotAllowedError) continues in the browser.
+ *  iPhone, iPad, Android and browsers keep their own passkey. */
+export function stepUpInBrowser(err: unknown, sh = shell(), webauthn = typeof PublicKeyCredential !== 'undefined'): boolean {
+  return sh === 'mac' && (!webauthn || (err as { name?: string } | null)?.name === 'NotAllowedError');
+}
+
 /** The Mac's quick-add window (`/?quickadd=1`) closes itself after a save or Escape. */
 export function closeQuickAdd(): void {
   if (shell() === 'mac') void invoke('close_quick_add').catch(() => {});

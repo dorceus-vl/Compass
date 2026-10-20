@@ -5,13 +5,16 @@ A menu-bar app around https://compass.knocturnlabs.com: nothing of the app is bu
 | File | What |
 |---|---|
 | `src-tauri/src/lib.rs` | the main window (the live site), the menu-bar icon (Open Compass, Quick add ⌥⇧C, Launch at login, Quit), the quick-add window (`/?quickadd=1`, always on top), `compass://auth` → event `compass-auth` to the main window, banners, downloads; commands `open_external`, `notify_permission`, `notify`, `close_quick_add` |
+| `src-tauri/src/notify.rs` | banners through UNUserNotificationCenter: `notify_permission` asks macOS and answers the real result; each banner carries its url, a click opens it in the main window; banners show while Compass is in front too |
 | `src-tauri/src/link.rs` | the rules (`cargo test`): the windows stay on the Compass host, other pages open in the default browser, mailto/tel in their apps, other schemes nowhere; sign-in comes back only as exactly `compass://auth`; banner clicks and downloads only from Compass; safe, never-overwriting download names |
 | `src-tauri/capabilities/` | only `https://compass.knocturnlabs.com/*` may call the commands and listen to events (main window), and close itself (quick-add window). A `COMPASS_URL` build adds the same for that origin at start |
 
 Closing the window hides it (no Dock icon while hidden); Quit in the menu (or ⌘Q) ends the app. Launch at login starts it hidden
 (a LaunchAgent with `--hidden`). Banners: the signed-in page reads `GET /api/push/outbox` every minute while Notifications are on
 in Settings (ruling N3) and hands each item to `notify`; a click opens its url in the main window. Reports, exports and attachments
-download into ~/Downloads and are shown in Finder.
+download into ~/Downloads and are shown in Finder; the status report prints through the macOS print panel (Save as PDF). A passkey
+step-up the Mac app can't run offers the same page in the browser. A local build started with `COMPASS_BANNER_TEST=1`
+(`Compass.app/Contents/MacOS/compass`) asks for notifications and posts one test banner, logging to stderr.
 
 ```bash
 npm install

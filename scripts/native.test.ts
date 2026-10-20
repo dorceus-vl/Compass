@@ -1,7 +1,7 @@
 // node --experimental-strip-types scripts/native.test.ts
 // The web side of the native shells: PKCE, the sign-in URL, shared text, links, and the sign-in / push flows against a stubbed shell.
 import assert from 'node:assert/strict';
-import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox } from '../web/src/native.ts';
+import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox, stepUpInBrowser } from '../web/src/native.ts';
 
 const g = globalThis as any;
 const set = (k: string, v: unknown) => Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
@@ -186,4 +186,10 @@ outbox = { status: 500 };
 assert.equal(await pollOutbox(true), true, 'a server error keeps polling');
 outbox = { status: 401 };
 assert.equal(await pollOutbox(true), false, 'signed out stops');
+// Passkey step-up in the Mac app: refused or unavailable → the browser; other shells and other errors keep their own path
+assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedError' }), 'mac', true), true);
+assert.equal(stepUpInBrowser(new TypeError('no WebAuthn'), 'mac', false), true);
+assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'AbortError' }), 'mac', true), false);
+assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedError' }), 'ios', true), false);
+assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedError' }), null, false), false);
 console.log('native: ok');

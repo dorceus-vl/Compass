@@ -4,10 +4,9 @@
 // come from the server's outbox, which the page reads every minute (ruling N3) and hands to `notify`. web/src/native.ts is the
 // caller; src/link.rs holds the rules for where things may go.
 mod link;
+mod notify;
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use link::{server, Route};
 use serde_json::json;
@@ -18,16 +17,14 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, Url, WebviewUrl, WebviewWindo
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray-template.png");
 /// Launch at login starts the app with this, so it waits in the menu bar instead of opening its window.
 const HIDDEN: &str = "--hidden";
 
-/// The url of each banner shown, by notification id, for when it is clicked.
-#[derive(Default)]
-struct Banners(Mutex<HashMap<i32, Url>>, AtomicI32);
+/// Banner ids: unique per run, nothing else kept (the url rides in the banner).
+static BANNER: AtomicU64 = AtomicU64::new(0);
 
 fn open_outside(app: &AppHandle, url: &Url) {
   let _ = app.opener().open_url(url.as_str(), None::<&str>);
@@ -90,6 +87,17 @@ fn show_main(app: &AppHandle) {
   }
 }
 
+/// A banner click: the main window at `url` (already checked to be Compass), in front.
+pub(crate) fn open_in_main(app: &AppHandle, url: Url) {
+  let h = app.clone();
+  let _ = app.run_on_main_thread(move || {
+    if let Some(main) = h.get_webview_window("main") {
+      let _ = main.navigate(url);
+    }
+    show_main(&h);
+  });
+}
+
 fn quick_add(app: &AppHandle) {
   if let Some(win) = app.get_webview_window("quickadd") {
     let _ = win.show();
@@ -114,20 +122,19 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
   app.opener().open_url(url.as_str(), None::<&str>).map_err(|e| e.to_string())
 }
 
-/// The Mac shows banners itself (from the outbox); nothing to ask or register.
+/// Asks macOS for banners (the first time) and answers what the person decided; nothing is registered (the page reads the outbox).
 #[tauri::command]
-fn notify_permission() -> &'static str {
-  "granted"
+async fn notify_permission() -> &'static str {
+  if notify::permission().await { "granted" } else { "denied" }
 }
 
 /// One banner from the outbox. Clicking it opens its url in the main window (Compass only; anything else opens Compass's home).
 #[tauri::command]
-fn notify(app: AppHandle, banners: tauri::State<'_, Banners>, title: String, body: String, url: String) -> Result<(), String> {
+fn notify(title: String, body: String, url: String) {
   let target = link::open_target(&url, &server()).unwrap_or_else(server);
-  let id = banners.1.fetch_add(1, Ordering::Relaxed) + 1;
-  banners.0.lock().unwrap().insert(id, target);
   let clip = |s: &str, n: usize| s.chars().take(n).collect::<String>();
-  app.notification().builder().id(id).title(clip(&title, 120)).body(clip(&body, 500)).show().map_err(|e| e.to_string())
+  let id = format!("compass-{}", BANNER.fetch_add(1, Ordering::Relaxed));
+  notify::show(&id, &clip(&title, 120), &clip(&body, 500), &target);
 }
 
 /// The quick-add page closes its own window after a save or Escape; no other window can be closed this way.
@@ -142,9 +149,7 @@ fn close_quick_add(window: WebviewWindow) {
 pub fn run() {
   let quick = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyC);
   let app = tauri::Builder::default()
-    .manage(Banners::default())
     .plugin(tauri_plugin_deep_link::init())
-    .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN])))
     .plugin(
@@ -166,7 +171,8 @@ pub fn run() {
         app.add_capability(
           tauri::ipc::CapabilityBuilder::new("compass-main-local").remote(origin.clone()).local(false).window("main")
             .permission("core:event:allow-listen").permission("core:event:allow-unlisten")
-            .permission("allow-open-external").permission("allow-notify-permission").permission("allow-notify"),
+            .permission("allow-open-external").permission("allow-notify-permission").permission("allow-notify")
+            .permission("core:webview:allow-print"),
         )?;
         app.add_capability(
           tauri::ipc::CapabilityBuilder::new("compass-quickadd-local").remote(origin).local(false).window("quickadd")
@@ -200,19 +206,15 @@ pub fn run() {
         }
       });
 
-      // A click on a banner: its url in the main window.
-      let h = handle.clone();
-      app.notification().on_action(move |performed| {
-        let Some(id) = performed.notification().map(|n| n.id()) else { return };
-        let Some(url) = h.state::<Banners>().0.lock().unwrap().remove(&id) else { return };
-        let h2 = h.clone();
-        let _ = h.run_on_main_thread(move || {
-          if let Some(main) = h2.get_webview_window("main") {
-            let _ = main.navigate(url);
-          }
-          show_main(&h2);
+      // Banners: a click opens its url in the main window; banners show while Compass is in front too.
+      notify::install(&handle);
+      // Local builds only: COMPASS_BANNER_TEST=1 asks for permission and posts one banner at start, to check the bridge without the page.
+      if option_env!("COMPASS_URL").is_some() && std::env::var_os("COMPASS_BANNER_TEST").is_some() {
+        tauri::async_runtime::spawn(async {
+          notify::permission().await;
+          notify::show("compass-test", "Test from Compass", "Notifications reach this Mac.", &server().join("/settings").unwrap_or_else(|_| server()));
         });
-      })?;
+      }
 
       let open = MenuItem::with_id(app, "open", "Open Compass", true, None::<&str>)?;
       let add = MenuItem::with_id(app, "quickadd", "Quick add", true, Some("Alt+Shift+C"))?;

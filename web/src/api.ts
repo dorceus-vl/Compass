@@ -27,12 +27,21 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   return data as T;
 }
 
+/** Where a passkey that couldn't run goes next (the Mac app sends the person to the browser); true when it took over. Set by App. */
+let stepUpFailed: (e: unknown) => boolean = () => false;
+export const onStepUpFailed = (f: (e: unknown) => boolean) => { stepUpFailed = f; };
+
 /** Touch ID / Face ID through Knocturn ID's step-up; the answer rides in X-Step-Up on the retry. A local dev session answers `dev`. */
 async function passkeyAnswer(): Promise<string> {
   const { options, dev } = await api<{ options: unknown; dev?: boolean }>('/step-up/challenge', { method: 'POST' });
   if (dev) return 'dev';
-  const cred = (await navigator.credentials.get({ publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options as PublicKeyCredentialRequestOptionsJSON) })) as PublicKeyCredential;
-  return JSON.stringify(cred.toJSON());
+  try {
+    const cred = (await navigator.credentials.get({ publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options as PublicKeyCredentialRequestOptionsJSON) })) as PublicKeyCredential;
+    return JSON.stringify(cred.toJSON());
+  } catch (e) {
+    if (stepUpFailed(e)) throw new Error('Confirm this in your browser.');
+    throw e;
+  }
 }
 
 export const login = (body: Record<string, unknown>) => api<{ ok?: boolean; stage?: 'passkey'; options?: unknown }>('/auth/login', { method: 'POST', json: body });
