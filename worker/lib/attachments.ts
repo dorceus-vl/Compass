@@ -1,6 +1,6 @@
 // Which documents may join a chat thread. Pure: the route reads the rows and the project boundaries, this decides.
 export const MAX_ATTACHMENTS = 3;
-type DocRef = { project_id: string | null; deleted_at: string | null };
+type DocRef = { project_id: string | null; deleted_at: string | null; enc_v?: number };
 
 /**
  * `docs` holds each requested id's row (null when there is none). A document joins a thread only when it is live and either belongs to the thread's own project
@@ -14,6 +14,7 @@ export function checkAttachments(
   for (const id of ids) {
     const d = docs[id];
     if (!d || d.deleted_at || d.project_id !== threadProjectId) return 'document_boundary';
+    if (d.project_id === null && d.enc_v === 2) return 'document_boundary'; // unfiled but sealed: uploaded for a work knowledge collection, so it is work (Phase 6)
     if (d.project_id !== null && boundaries[d.project_id] !== 'cloud') return 'document_boundary';
   }
   return 'ok';

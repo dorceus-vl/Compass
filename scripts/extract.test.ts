@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { zipSync, strToU8 } from 'fflate';
-import { docxText, docxPlaceholders, pdfText, docText, xlsxText, pptxText, csvText, attachmentText, CHAT_MAX } from '../worker/lib/extract.ts';
+import { docxText, docxPlaceholders, pdfText, pdfPages, docText, xlsxText, pptxText, csvText, attachmentText, CHAT_MAX } from '../worker/lib/extract.ts';
 
 const w = (body: string) => `<?xml version="1.0"?><w:document xmlns:w="x"><w:body>${body}</w:body></w:document>`;
 const xml = w('<w:p><w:pPr><w:pStyle w:val="A"/></w:pPr><w:r><w:t>Hello {{proj</w:t></w:r><w:r><w:t>ect.name}} &amp; co</w:t></w:r></w:p><w:p/><w:p><w:r><w:t>{{#risks.rows}}{{text}}{{/risks.rows}}</w:t></w:r></w:p>');
@@ -14,6 +14,11 @@ assert.equal(docxText(zipSync({ 'word/document.xml': strToU8(w('<w:p><w:r><w:t>'
 assert.throws(() => docxText(new Uint8Array([1, 2, 3])), 'not a zip');
 
 assert.match(await pdfText(readFileSync('scripts/fixtures/hello.pdf')), /Hello Compass/);
+// Knowledge: a PDF page by page (the fixture has one), and Word headings as Markdown (English and French style ids) only when asked.
+assert.deepEqual((await pdfPages(readFileSync('scripts/fixtures/hello.pdf'))).map((p) => /Hello Compass/.test(p)), [true]);
+const hd = zipSync({ 'word/document.xml': strToU8(w('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Titre"/></w:pPr><w:r><w:t>Plan</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1Char"/></w:pPr><w:r><w:t>Not</w:t></w:r></w:p>')) });
+assert.equal(docxText(hd, true), '## Risks\n\nBody\n\n# Plan\n\nNot');
+assert.equal(docxText(hd), 'Risks\n\nBody\n\nPlan\n\nNot', 'headings are off by default');
 assert.equal(await docText('md', strToU8('# Hi ✓')), '# Hi ✓');
 assert.equal(await docText('txt', strToU8('plain')), 'plain');
 assert.equal(await docText('xlsx', strToU8('PK')), '');

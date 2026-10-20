@@ -715,5 +715,76 @@ curl "${H[@]}" -X POST $B/api/tasks/$DO3/done | grep -q '"status":"done"' || fai
 for x in $DO1 $DO2 $DO3 $DO4 $DN1 $DN2 $DT2 $DT4; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 rm -rf $AV
 echo "smoke: (a6) split an email already made a task: original to Trash (restorable), item added and pointing at the first new task, by-task lookup; without the checkbox the original stays; a second accept with the same token -> 409 already_split, one task set, a fresh token splits again; a done original is refused (split and accept)"
+# (k0) Knowledge, Task 0: collections, ingest, sealing, the compatibility rule, boundary change, Trash and purge order, export.
+KS=$(mktemp -d); DOCX="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+node -e 'const f=require("fflate");const x=s=>f.strToU8(s);const p=(t,s)=>"<w:p>"+(s?"<w:pPr><w:pStyle w:val=\""+s+"\"/></w:pPr>":"")+"<w:r><w:t>"+t+"</w:t></w:r></w:p>";require("fs").writeFileSync(process.argv[1],f.zipSync({"word/document.xml":x("<w:document xmlns:w=\"x\"><w:body>"+p("Zebrafish budget risks","Heading1")+p("The vendor will slip the zebrafish milestone.")+"</w:body></w:document>")}))' $KS/k.docx
+kj() { curl "${H[@]}" -w '\n%{http_code}' "$@"; }  # a JSON call: the body, then the status on the last line
+kst() { printf '%s' "$1" | tail -1; }; kbody() { printf '%s' "$1" | head -1; }
+kitem() { kj -X POST $B/api/knowledge/items -d "{\"collection_id\":\"$1\",\"document_id\":\"$2\"}"; }
+KWC=$(kbody "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke zebrafish work","scope":"work"}')"); [ "$(printf '%s' "$KWC" | js 'd.collection.boundary+","+d.collection.scope')" = "locked,work" ] || fail "a work collection did not default to Locked: $KWC"
+KW=$(printf '%s' "$KWC" | js d.collection.id)
+KPC=$(kbody "$(kj -X POST $B/api/knowledge/collections -d '{"name":"Smoke personal","scope":"personal"}')"); KP=$(printf '%s' "$KPC" | js d.collection.id)
+[ "$(printf '%s' "$KPC" | js d.collection.boundary)" = cloud ] || fail "a personal collection is not Cloud AI"
+[ "$(kst "$(kj -X POST $B/api/knowledge/collections -d '{"name":"x","scope":"personal","boundary":"locked"}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/collections -d '{"name":"x","scope":"nope"}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/collections -d '{"scope":"work"}')")" = 400 ] || fail "collection validation"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_collections WHERE id='$KW' AND enc_v=2 AND name NOT LIKE '%zebrafish%'" | js 'd[0].results[0].n')" = 1 ] || fail "a work collection name is not ciphertext"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections | js 'd.collections.filter(c=>c.id==="'$KW'"&&c.name==="Smoke zebrafish work").length')" = 1 ] || fail "collections list did not open the name"
+# a work upload for the Knowledge screen: no project, sealed (name and R2 bytes)
+KU=$(up "@$KS/k.docx;filename=k.docx;type=$DOCX" -F "knowledge_work=1"); [ "$(kst "$KU")" = 201 ] || fail "knowledge work upload: $KU"; KD=$(kbody "$KU" | js d.document.id)
+[ "$(D1X "SELECT enc_v AS n FROM documents WHERE id='$KD' AND project_id IS NULL" | js 'd[0].results[0].n')" = 2 ] || fail "the knowledge work file's row is not sealed"
+npx wrangler r2 object get compass-files/docs/$KD --local --file $KS/raw >/dev/null 2>&1 || fail "could not read the object"; head -c2 $KS/raw | grep -q PK && fail "the knowledge work file's bytes are unsealed"
+curl "${H[@]}" $B/api/documents/$KD/file -o $KS/back; head -c2 $KS/back | grep -q PK || fail "the sealed knowledge file did not open"
+KIT=$(kitem $KW $KD); [ "$(kst "$KIT")" = 201 ] || fail "work docx into the work collection: $KIT"; KI=$(kbody "$KIT" | js d.item.id)
+[ "$(kbody "$KIT" | js 'd.item.state+","+(d.item.chunk_count>=1)+","+d.item.title')" = "ready,true,k.docx" ] || fail "a Locked item is not ready: $KIT"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$KI' AND enc_v=2 AND embedded=0 AND text NOT LIKE '%zebrafish%' AND locator NOT LIKE '%Zebrafish%'" | js 'd[0].results[0].n')" -ge 1 ] || fail "work passages are not ciphertext"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_items WHERE id='$KI' AND enc_v=2 AND title != 'k.docx'" | js 'd[0].results[0].n')" = 1 ] || fail "a work item title is not ciphertext"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$KW/items | js 'd.items.length+","+d.items[0].title')" = "1,k.docx" ] || fail "items list"
+# the compatibility rule
+[ "$(kst "$(kitem $KW $KD)")" = 409 ] || fail "the same file twice"
+kitem $KP $KD | grep -q '"error":"knowledge_boundary"' || fail "a sealed work upload into the personal collection"
+KPW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke knowledge work","kind":"work"}' | js d.project.id); KPP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke knowledge personal","kind":"personal"}' | js d.project.id)
+KDW=$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "project_id=$KPW" | head -1 | js d.document.id); KDP=$(up "@scripts/fixtures/hello.pdf;type=application/pdf" -F "project_id=$KPP" | head -1 | js d.document.id)
+KDU=$(up "@$KS/k.docx;filename=plain.docx;type=$DOCX" | head -1 | js d.document.id) # unfiled and plain
+kitem $KP $KDW | grep -q '"error":"knowledge_boundary"' || fail "a work-project file into the personal collection"
+kitem $KW $KDP | grep -q '"error":"knowledge_boundary"' || fail "a personal-project file into the work collection"
+kitem $KW $KDU | grep -q '"error":"knowledge_boundary"' || fail "an unfiled plain file into the work collection"
+KIW=$(kitem $KW $KDW); [ "$(kst "$KIW")" = 201 ] || fail "a work-project pdf into the work collection: $KIW"
+[ "$(kbody "$KIW" | js 'd.item.state')" = ready ] || fail "work pdf item not ready"; KIWI=$(kbody "$KIW" | js d.item.id)
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$KIWI' AND enc_v=2 AND text NOT LIKE '%Hello%'" | js 'd[0].results[0].n')" -ge 1 ] || fail "the work pdf's passages are not ciphertext"
+KIP=$(kitem $KP $KDP); [ "$(kst "$KIP")" = 201 ] || fail "a personal pdf into the personal collection: $KIP"
+KIPI=$(kbody "$KIP" | js d.item.id); [ "$(kbody "$KIP" | js d.item.state)" = indexing ] || fail "a Cloud AI item is not indexing"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$KIPI' AND enc_v=0 AND embedded=0 AND locator='p. 1' AND text LIKE '%Hello Compass%'" | js 'd[0].results[0].n')" = 1 ] || fail "personal passage: plain text, locator p. 1, embedded 0"
+[ "$(kst "$(kitem $KP $KDU)")" = 201 ] || fail "an unfiled plain docx into the personal collection"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$KP' AND locator='§ Zebrafish budget risks'" | js 'd[0].results[0].n')" = 1 ] || fail "a Word heading is not the locator"
+echo "smoke: (k0) work collection sealed (name, title, passages) and Locked by default; the sealed upload (row and R2 bytes); work file -> work only, personal file -> personal only, unfiled plain -> personal only (409 knowledge_boundary); personal passages plain with p. N / § locators"
+# boundary: personal stays Cloud; a work collection Locked -> Cloud AI (the dev session passes the step-up) re-indexes, and back
+[ "$(kst "$(kj -X PATCH $B/api/knowledge/collections/$KP -d '{"boundary":"locked"}')")" = 400 ] || fail "a personal collection was Locked"
+# a work project is Offline only until its boundary is switched: its file may sit in a Locked collection, but the collection cannot become Cloud AI
+kj -X PATCH $B/api/knowledge/collections/$KW -d '{"boundary":"cloud"}' | grep -q '"error":"offline_boundary"' || fail "an Offline-only project's file in a collection made Cloud AI"
+curl "${H[@]}" -X PATCH $B/api/projects/$KPW -d '{"data_boundary":"cloud"}' | grep -q '"data_boundary":"cloud"' || fail "project boundary switch"
+curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$KW -d '{"boundary":"cloud"}' | grep -q '"boundary":"cloud"' || fail "Locked -> Cloud AI"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_items WHERE collection_id='$KW' AND state='indexing'" | js 'd[0].results[0].n')" = 2 ] || fail "Cloud AI did not put the work items back to indexing"
+curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$KW -d '{"boundary":"locked","name":"Smoke zebrafish renamed"}' | grep -q '"boundary":"locked"' || fail "Cloud AI -> Locked"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_items WHERE collection_id='$KW' AND state='ready'" | js 'd[0].results[0].n')" = 2 ] || fail "Locked did not make the items ready"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action='knowledge.boundary' AND target='$KW'" | js 'd[0].results[0].n')" = 2 ] || fail "boundary changes were not audited"
+[ "$(D1X "SELECT count(*) AS n FROM knowledge_collections WHERE id='$KW' AND name NOT LIKE '%zebrafish%'" | js 'd[0].results[0].n')" = 1 ] || fail "the renamed work collection is not ciphertext"
+echo "smoke: (k0) boundary: personal stays Cloud AI; Locked -> Cloud AI -> Locked re-indexes and is audited (step-up passes in the dev session, as for projects)"
+# export opens the work passages; Trash lists, restores, and purges in order
+[ "$(curl "${H[@]}" $B/api/export | js 'd.knowledge_chunks.some(c=>c.text.includes("zebrafish")&&c.locator.startsWith("§"))&&d.knowledge_collections.some(c=>c.name==="Smoke zebrafish renamed")&&d.knowledge_items.some(i=>i.title==="k.docx")')" = true ] || fail "export did not open the knowledge tables"
+curl "${H[@]}" -X DELETE $B/api/knowledge/items/$KI | grep -q '"ok":true' || fail "item trash"
+curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$KP | grep -q '"ok":true' || fail "collection trash (dev step-up)"
+[ "$(curl "${H[@]}" $B/api/trash | js 'd.knowledge_items.some(i=>i.id==="'$KI'"&&i.title==="k.docx"&&i.collection_name==="Smoke zebrafish renamed")&&d.knowledge_collections.some(c=>c.id==="'$KP'"&&c.name==="Smoke personal")')" = true ] || fail "Trash does not list the knowledge rows"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections | js 'd.collections.some(c=>c.id==="'$KP'")')" = false ] || fail "a trashed collection is still listed"
+curl "${H[@]}" -X POST $B/api/trash/knowledge_items/$KI/restore | grep -q '"ok":true' || fail "restore item"
+curl "${H[@]}" -X POST $B/api/trash/knowledge_collections/$KP/restore | grep -q '"ok":true' || fail "restore collection"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$KW/items | js 'd.items.length')" = 2 ] && [ "$(curl "${H[@]}" $B/api/knowledge/collections | js 'd.collections.some(c=>c.id==="'$KP'")')" = true ] || fail "restore did not bring them back"
+# everything to Trash, then Empty Trash must purge chunks -> items -> collections before the documents (FKs)
+curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$KW >/dev/null; curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$KP >/dev/null
+for x in $KD $KDW $KDP $KDU; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
+for x in $KPW $KPP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+KE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$KE")" = 200 ] || fail "Empty Trash with knowledge rows: $KE"
+[ "$(kbody "$KE" | js 'd.purged.knowledge_collections+","+(d.purged.knowledge_items>=3)+","+(d.purged.knowledge_chunks>=4)')" = "2,true,true" ] || fail "purge counts: $KE"
+[ "$(D1X "SELECT (SELECT count(*) FROM knowledge_collections WHERE id IN ('$KW','$KP'))+(SELECT count(*) FROM knowledge_items WHERE collection_id IN ('$KW','$KP'))+(SELECT count(*) FROM knowledge_chunks WHERE collection_id IN ('$KW','$KP')) AS n" | js 'd[0].results[0].n')" = 0 ] || fail "knowledge rows survived Empty Trash"
+rm -rf $KS
+echo "smoke: (k0) export opens work passages; Trash lists and restores items and collections; Empty Trash purges chunks, items, collections, then the documents"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

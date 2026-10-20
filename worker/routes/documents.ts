@@ -51,7 +51,8 @@ documents.post('/', async (c) => {
   }
   const name = cleanName(file.name);
   if (!name) return c.json({ error: 'The file needs a name.' }, 400);
-  const sealed = pkind === 'work';
+  // A file uploaded from the Knowledge screen for a work collection has no project but is sealed like a work file (knowledge_work=1); a project's kind overrides it.
+  const sealed = pkind === 'work' || (pid === null && form.get('knowledge_work') === '1');
   // Size and type are judged on the File before its bytes are copied out, so an oversize work file is refused without a second copy.
   const early = checkDoc({ name, type: file.type, size: file.size }, new Uint8Array(await file.slice(0, 4096).arrayBuffer()), sealed);
   if ('error' in early) return c.json({ error: early.error }, 400);
@@ -70,7 +71,7 @@ documents.post('/', async (c) => {
     sealed ? { customMetadata: { sealed: '1' } } : { httpMetadata: { contentType: checked.type } });
   const row: Row = { id, name, kind: checked.kind, size, content_type: checked.type, r2_key, project_id: pid as string | null, is_template: template ? 1 : 0,
     placeholders: JSON.stringify(placeholders), text_indexed: 0, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
-  const s = await seal(c.env, 'documents', { ...row }, pkind ?? 'personal'); // the row's own `kind` is the file kind, so the project's is passed
+  const s = await seal(c.env, 'documents', { ...row }, sealed ? 'work' : 'personal'); // the row's own `kind` is the file kind, so the sealing kind is passed
   try {
     await c.env.DB.prepare('INSERT INTO documents (id, name, kind, size, content_type, r2_key, project_id, is_template, placeholders, text_indexed, created_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0,?10,?10,?11)')
       .bind(id, s.name, s.kind, s.size, s.content_type, r2_key, s.project_id, s.is_template, s.placeholders, t, s.enc_v).run();

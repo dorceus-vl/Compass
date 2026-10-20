@@ -16,6 +16,10 @@ export const ENC_COLS = {
   documents: ['name'],
   ai_threads: ['title'],
   ai_messages: ['content', 'proposals'],
+  // Phase 6. The locator is sealed too: a heading (`§ Budget risks`) or a sheet name says what the passage is about.
+  knowledge_collections: ['name'],
+  knowledge_items: ['title'],
+  knowledge_chunks: ['text', 'locator'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string }; // typed rows (Project, Milestone) have no index signature

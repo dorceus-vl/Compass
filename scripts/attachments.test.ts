@@ -14,6 +14,8 @@ assert.equal(ok([], {}, 'P1'), 'ok', 'no documents');
 assert.equal(ok(['a', 'b', 'c'], { a: live('P1'), b: live('P1'), c: live('P1') }, 'P1'), 'ok', 'three is the limit');
 assert.equal(ok(['a', 'a', 'a', 'a'], { a: live('P1') }, 'P1'), 'ok', 'the same document four times is one');
 assert.equal(ok(['a', 'b', 'c', 'd'], { a: live('P1'), b: live('P1'), c: live('P1'), d: live('P1') }, 'P1'), 'too_many');
+assert.equal(ok(['a'], { a: { ...live(null), enc_v: 2 } }, null), 'document_boundary', 'unfiled but sealed (a work knowledge upload) never joins a thread');
+assert.equal(ok(['a'], { a: { ...live(null), enc_v: 0 } }, null), 'ok', 'unfiled and plain');
 assert.equal(ok(['a'], { a: live('P2') }, 'P1'), 'document_boundary', "another project's document");
 assert.equal(ok(['a'], { a: live('P1') }, null), 'document_boundary', 'a project document never joins a personal thread');
 assert.equal(ok(['a'], { a: live(null) }, 'P1'), 'document_boundary', "an unfiled document does not join a project's thread");

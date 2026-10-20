@@ -25,6 +25,9 @@ assert.deepEqual(ENC_COLS.projects, ['name', 'rag_reason', 'sponsor', 'objective
 // Phase 3 tables: every listed column changes when sealed as work, round-trips, and stays put as personal.
 for (const [table, row] of [
   ['raid_items', { id: 'r1', text: 'Vendor slips', response: 'Escalate', owner: 'Sam', trigger: 'No PO by Friday', probability: 3, enc_v: 0 }],
+  ['knowledge_collections', { id: 'k1', name: 'Acme programme', enc_v: 0 }],
+  ['knowledge_items', { id: 'ki1', title: 'Steering minutes.docx', enc_v: 0 }],
+  ['knowledge_chunks', { id: 'kc1', locator: '§ Budget risks', text: 'The vendor will slip.', embedded: 0, enc_v: 0 }],
   ['ai_messages', { id: 'a1', content: 'Plan looks tight', proposals: '{"tasks":[]}', citations: '[]', enc_v: 0 }],
 ] as const) {
   const w = await seal(env, table, { ...row }, 'work') as any;

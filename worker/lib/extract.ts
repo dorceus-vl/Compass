@@ -27,7 +27,7 @@ function parts(bytes: Uint8Array, names: RegExp, maxExtras = MAX_HEADERS): [stri
   return Object.keys(files).sort().map((n) => [n, new TextDecoder().decode(files[n])]);
 }
 /** Paragraph texts of one WordprocessingML part: tags stripped, so a tag split across runs reads whole. One linear scan (no lazy regex across the file). */
-function paragraphs(xml: string): string[] {
+function paragraphs(xml: string, headings = false): string[] {
   const out: string[] = [];
   const chunks = xml.split('</w:p>');
   chunks.pop(); // after the last closer: no paragraph
@@ -36,14 +36,17 @@ function paragraphs(xml: string): string[] {
     for (const m of chunk.matchAll(/<w:p[ >]/g)) start = m.index!;
     if (start < 0) continue;
     const text = decode(chunk.slice(start).replace(/<[^<>]*>/g, ''));
-    if (text.trim()) out.push(text);
+    // Knowledge wants the section names: a Heading/Titre style (Word's built-in style ids, English and French) becomes a Markdown heading.
+    const style = headings ? chunk.slice(start).match(/<w:pStyle\b[^<>]*w:val="(?:Heading|Titre)(\d?)"/i) : null;
+    const level = style ? style[1] || '1' : null;
+    if (text.trim()) out.push(level ? `${'#'.repeat(Math.min(6, Number(level)))} ${text.trim()}` : text);
   }
   return out;
 }
 
-export function docxText(bytes: Uint8Array): string {
+export function docxText(bytes: Uint8Array, headings = false): string {
   const doc = parts(bytes, /^word\/document\.xml$/)[0];
-  return cut(doc ? paragraphs(doc[1]).join('\n\n') : '');
+  return cut(doc ? paragraphs(doc[1], headings).join('\n\n') : '');
 }
 
 /** Unique {{ tag }} names across body, headers and footers, in order of appearance; # and / loop markers kept. */
@@ -58,6 +61,11 @@ export function docxPlaceholders(bytes: Uint8Array): string[] {
 
 export async function pdfText(bytes: Uint8Array): Promise<string> {
   return cut((await extractText(new Uint8Array(bytes), { mergePages: true })).text);
+}
+
+/** A PDF's text one entry per page (page N is entry N-1), unmerged, for Knowledge's `p. N` locators. Not cut: the chunker caps the passages. */
+export async function pdfPages(bytes: Uint8Array): Promise<string[]> {
+  return (await extractText(new Uint8Array(bytes), { mergePages: false })).text;
 }
 
 /** What Athena reads of one attachment, at most this many characters of text. */

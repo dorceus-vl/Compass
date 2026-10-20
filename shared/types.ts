@@ -93,6 +93,19 @@ export interface DocumentRow {
   id: string; name: string; kind: DocKind; size: number; content_type: string; project_id: string | null; is_template: number;
   placeholders: string[]; text_indexed: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
 }
+/** Phase 6 Knowledge. Rows are as the API returns them: sealed columns opened (name, title, text, locator). */
+export type KnowledgeScope = 'work' | 'personal';
+export type KnowledgeBoundary = 'cloud' | 'locked';
+export type KnowledgeSource = 'upload' | 'meeting' | 'email' | 'athena' | 'app:compass' | 'app:finance' | 'app:health' | 'app:home' | 'app:hollow';
+export interface KnowledgeCollection {
+  id: string; name: string; scope: KnowledgeScope; boundary: KnowledgeBoundary; system: number;
+  created_at: string; updated_at: string; deleted_at: string | null; enc_v: number; item_count?: number;
+}
+export interface KnowledgeItem {
+  id: string; collection_id: string; document_id: string | null; source: KnowledgeSource; title: string; state: 'indexing' | 'ready' | 'failed'; error: string | null;
+  chunk_count: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
+}
+export interface KnowledgeChunk { id: string; item_id: string; collection_id: string; ord: number; locator: string; text: string; embedded: number; created_at: string; enc_v: number }
 export interface LibraryPage { slug: string; section: string; title: string; body: string; source: 'bundled' | 'import' | 'lesson' }
 export type Provider = 'claude' | 'gemini';
 /** Model features, and Athena's voice (ElevenLabs text-to-speech) and listening (speech-to-text), metered the same way. */
@@ -138,4 +151,5 @@ export interface ExportBundle {
   projects: Omit<Project, 'enc_v'>[]; milestones: Omit<Milestone, 'enc_v'>[]; tasks: Omit<Task, 'enc_v'>[]; task_events: Raw;
   raid_items: Omit<RaidItem, 'enc_v'>[]; change_requests: Omit<ChangeRequest, 'enc_v'>[]; decisions: Omit<Decision, 'enc_v'>[]; lessons: Omit<Lesson, 'enc_v'>[];
   meeting_reviews: Raw; inbox_items: Raw; rules: Raw; documents: Raw; library_pages: Raw; ai_threads: Raw; ai_messages: Raw;
+  knowledge_collections: Raw; knowledge_items: Raw; knowledge_chunks: Raw;
 }
