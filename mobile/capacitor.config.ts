@@ -12,7 +12,9 @@ const config: CapacitorConfig = {
   webDir: 'www',
   server: { url, errorPath: 'offline.html', allowNavigation: [new URL(url).hostname] },
   // 'never': the page pads for the notch and the home bar itself (viewport-fit=cover, env(safe-area-inset-*)).
-  ios: { contentInset: 'never', backgroundColor: '#050507', appendUserAgent: 'CompassApp' },
+  // handleApplicationNotifications false: Capacitor's own notification router would replace CompassPush as the notification delegate
+  // (it has no handlers here), and taps and in-app banners would do nothing.
+  ios: { contentInset: 'never', backgroundColor: '#050507', appendUserAgent: 'CompassApp', handleApplicationNotifications: false },
   android: { backgroundColor: '#050507', appendUserAgent: 'CompassApp' },
   plugins: { SystemBars: { initialViewportFitValueHint: 'cover' } },
 };

@@ -106,7 +106,6 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
     /// Every navigation of the web view comes here first (Capacitor's WebViewDelegationHandler). nil leaves it to Capacitor.
     override public func shouldOverrideLoad(_ action: WKNavigationAction) -> NSNumber? {
         guard let bridge, let url = action.request.url else { return nil }
-        if action.shouldPerformDownload { return nil }
         let newWindow = action.targetFrame == nil
         if !newWindow && action.targetFrame?.isMainFrame == false { return nil } // frames: the page's CSP governs them
         let local = bridge.config.localURL
@@ -171,7 +170,7 @@ final class CompassPush: NSObject, UNUserNotificationCenterDelegate, @unchecked 
     #else
     static let environment = "production"
     #endif
-    private var waiting: [(Result<String, Error>) -> Void] = []
+    private var waiting: [UUID: (Result<String, Error>) -> Void] = [:]
 
     static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
 
@@ -179,8 +178,8 @@ final class CompassPush: NSObject, UNUserNotificationCenterDelegate, @unchecked 
     func registered(_ token: Data) { finish(.success(Self.hex(token))) }
     func failed(_ error: Error) { finish(.failure(error)) }
     private func finish(_ result: Result<String, Error>) {
-        let all = waiting
-        waiting = []
+        let all = waiting.values
+        waiting = [:]
         all.forEach { $0(result) }
     }
 
@@ -189,10 +188,11 @@ final class CompassPush: NSObject, UNUserNotificationCenterDelegate, @unchecked 
         guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) else { throw PushRefused() }
         return try await withCheckedThrowingContinuation { (done: CheckedContinuation<String, Error>) in
             DispatchQueue.main.async {
-                self.waiting.append { done.resume(with: $0) }
+                let id = UUID()
+                self.waiting[id] = { done.resume(with: $0) }
                 UIApplication.shared.registerForRemoteNotifications()
-                // No network, or no APNs (an unsigned simulator build): don't leave the page waiting.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 20) { self.finish(.failure(PushTimedOut())) }
+                // No network, or no APNs (an unsigned simulator build): don't leave the page waiting. Only this call's wait ends.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 20) { self.waiting.removeValue(forKey: id)?(.failure(PushTimedOut())) }
             }
         }
     }

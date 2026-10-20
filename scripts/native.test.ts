@@ -1,7 +1,7 @@
 // node --experimental-strip-types scripts/native.test.ts
 // The web side of the native shells: PKCE, the sign-in URL, shared text, links, and the sign-in / push flows against a stubbed shell.
 import assert from 'node:assert/strict';
-import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, shell, nativeDevice, nativeSignIn, registerNativePush } from '../web/src/native.ts';
+import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush } from '../web/src/native.ts';
 
 const g = globalThis as any;
 const set = (k: string, v: unknown) => Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
@@ -52,6 +52,14 @@ assert.deepEqual(linkAction('https://compass.knocturnlabs.com/library/x', '', 'l
 assert.equal(linkAction('https://compass.knocturnlabs.com/api/documents/1/file', '_blank', H), null);
 assert.equal(linkAction('javascript:alert(1)', '', H), null);
 assert.equal(linkAction('compass://auth?code=1', '', H), null);
+
+// tapAction: notification taps and universal links keep ?search#hash
+const B = 'https://compass.knocturnlabs.com/today';
+assert.deepEqual(tapAction('https://compass.knocturnlabs.com/list?q=due:overdue#top', B, H), { to: 'path', path: '/list?q=due:overdue#top' });
+assert.deepEqual(tapAction('/list?q=due:overdue', B, H), { to: 'path', path: '/list?q=due:overdue' }, 'a path from the push payload');
+assert.deepEqual(tapAction('https://compass.knocturnlabs.com/meetings/1?x=1', 'http://localhost:5173/', 'localhost:5173'), { to: 'path', path: '/meetings/1?x=1' }, 'a Compass URL on a local build');
+assert.equal(tapAction('/api/export', B, H), null);
+assert.equal(tapAction('javascript:alert(1)', B, H), null);
 
 // Browser: nothing happens
 assert.equal(shell(), null);

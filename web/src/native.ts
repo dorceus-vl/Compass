@@ -143,6 +143,11 @@ export function linkAction(href: string, target: string | null | undefined, here
   return { to: 'path', path: u.pathname + u.search + u.hash };
 }
 
+/** Where a notification tap or a universal link goes: a Compass URL (or a path) opens in place with its ?search#hash; /api and other schemes go nowhere. */
+export function tapAction(url: string, base: string, here: string): ReturnType<typeof linkAction> {
+  try { return linkAction(new URL(url, base).href, '_blank', here); } catch { return null; }
+}
+
 export function openExternal(url: string): void {
   if (!/^(https?:|mailto:|tel:)/.test(url)) return;
   const sh = shell();
@@ -171,7 +176,7 @@ export function startShell(h: { onSharedText: (text: string) => void; onPath: (p
     if (act.to === 'external') openExternal(act.url); else h.onPath(act.path);
   };
   document.addEventListener('click', onClick);
-  const tap = (url: string) => { const act = linkAction(new URL(url, location.href).href, null, location.host); if (act?.to === 'path') h.onPath(act.path); else if (act?.to === 'external') openExternal(act.url); else h.onPath(new URL(url, location.href).pathname); };
+  const tap = (url: string) => { const act = tapAction(url, location.href, location.host); if (act?.to === 'path') h.onPath(act.path); else if (act?.to === 'external') openExternal(act.url); };
   let stop = () => {};
   if (sh !== 'mac') {
     const take = () => callCap('takeSharedText').then((r) => { if (r?.text) h.onSharedText(r.text); }).catch(() => {});

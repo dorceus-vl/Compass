@@ -6,7 +6,7 @@
   "description": "Phase 4: Compass on iPhone, iPad and Android (Capacitor 8): a shell around compass.knocturnlabs.com. Kept apart from the web app so its dependencies never reach the Worker's build.",
   "scripts": {
     "sync": "LANG=en_US.UTF-8 cap sync",
-    "open": "cap open ios",
+    "open": "LANG=en_US.UTF-8 cap sync ios && cap open ios",
     "build:sim": "LANG=en_US.UTF-8 cap sync ios && xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build",
     "test": "sh test-swift.sh"
   },
