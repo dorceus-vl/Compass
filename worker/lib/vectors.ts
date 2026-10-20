@@ -27,7 +27,8 @@ export function hashVector(text: string): number[] {
 
 /** Embeddings for texts: Workers AI bge-m3, or hash vectors without the AI binding or under the local stub (KN1). Not metered: callers go through `embedMetered`. */
 export async function embed(env: Env, texts: string[]): Promise<number[][]> {
-  if (!env.AI || isStub(env)) return texts.map(hashVector);
+  if (isStub(env) || (!env.AI && !index(env))) return texts.map(hashVector); // never hash vectors into a real index
+  if (!env.AI) throw new AiRefused('provider_error', 'Workers AI is not set up.');
   try {
     const r = (await env.AI.run(MODEL, { text: texts })) as { data?: number[][]; response?: number[][] };
     const data = r?.data ?? r?.response;
@@ -49,12 +50,15 @@ const tokensOf = (chars: number) => Math.ceil(chars / 4);
 /** USD per 1,000 tokens × estimated tokens = micro-dollars (rounded up). */
 export const embedCostMicro = (chars: number, p: KnowledgePrices) => Math.ceil(tokensOf(chars) * p.embed_per_1k_tokens * 1000 - 1e-9);
 
-/** One metered embedding call (feature knowledge_embed): the cap and the knowledge bucket first, the usage row only once Workers AI answered. */
-async function embedMetered(env: Env, texts: string[]): Promise<number[][]> {
+/**
+ * One metered embedding call (feature knowledge_embed): the cap first, the usage row only once Workers AI answered. A query uses the 120/h
+ * knowledge bucket; a background ingest batch skips it (KN14) and marks its row with the passage count in output_tokens (worker/lib/ai.ts).
+ */
+export async function embedMetered(env: Env, texts: string[], ingest: boolean): Promise<number[][]> {
   const chars = texts.reduce((n, t) => n + t.length, 0), cost_micro = embedCostMicro(chars, parseKnowledgePrices(env.KNOWLEDGE_PRICES));
-  const record = await meter(env, 'knowledge_embed', cost_micro);
+  const record = await meter(env, 'knowledge_embed', cost_micro, { hourly: !ingest });
   const vectors = await embed(env, texts);
-  await record({ provider: 'workers_ai', input_tokens: tokensOf(chars), output_tokens: 0, cost_micro });
+  await record({ provider: 'workers_ai', input_tokens: tokensOf(chars), output_tokens: ingest ? texts.length : 0, cost_micro });
   return vectors;
 }
 
@@ -81,16 +85,19 @@ export async function remove(env: Env, ids: string[]): Promise<void> {
   }
 }
 
-/** The topK nearest passages within these collections, best first. */
-export async function query(env: Env, vector: number[], collectionIds: string[], topK: number): Promise<{ id: string; score: number }[]> {
-  if (!collectionIds.length) return [];
+/**
+ * The topK nearest passages within these collections (null = no filter: callers re-check every match in D1), best first.
+ * ponytail: Vectorize filters are about 2 KB of JSON (~50 ids in $in); hybridSearch sends null when every live collection is allowed.
+ */
+export async function query(env: Env, vector: number[], collectionIds: string[] | null, topK: number): Promise<{ id: string; score: number }[]> {
+  if (collectionIds && !collectionIds.length) return [];
   const vz = index(env);
   if (vz) {
-    const r = await vz.query(vector, { topK, filter: { collection_id: { $in: collectionIds } }, returnMetadata: 'none' });
+    const r = await vz.query(vector, { topK, returnMetadata: 'none', ...(collectionIds ? { filter: { collection_id: { $in: collectionIds } } } : {}) });
     return r.matches.map((m) => ({ id: m.id, score: m.score }));
   }
-  const allowed = new Set(collectionIds);
-  return [...local].filter(([, v]) => allowed.has(v.collection_id)).map(([id, v]) => ({ id, score: dot(vector, v.values) }))
+  const allowed = collectionIds && new Set(collectionIds);
+  return [...local].filter(([, v]) => !allowed || allowed.has(v.collection_id)).map(([id, v]) => ({ id, score: dot(vector, v.values) }))
     .sort((a, b) => b.score - a.score).slice(0, topK);
 }
 
@@ -111,8 +118,8 @@ export async function hybridSearch(env: Env, q: string, collectionIds: string[] 
   const live = (await env.DB.prepare("SELECT id FROM knowledge_collections WHERE deleted_at IS NULL AND boundary = 'cloud'").all<{ id: string }>()).results.map((r) => r.id);
   const allowed = collectionIds ? live.filter((id) => collectionIds.includes(id)) : live;
   if (!allowed.length || !q.trim()) return [];
-  const [vector] = await embedMetered(env, [q]);
-  const matches = await query(env, vector, allowed, TOP);
+  const [vector] = await embedMetered(env, [q], false);
+  const matches = await query(env, vector, allowed.length === live.length ? null : allowed, TOP); // D1 below keeps only `allowed`
   if (!matches.length) return [];
   const { results } = await env.DB.prepare(`SELECT c.id, c.text, c.locator, c.enc_v, c.collection_id, i.title AS item_title, i.enc_v AS item_enc_v,
       k.name AS collection_name, k.enc_v AS collection_enc_v, k.scope FROM ${HOME} WHERE c.id IN (${ph(matches.length)}) AND c.embedded = 1 AND ${LIVE}`)
@@ -140,7 +147,7 @@ export async function embedPending(env: Env, limit: number, only: { item?: strin
     if (!results.length) break;
     const texts = await Promise.all(results.map(async (r) => (await open(env, 'knowledge_chunks', { text: r.text, enc_v: r.enc_v })).text));
     let vectors: number[][];
-    try { vectors = await embedMetered(env, texts); } catch (e) {
+    try { vectors = await embedMetered(env, texts, true); } catch (e) {
       if (!(e instanceof AiRefused)) throw e;
       console.warn(`[knowledge] embedding paused: ${e.code}`); // ponytail: a passage Workers AI always refuses blocks the queue head; mark its item failed if that shows up
       break;
@@ -162,7 +169,7 @@ export async function embedPending(env: Env, limit: number, only: { item?: strin
 /**
  * Removes the vectors of passages that may no longer hold one (vectorWanted): a project gone Offline-only or to Trash, a collection made Locked,
  * an item, document or collection in Trash; they go back to embedded = 0 (and are embedded again if that changes back). Called where those
- * changes happen and hourly by the cron as a safety sweep. Returns how many were removed.
+ * changes happen and by the 15-minute cron as a safety sweep. Returns how many were removed.
  */
 export async function unembedStale(env: Env): Promise<number> {
   // ponytail: scans every embedded passage; fine at one user, add an embedded = 1 index or a per-project filter if it grows.

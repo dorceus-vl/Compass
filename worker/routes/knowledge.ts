@@ -113,7 +113,7 @@ knowledge.patch('/collections/:id', async (c) => {
     ] : []),
   ]);
   await remove(c.env, ids); // again: a batch the embedder upserted between the first delete and the update (it re-checks after the update itself)
-  if (toCloud) c.executionCtx.waitUntil(embedPending(c.env, 500, { collection: coll.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+  if (toCloud) c.executionCtx.waitUntil(embedPending(c.env, 200, { collection: coll.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
   await audit(c.env, 'you', change ? 'knowledge.boundary' : 'knowledge.collection.edit', coll.id, change ? { boundary } : undefined);
   return c.json({ collection: { ...coll, name, boundary, updated_at: t } });
 });
@@ -158,7 +158,7 @@ knowledge.post('/items', async (c) => {
   if (doc.kind === 'png' || doc.kind === 'jpg') error = 'Images are not read yet.';
   else try { passages = await passagesOf(doc.kind, bytes); } catch { error = 'That file could not be read.'; }
   const item = await addItem(c.env, coll, { source: 'upload', title: doc.name, document_id: doc.id, passages, error });
-  if (item.state === 'indexing') c.executionCtx.waitUntil(embedPending(c.env, 500, { item: item.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+  if (item.state === 'indexing') c.executionCtx.waitUntil(embedPending(c.env, 200, { item: item.id }).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
   return c.json({ item }, 201);
 });
 

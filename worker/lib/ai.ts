@@ -12,10 +12,16 @@ type Code = 'no_key' | 'cap_reached' | 'rate_limited' | 'offline_boundary' | 'pr
 
 const STATUS: Record<Code, number> = { no_key: 503, cap_reached: 409, rate_limited: 429, offline_boundary: 409, provider_error: 502, voice_off: 409 };
 const NAMES: Record<Provider, string> = { claude: 'Claude', gemini: 'Gemini' };
-/** Ruling A9: model calls, voice calls (ElevenLabs) and knowledge embeddings (Workers AI, Phase 6) have their own hourly limits; all count against the monthly cap. */
+/**
+ * Ruling A9: model calls, voice calls (ElevenLabs) and knowledge query embeddings (Workers AI, Phase 6) have their own hourly limits; all count against
+ * the monthly cap. KN14/KN15: background ingest batches (also knowledge_embed) skip the hourly check and stay out of the knowledge count: their rows
+ * carry the number of passages embedded in output_tokens (>= 1), a query's row carries 0, so the knowledge bucket counts `output_tokens = 0` only.
+ */
 const GROUPS = { voice: ['athena_voice', 'athena_listen'], knowledge: ['knowledge_embed'] } as const satisfies Record<string, readonly AiFeature[]>;
 const HOURLY = { model: 30, voice: 60, knowledge: 120 };
-const LIMIT = { model: '30 questions an hour is the limit.', voice: '60 voice clips an hour is the limit.', knowledge: 'Knowledge search and indexing are limited to 120 calls an hour.' };
+const LIMIT = { model: '30 questions an hour is the limit.', voice: '60 voice clips an hour is the limit.', knowledge: '120 knowledge searches an hour is the limit.' };
+/** Extra condition on a group's hourly count (see above). */
+const ONLY: Partial<Record<keyof typeof HOURLY, string>> = { knowledge: ' AND output_tokens = 0' };
 
 export class AiRefused extends Error {
   code: Code;
@@ -127,19 +133,25 @@ export type Usage = { provider: Provider | 'elevenlabs' | 'workers_ai'; input_to
 
 /**
  * The one metering path (model and voice calls alike): the monthly cap (with this call's estimate, when known) and the hourly limit of
- * the feature's group are checked first; the returned `record` writes the usage row and an audit row with no content once the call
+ * the feature's group are checked first (`hourly: false` skips the latter, for background knowledge ingest only); the returned `record` writes the usage row and an audit row with no content once the call
  * has succeeded (a model's tokens are known only then).
  */
-export async function meter(env: Env, feature: AiFeature, estimateMicro = 0): Promise<(u: Usage) => Promise<void>> {
+export async function meter(env: Env, feature: AiFeature, estimateMicro = 0, opts: { hourly?: boolean } = {}): Promise<(u: Usage) => Promise<void>> {
   const s = await getSettings(env);
   const spent = await monthCost(env, s.tz);
   if (spent >= s.ai_monthly_cap_micro || spent + estimateMicro > s.ai_monthly_cap_micro) throw new AiRefused('cap_reached', "This month's AI budget is used up. Raise it in Settings → AI.");
+  if (opts.hourly === false) return record(env, feature); // background ingest only (KN14): the cap above still applies
   const group = (Object.keys(GROUPS) as (keyof typeof GROUPS)[]).find((g) => (GROUPS[g] as readonly AiFeature[]).includes(feature)) ?? 'model';
   const list: readonly AiFeature[] = group === 'model' ? Object.values(GROUPS).flat() : GROUPS[group]; // the model count is everything outside the other groups
-  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${group === 'model' ? 'NOT IN' : 'IN'} (${list.map((_, i) => `?${i + 2}`).join(',')})`)
+  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${group === 'model' ? 'NOT IN' : 'IN'} (${list.map((_, i) => `?${i + 2}`).join(',')})${ONLY[group] ?? ''}`)
     .bind(new Date(Date.now() - 3600_000).toISOString(), ...list).first<{ n: number }>();
   if ((hour?.n ?? 0) >= HOURLY[group]) throw new AiRefused('rate_limited', `${LIMIT[group]} Try again in a few minutes.`);
-  return async (u) => {
+  return record(env, feature);
+}
+
+/** Writes the usage row and an audit row with no content, once the call has succeeded. */
+function record(env: Env, feature: AiFeature) {
+  return async (u: Usage) => {
     await env.DB.prepare('INSERT INTO ai_usage (id, at, feature, provider, input_tokens, output_tokens, cost_micro) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
       .bind(crypto.randomUUID(), now(), feature, u.provider, u.input_tokens, u.output_tokens, u.cost_micro).run();
     await audit(env, 'you', 'ai.' + feature, null, u);

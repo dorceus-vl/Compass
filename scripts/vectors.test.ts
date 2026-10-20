@@ -3,7 +3,7 @@
 // the KN6 boundary transition and which passages may hold a vector (the pure rule and its SQL twin agree).
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { rerank, embed, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices } from '../worker/lib/vectors.ts';
+import { rerank, embed, embedMetered, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices } from '../worker/lib/vectors.ts';
 import { boundaryChange, vectorWanted, HOME, HOME_COLS, LIVE, type PassageHome } from '../worker/lib/knowledge.ts';
 import { meter, AiRefused } from '../worker/lib/ai.ts';
 
@@ -38,6 +38,9 @@ assert.equal(called, 0, 'stub: AI.run not called');
 // the real path reads `data` (or `response`) and refuses a short answer
 assert.deepEqual(await embed({ AI: { run: async (_m: string, i: { text: string[] }) => ({ shape: [i.text.length, 2], data: i.text.map(() => [1, 0]) }) } } as never, ['x', 'y']), [[1, 0], [1, 0]]);
 await assert.rejects(embed({ AI: { run: async () => ({ data: [[1]] }) } } as never, ['x', 'y']), (e: unknown) => e instanceof AiRefused && e.code === 'provider_error');
+assert.deepEqual(await embed({ AI: { run: async () => ({ shape: [1, 2], response: [[0, 1]], pooling: 'cls' }) } } as never, ['x']), [[0, 1]], 'the documented response shape');
+// no AI binding but a real index: refused, never hash vectors into Vectorize
+await assert.rejects(embed({ VECTORIZE: {} } as never, ['x']), (e: unknown) => e instanceof AiRefused && e.code === 'provider_error');
 await assert.rejects(embed({ AI: { run: async () => { throw new Error('down'); } } } as never, ['x']), (e: unknown) => e instanceof AiRefused && e.code === 'provider_error');
 
 // the local store (no VECTORIZE): filtered by collection, best first, removable
@@ -57,6 +60,8 @@ const calls: unknown[] = [];
 const vz = { query: async (v: number[], o: unknown) => { calls.push(o); return { matches: [{ id: 'x', score: 0.5 }], count: 1 }; }, deleteByIds: async (ids: string[]) => { calls.push(ids.length); }, upsert: async (rows: unknown[]) => { calls.push(rows); } };
 assert.deepEqual(await query({ VECTORIZE: vz } as never, v1, ['A', 'B'], 40), [{ id: 'x', score: 0.5 }]);
 assert.deepEqual(calls[0], { topK: 40, filter: { collection_id: { $in: ['A', 'B'] } }, returnMetadata: 'none' });
+await query({ VECTORIZE: vz } as never, v1, null, 40);
+assert.deepEqual(calls.pop(), { topK: 40, returnMetadata: 'none' }, 'null: no filter (every live collection; D1 re-checks)');
 await remove({ VECTORIZE: vz } as never, Array.from({ length: 2500 }, (_, i) => 'id' + i));
 assert.deepEqual(calls.slice(1), [1000, 1000, 500]);
 await upsert({ VECTORIZE: vz } as never, [{ id: 'q', values: [1], collection_id: 'A' }]);
@@ -107,32 +112,52 @@ cases.forEach(([, want, why], n) => assert.equal(live.has(String(n)), want, 'SQL
 const homes = db.prepare(`SELECT c.id, ${HOME_COLS} FROM ${HOME}`).all() as unknown as (PassageHome & { id: string })[];
 for (const r of homes) assert.equal(vectorWanted(r), live.has(r.id), 'HOME_COLS feeds vectorWanted: ' + cases[Number(r.id)][2]);
 
-// meter: knowledge_embed has its own bucket of 120 an hour and stays out of the 30 model calls
-const counts: Record<string, number> = { model: 30, voice: 0, knowledge: 0 };
-const sql: { q: string; args: unknown[] }[] = [];
-const mdb = {
-  prepare(q: string) {
-    const stmt = (args: unknown[]) => ({
-      async first() {
-        sql.push({ q, args });
-        if (q.includes('FROM settings')) return { json: JSON.stringify({ ai_monthly_cap_micro: 1_000_000 }) };
-        if (q.includes('SUM(cost_micro)')) return { c: 0 };
-        if (q.includes('COUNT(*)')) return { n: q.includes('NOT IN') ? counts.model : args.includes('knowledge_embed') ? counts.knowledge : counts.voice };
-        return null;
-      },
-      async run() { return { meta: { changes: 1 } }; },
-    });
-    return { ...stmt([]), bind: (...args: unknown[]) => stmt(args) };
-  },
-};
-const menv = { DB: mdb } as never;
-await assert.rejects(meter(menv, 'copilot'), (e: unknown) => e instanceof AiRefused && e.code === 'rate_limited', 'model bucket full');
-await meter(menv, 'knowledge_embed', 1); // the model bucket is full, the knowledge one is not
-const modelCount = sql.find((s) => s.q.includes('NOT IN'))!;
-assert.ok(modelCount.args.includes('knowledge_embed') && modelCount.args.includes('athena_voice'), 'the model count leaves out knowledge and voice');
-counts.knowledge = 120;
-await assert.rejects(meter(menv, 'knowledge_embed', 1), (e: unknown) => e instanceof AiRefused && e.code === 'rate_limited', '120 knowledge calls an hour');
-counts.knowledge = 0; counts.voice = 60;
-await meter(menv, 'knowledge_embed', 1); // a full voice bucket doesn't stop knowledge
+// meter, on real SQL (node:sqlite): query embeds have their own bucket of 120 an hour, outside the 30 model calls; background ingest batches
+// skip it (KN14) and are marked by output_tokens = passage count, so a big ingest never fills it; the monthly cap applies to both.
+const sq = new DatabaseSync(':memory:');
+sq.exec(`CREATE TABLE settings (id INTEGER, json TEXT); CREATE TABLE audit_log (id TEXT, at TEXT, actor TEXT, action TEXT, target TEXT, detail TEXT);
+  CREATE TABLE ai_usage (id TEXT PRIMARY KEY, at TEXT, feature TEXT, provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cost_micro INTEGER)`);
+const cap = (micro: number) => { sq.exec('DELETE FROM settings'); sq.prepare('INSERT INTO settings VALUES (1, ?)').run(JSON.stringify({ ai_monthly_cap_micro: micro })); };
+cap(1_000_000_000);
+const sqlSeen: string[] = [];
+const d1 = { prepare(q: string) {
+  sqlSeen.push(q);
+  const st = (a: unknown[]) => ({ first: async () => sq.prepare(q).get(...(a as never[])) ?? null, run: async () => ({ meta: { changes: Number(sq.prepare(q).run(...(a as never[])).changes) } }),
+    all: async () => ({ results: sq.prepare(q).all(...(a as never[])) }) });
+  return { ...st([]), bind: (...a: unknown[]) => st(a) };
+} };
+const kenv = { DB: d1, AI_STUB: '1', DEV_LOGIN: '1', KNOWLEDGE_PRICES: '{"embed_per_1k_tokens":0.000012}' } as never;
+const add = (n: number, feature: string, out: number) => { for (let i = 0; i < n; i++) sq.prepare('INSERT INTO ai_usage VALUES (?, ?, ?, ?, 1, ?, 1)').run(crypto.randomUUID(), new Date().toISOString(), feature, feature === 'copilot' ? 'claude' : 'workers_ai', out); };
+const used = () => sq.prepare("SELECT output_tokens AS o FROM ai_usage WHERE feature = 'knowledge_embed' ORDER BY rowid DESC LIMIT 1").get() as { o: number };
+const limited = (e: unknown) => e instanceof AiRefused && e.code === 'rate_limited';
+add(200, 'knowledge_embed', 50); // a big ingest: 200 batches this hour
+await embedMetered(kenv, ['a question'], false); // ...doesn't fill the search bucket
+assert.equal(used().o, 0, 'a query row carries 0');
+await embedMetered(kenv, ['p1', 'p2', 'p3'], true);
+assert.equal(used().o, 3, 'an ingest row carries its passage count');
+add(119, 'knowledge_embed', 0); // 1 + 119 = 120 queries this hour
+await assert.rejects(embedMetered(kenv, ['one more question'], false), limited, '120 query embeds an hour');
+await embedMetered(kenv, Array.from({ length: 50 }, (_, i) => 'passage ' + i), true); // ingest goes on with the search bucket full
+assert.ok(sqlSeen.some((q) => /feature IN \(\?2\) AND output_tokens = 0/.test(q)), 'the knowledge count reads query rows only');
+add(30, 'copilot', 1);
+await assert.rejects(meter(kenv, 'copilot'), limited, '30 model calls');
+const modelCount = sqlSeen.filter((q) => q.includes('NOT IN')).pop()!;
+assert.ok(/NOT IN \(\?2,\?3,\?4\)/.test(modelCount), 'the model count leaves out voice and knowledge (3 features)');
+sq.exec("DELETE FROM ai_usage WHERE feature = 'copilot'");
+await meter(kenv, 'copilot'); // the knowledge rows (query or ingest) never count as model calls
+add(60, 'athena_voice', 0);
+await assert.rejects(meter(kenv, 'athena_voice', 1), limited, '60 voice calls');
+sq.exec("DELETE FROM ai_usage WHERE feature = 'knowledge_embed' AND output_tokens = 0");
+await embedMetered(kenv, ['q'], false); // a full voice bucket doesn't stop knowledge
+// the monthly cap stops both, and a failed call writes no row
+const spent = (sq.prepare('SELECT SUM(cost_micro) AS c FROM ai_usage').get() as { c: number }).c;
+cap(spent);
+await assert.rejects(embedMetered(kenv, ['p'], true), (e: unknown) => e instanceof AiRefused && e.code === 'cap_reached', 'the cap stops ingest');
+await assert.rejects(embedMetered(kenv, ['q'], false), (e: unknown) => e instanceof AiRefused && e.code === 'cap_reached', 'the cap stops queries');
+cap(1_000_000_000);
+const rows = () => (sq.prepare('SELECT count(*) AS n FROM ai_usage').get() as { n: number }).n, before = rows();
+const failing = { ...(kenv as object), AI_STUB: '0', AI: { run: async () => { throw new Error('down'); } } } as never;
+await assert.rejects(embedMetered(failing, ['p'], true), (e: unknown) => e instanceof AiRefused && e.code === 'provider_error');
+assert.equal(rows(), before, 'a failed call is not billed');
 
 console.log('vectors: ok');

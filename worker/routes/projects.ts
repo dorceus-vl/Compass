@@ -93,7 +93,7 @@ projects.patch('/:id', async (c) => {
   if (boundaryChanged) await audit(c.env, 'you', 'project.boundary', project.id, { from: project.data_boundary, to: r.values.data_boundary });
   // Knowledge: an Offline-only project's files lose their vectors now; back to Cloud, they are embedded again.
   if (boundaryChanged && next.data_boundary === 'offline') await unembedStale(c.env).catch(sweepLater);
-  if (boundaryChanged && next.data_boundary === 'cloud') c.executionCtx.waitUntil(embedPending(c.env, 500).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
+  if (boundaryChanged && next.data_boundary === 'cloud') c.executionCtx.waitUntil(embedPending(c.env, 200).catch((e) => console.error(`[knowledge] embed failed: ${(e as Error).name}`)));
   return c.json({ project: next });
 });
 

@@ -815,7 +815,7 @@ IAXO=$(kid "$(kitem $K1P $DAXO)" item); IMENU=$(kid "$(kitem $K1O $DMENU)" item)
 kwait $K1P $IAXO ready && kwait $K1O $IMENU ready && kwait $K1C $IZEB ready || fail "Cloud AI items did not become ready after embedding"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id IN ('$K1P','$K1O','$K1C') AND embedded=0")" = 0 ] || fail "Cloud AI passages left unembedded"
 [ "$(kstate $K1L $IPANG)" = ready ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$K1L' AND embedded=1")" = 0 ] || fail "a Locked passage was embedded"
-[ "$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND provider='workers_ai' AND output_tokens=0 AND input_tokens>0")" -ge $((KUSE + 3)) ] || fail "embedding batches were not metered as knowledge_embed / workers_ai"
+[ "$(kn "SELECT count(*) AS n FROM ai_usage WHERE feature='knowledge_embed' AND provider='workers_ai' AND output_tokens>=1 AND input_tokens>0")" -ge $((KUSE + 3)) ] || fail "embedding batches were not metered as knowledge_embed / workers_ai (ingest rows: output_tokens = passages)"
 # search: the right passage, from the allowed collection only; opened work text; never cached
 ks "axolotl+grant" $K1P | grep -q '"item_title":"axo.docx"' || fail "search did not find the passage"
 [ "$(ks "axolotl+grant" $K1P | js 'd.passages[0].text.includes("axolotl")&&d.passages[0].collection.id==="'$K1P'"&&d.passages.every(p=>p.collection.id==="'$K1P'")')" = true ] || fail "search: wrong top passage or collection"
@@ -831,6 +831,16 @@ curl -s -D - -o /dev/null -b $J -H "Origin: $B" $B/api/knowledge/locked/$K1L/pas
 [ "$(kst "$(kj $B/api/knowledge/locked/$K1C/passages)")" = 404 ] && [ "$(kst "$(kj $B/api/knowledge/locked/$K1P/passages)")" = 404 ] || fail "locked passages served for a Cloud AI collection"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $B" $B/api/knowledge/locked/$K1L/passages)" = 401 ] || fail "locked passages without a session"
 echo "smoke: (k1) ingest -> embedded (metered knowledge_embed/workers_ai) -> ready; search finds the passage in the allowed collection only, work text opened, no-store; Locked never embedded nor searched by meaning, its passages opened for the session only"
+# KN14: background ingest batches skip the 120/h search bucket (their rows carry the passage count in output_tokens); 200 ingest batches this hour
+# leave search working, 120 query embeds stop it. The rows are made here (200 real batches would be slow) and removed after.
+KNOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+kfill() { D1X "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < $1) INSERT INTO ai_usage (id, at, feature, provider, input_tokens, output_tokens, cost_micro) SELECT 'smoke-kb-$2-' || i, '$KNOW', 'knowledge_embed', 'workers_ai', 1, $3, 0 FROM n" >/dev/null; }
+kfill 200 ingest 50
+[ "$(kst "$(kj "$B/api/knowledge/search?q=axolotl&collections=$K1P")")" = 200 ] || fail "a big ingest made search 429"
+kfill 120 query 0
+KRL=$(kj "$B/api/knowledge/search?q=axolotl&collections=$K1P"); [ "$(kst "$KRL")" = 429 ] && kbody "$KRL" | grep -q '"error":"rate_limited"' || fail "120 query embeds an hour did not stop search: $KRL"
+D1X "DELETE FROM ai_usage WHERE id LIKE 'smoke-kb-%'" >/dev/null
+echo "smoke: (k1) 200 ingest batches this hour leave search working; 120 query embeds -> 429 rate_limited"
 # Cloud AI -> Locked: vectors deleted, passages un-embedded, out of search; Locked -> Cloud AI (step-up in the dev session) embeds again
 curl "${H[@]}" -X PATCH $B/api/knowledge/collections/$K1C -d '{"boundary":"locked"}' | grep -q '"boundary":"locked"' || fail "Cloud AI -> Locked"
 [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE collection_id='$K1C' AND embedded=1")" = 0 ] || fail "Cloud AI -> Locked left embedded passages"
