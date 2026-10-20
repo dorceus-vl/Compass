@@ -348,17 +348,29 @@ npx wrangler r2 object get compass-files/athena-tts/$SPA --local --file $AV/r2 >
 SW=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$SWP\",\"message\":\"Smoke work voice\"}" | js 'd.messages[1].id')
 [ "$(speak "{\"message_id\":\"$SW\"}" w.mp3)" = 200 ] && [ "$(head -c 2 $AV/w.mp3 | xxd -p)" = fffb ] || fail "speak a work answer"
 npx wrangler r2 object get compass-files/athena-tts/$SW --local --file $AV/wr2 >/dev/null 2>&1 && ! cmp -s $AV/wr2 $AV/w.mp3 && [ "$(head -c 2 $AV/wr2 | xxd -p)" != fffb ] || fail "the work answer's audio is not sealed in R2"
+VW=$(VU athena_voice)
+[ "$(speak "{\"message_id\":\"$SW\"}" w2.mp3)" = 200 ] && cmp -s $AV/w.mp3 $AV/w2.mp3 && [ "$(VU athena_voice)" = "$VW" ] || fail "a sealed work answer's replay (opened from R2, not billed)"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"athena":{"voice_id":"SmokeVoice2"}}' >/dev/null
+[ "$(speak "{\"message_id\":\"$SPA\"}" a3.mp3)" = 200 ] && [ "$(VU athena_voice)" = $((VW + 1)) ] || fail "a new voice did not speak the answer again"
 SOP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke voice offline","kind":"personal"}' | js d.project.id)
 SO=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$SOP\",\"message\":\"Smoke offline voice\"}" | js 'd.messages[1].id')
 curl "${H[@]}" -X PATCH $B/api/projects/$SOP -d '{"data_boundary":"offline"}' >/dev/null
 V1=$(VU athena_voice)
 [ "$(speak "{\"message_id\":\"$SO\"}" o)" = 409 ] && grep -q '"error":"offline_boundary"' $AV/o || fail "an Offline-only answer was read aloud"
 [ "$(VU athena_voice)" = "$V1" ] || fail "an Offline-only refusal was billed"
-for x in $SOP $SPP $SWP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+curl "${H[@]}" -X PATCH $B/api/projects/$SPP -d '{"data_boundary":"offline"}' >/dev/null # its answer is already cached: the cache must not be served
+[ "$(speak "{\"message_id\":\"$SPA\"}" oc)" = 409 ] && grep -q '"error":"offline_boundary"' $AV/oc || fail "a cached answer was served after its project went Offline only"
+curl "${H[@]}" -X PATCH $B/api/projects/$SPP -d '{"data_boundary":"cloud"}' >/dev/null
 [ "$(speak '{"test":true}' t.mp3)" = 200 ] && [ "$(VU athena_voice)" = $((V1 + 1)) ] || fail "voice test"
 [ "$(speak '{"test":true,"voice_id":"a b/../c"}' tb)" = 400 ] || fail "a bad test voice id"
 printf '\x1a\x45\xdf\xa3smoke-webm-recording' > $AV/rec.webm; printf 'ID3not-a-recording' > $AV/rec.mp3
-listen() { curl -s -o $AV/l -w '%{http_code}' -b $J -H "Origin: $B" -H "Content-Type: $1" -H "X-Duration-Ms: $2" --data-binary @$3 $B/api/athena/listen; }
+listen() { curl -s -o $AV/l -w '%{http_code}' -b $J -H "Origin: $B" -H "Content-Type: $1" -H "X-Duration-Ms: $2" ${4:+-H "$4"} --data-binary @$3 $B/api/athena/listen; }
+L0=$(VU athena_listen)
+[ "$(listen audio/webm 1500 $AV/rec.webm "X-Project-Id: $SOP")" = 409 ] && grep -q '"error":"offline_boundary"' $AV/l || fail "listen in an Offline-only project: $(cat $AV/l)"
+[ "$(listen audio/webm 1500 $AV/rec.webm "X-Thread-Id: $(curl "${H[@]}" $B/api/ai/threads?project=$SOP | js 'd.threads[0].id')")" = 409 ] || fail "listen in an Offline-only thread"
+[ "$(listen audio/webm 1500 $AV/rec.webm "X-Thread-Id: nope")" = 404 ] && [ "$(listen audio/webm 1500 $AV/rec.webm "X-Project-Id: nope")" = 404 ] || fail "listen with an unknown thread or project"
+[ "$(VU athena_listen)" = "$L0" ] || fail "a boundary refusal was billed"
+[ "$(listen audio/webm 1500 $AV/rec.webm "X-Thread-Id: $(curl "${H[@]}" $B/api/ai/threads?project=$SWP | js 'd.threads[0].id')")" = 200 ] && [ "$(js d.text < $AV/l)" = "stub transcript" ] || fail "listen in a cloud work thread"
 L0=$(VU athena_listen)
 [ "$(listen 'audio/webm;codecs=opus' 1500 $AV/rec.webm)" = 200 ] && [ "$(js d.text < $AV/l)" = "stub transcript" ] || fail "listen: $(cat $AV/l)"
 [ "$(VU athena_listen)" = $((L0 + 1)) ] || fail "listen wrote no usage row"
@@ -370,8 +382,9 @@ head -c 2100000 /dev/zero > $AV/big.webm; [ "$(listen audio/webm 1500 $AV/big.we
 [ "$(D1X "SELECT count(*) AS n FROM ai_usage WHERE feature IN ('athena_voice','athena_listen') AND provider='elevenlabs' AND at >= '$AT0'" | js 'd[0].results[0].n')" -ge 3 ] || fail "voice rows are not elevenlabs"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action IN ('ai.athena_voice','ai.athena_listen') AND (detail LIKE '%stub transcript%' OR detail LIKE '%Stub answer%')" | js 'd[0].results[0].n')" = 0 ] || fail "voice audit rows hold content"
 curl "${H[@]}" -X PATCH $B/api/settings -d '{"athena":{"voice_id":null,"speak_answers":false}}' >/dev/null
+for x in $SOP $SPP $SWP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
 rm -rf $AV
-echo "smoke: (a4) athena voice: voice_off without a voice; personal answer -> audio/mpeg, replay from R2 (no new usage row); work answer sealed in R2; question 400; Offline-only 409 (not billed); test line; listen -> stub transcript with one usage row; 60 s, type, first bytes and 2 MB refused"
+echo "smoke: (a4) athena voice: voice_off without a voice; personal answer -> audio/mpeg, replay from R2 (no new usage row); work answer sealed in R2; work replay opened from R2 (not billed); a new voice speaks again; question 400; Offline-only 409 (not billed), cached answer refused once its project is Offline only; test line; listen: Offline-only project or thread 409, unknown 404 (none billed), cloud thread ok, stub transcript with one usage row; 60 s, type, first bytes and 2 MB refused"
 # Status report data (Phase 3 Task 10): W1 is a cloud work project here, so its rows are sealed and come back readable; the stub writes the summary.
 curl "${H[@]}" -X POST $B/api/projects/$W1/raid -d '{"type":"risk","text":"Smoke report risk","probability":4,"impact":5}' >/dev/null
 SR='{"project_id":"'$W1'","from":"2026-01-01","to":"2026-12-31","ai":true}'

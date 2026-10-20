@@ -33,7 +33,7 @@ export function useAthenaVoice(): [Voice | null, (speak: boolean) => Promise<voi
     if (!voice) return;
     const before = voice;
     setVoice({ ...voice, speak_answers: speak });
-    try { setVoice((await api<Settings>('/settings', { method: 'PATCH', json: { athena: { ...before, speak_answers: speak } } })).athena); }
+    try { setVoice((await api<Settings>('/settings', { method: 'PATCH', json: { athena: { speak_answers: speak } } })).athena); } // the server merges, so a newer voice id is kept
     catch (e) { setVoice(before); throw e; }
   };
   return [voice, setSpeak];
@@ -96,12 +96,15 @@ const MAX_MS = 60_000, MAX_BYTES = 2 * 1024 * 1024, MIN_MS = 400;
 export const micSupported = () => typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 const recType = () => (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
 
+/** Where the recording belongs, for the server's boundary check: the open thread, else the project the screen is in, else personal. */
+export type MicScope = { threadId?: string; projectId?: string };
+
 /** The recording's text goes to `onText` (for the Ask box; never sent on its own); problems go to `onError` as plain sentences. */
-export function useMic(onText: (text: string) => void, onError: (message: string) => void) {
+export function useMic(onText: (text: string) => void, onError: (message: string) => void, scope: () => MicScope) {
   const [phase, setPhase] = useState<MicPhase>('off');
   const want = useRef(false), live = useRef(true);
   const rec = useRef<{ mr: MediaRecorder; timer: ReturnType<typeof setTimeout> } | null>(null);
-  const cb = useRef({ onText, onError }); cb.current = { onText, onError };
+  const cb = useRef({ onText, onError, scope }); cb.current = { onText, onError, scope };
 
   const start = async () => {
     if (rec.current || phase !== 'off') return;
@@ -126,7 +129,11 @@ export function useMic(onText: (text: string) => void, onError: (message: string
       if (blob.size > MAX_BYTES) { setPhase('off'); cb.current.onError('That recording is too long. Keep it under a minute.'); return; }
       setPhase('busy');
       try {
-        const r = await post('/athena/listen', blob, { 'Content-Type': type, 'X-Duration-Ms': String(Math.max(1, ms)) });
+        const { threadId, projectId } = cb.current.scope();
+        const r = await post('/athena/listen', blob, {
+          'Content-Type': type, 'X-Duration-Ms': String(Math.max(1, ms)),
+          ...(threadId ? { 'X-Thread-Id': threadId } : projectId ? { 'X-Project-Id': projectId } : {}),
+        });
         const { text } = (await r.json()) as { text: string };
         if (!live.current) return;
         if (text.trim()) cb.current.onText(text.trim()); else cb.current.onError("Athena didn't catch that. Try again.");

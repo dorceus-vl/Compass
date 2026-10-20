@@ -13,6 +13,8 @@ assert.equal(speechText('See [the plan](https://x.y/plan) and [[raid-log|the RAI
 assert.equal(speechText('Logo ![Bell logo](a.png) here. Visit https://example.com/x now.'), 'Logo Bell logo here. Visit now.', 'images keep their alt, bare URLs go');
 assert.equal(speechText('Before.\n\n| Risk | Owner |\n| --- | --- |\n| Budget | Vlad |\n| Vendor | Ana |\n| Scope | Ben |\n\nAfter.'), 'Before.\nA table with 3 rows.\nAfter.', 'a table is summarised');
 assert.equal(speechText('| A |\n|---|\n| 1 |'), 'A table with 1 row.', 'one row');
+assert.equal(speechText('Risk | Owner\n--- | ---\nBudget | Vlad\nScope | Ben\nDone.'), 'A table with 2 rows.\nDone.', 'a table without outer pipes');
+assert.equal(speechText('Plain line\n---\nNext'), 'Plain line.\nNext.', 'a rule after a line is not a table');
 assert.equal(speechText('> Quoted line\n\n---\n\nEnd'), 'Quoted line.\nEnd.', 'quotes and rules');
 assert.equal(speechText('```compass-meta\n{}\n```'), '', 'nothing left to say');
 const long = Array.from({ length: 400 }, (_, i) => `Sentence number ${i} is here.`).join(' ');

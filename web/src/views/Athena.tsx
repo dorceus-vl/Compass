@@ -262,12 +262,14 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
   const refocus = () => ta.current?.focus();
   useEffect(() => onBusy(busy), [busy, onBusy]);
   // The mic: its text goes into the box (never sent on its own); the stage shows her listening while it records.
-  const mic = useMic((t) => { setText((x) => (x.trim() ? `${x.trimEnd()} ${t}` : t)); setLive('Transcript added to the box'); refocus(); }, (msg) => { setAttErr(msg); setLive(msg); });
+  const mic = useMic((t) => { setText((x) => (x.trim() ? `${x.trimEnd()} ${t}` : t)); setLive('Transcript added to the box'); refocus(); }, (msg) => { setAttErr(msg); setLive(msg); },
+    () => ({ threadId: cur.current ?? undefined, projectId: projSelRef.current || undefined })); // the server checks the boundary with these
   useEffect(() => onMic(mic.phase), [mic.phase, onMic]);
   const touch = useRef(false);
   const startMic = () => {
     setAttErr('');
     if (!online()) { setAttErr('The mic needs a connection.'); return; }
+    if (!cur.current && projSelRef.current.startsWith('tmp-')) { setAttErr("This project isn't on the server yet. Try again in a moment."); return; }
     mic.start();
   };
 
@@ -286,6 +288,7 @@ function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onB
 
   const projSel = projectId ?? (thread ? thread.project_id ?? '' : sel);
   const project = projects.find((p) => p.id === projSel) ?? null;
+  const projSelRef = useRef(projSel); projSelRef.current = projSel;
   const prov = providerReady(usage, provider) ? provider : OTHER[provider];
   const card = CARDS.find((c) => c.id === preset);
   const more = MORE.find((p) => p.id === preset);

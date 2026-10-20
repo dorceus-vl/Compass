@@ -157,10 +157,11 @@ athena.post('/speak', async (c) => {
     if (access.boundary === 'offline') return c.json({ error: 'offline_boundary', message: 'This project is Offline only: its answers are not sent to ElevenLabs.' }, 409);
 
     const key = `athena-tts/${row.id}`, context = `athena-tts:${row.id}`;
-    const hit = await env.FILES.get(key);
-    if (hit) return mp3(hit.customMetadata?.sealed === '1' ? await openBytes(env, await hit.text(), context) : hit.body);
-
     const voice = settings.athena.voice_id;
+    // A replay is free; after he picks another voice, the answer is spoken again in the new one.
+    const hit = await env.FILES.get(key);
+    if (hit && (!voice || hit.customMetadata?.voice === voice)) return mp3(hit.customMetadata?.sealed === '1' ? await openBytes(env, await hit.text(), context) : hit.body);
+
     if (!voice || !voiceKey(env)) return c.json(VOICE_OFF, 409);
     const text = speechText((await openRow(env, 'ai_messages', { ...row })).content);
     if (!text) return c.json({ error: 'nothing_to_say', message: 'This answer has nothing to read aloud.' }, 400);
@@ -170,8 +171,8 @@ athena.post('/speak', async (c) => {
     await record({ provider: 'elevenlabs', input_tokens: text.length, output_tokens: 0, cost_micro });
     // Work answers are sealed at rest like their rows; the cache is best effort (a failed write only costs a replay).
     await (access.kind === 'work'
-      ? env.FILES.put(key, await sealBytes(env, audio, context), { customMetadata: { sealed: '1' } })
-      : env.FILES.put(key, audio, { httpMetadata: { contentType: 'audio/mpeg' } })).catch(() => console.warn('[athena] could not cache an answer\'s audio'));
+      ? env.FILES.put(key, await sealBytes(env, audio, context), { customMetadata: { sealed: '1', voice } })
+      : env.FILES.put(key, audio, { httpMetadata: { contentType: 'audio/mpeg' }, customMetadata: { voice } })).catch(() => console.warn('[athena] could not cache an answer\'s audio'));
     return mp3(audio);
   } catch (e) { return refused(e); }
 });
@@ -186,13 +187,26 @@ athena.post('/listen', async (c) => {
   if (Number(len) > MAX_RECORDING) return c.json({ error: 'Recordings must be 2 MB or smaller.' }, 413);
   const ms = Number(c.req.header('x-duration-ms'));
   if (!Number.isInteger(ms) || ms < 1 || ms > MAX_RECORDING_MS) return c.json({ error: 'X-Duration-Ms must be 1 to 60000' }, 400);
+  // The boundary, before the body is read or anything is metered: what he dictates belongs to the open conversation (its thread's project
+  // wins, as in chat), else to the project the screen is in (X-Project-Id), else it is personal. Offline only or trashed never reaches ElevenLabs.
+  const threadId = c.req.header('x-thread-id'), projectHeader = c.req.header('x-project-id');
+  let projectId = projectHeader || null;
+  if (threadId) {
+    const t = await env.DB.prepare('SELECT project_id FROM ai_threads WHERE id = ?1 AND deleted_at IS NULL').bind(threadId).first<{ project_id: string | null }>();
+    if (!t) return c.json({ error: 'Not found' }, 404);
+    projectId = t.project_id;
+  }
+  const access = await projectAccess(env, projectId);
+  if (!access) return c.json({ error: 'Not found' }, 404);
+  if (access.boundary === 'offline') return c.json({ error: 'offline_boundary', message: 'This project is Offline only: nothing you say is sent to ElevenLabs.' }, 409);
   if (!voiceKey(env)) return c.json(VOICE_OFF, 409);
   const audio = new Uint8Array(await c.req.arrayBuffer());
   if (!audio.length) return c.json({ error: 'The recording is empty.' }, 400);
   if (audio.length > MAX_RECORDING) return c.json({ error: 'Recordings must be 2 MB or smaller.' }, 413);
   if (sniffAudio(audio) !== type.slice(6)) return c.json({ error: 'That recording is not the audio it says it is.' }, 415);
   try {
-    const cost_micro = sttCostMicro(ms, parseVoicePrices(env.ELEVENLABS_PRICES));
+    // Billed on the longer of the declared length and a floor from the size (128 kbps, above what the recorder asks for), so a wrong header can't under-bill.
+    const cost_micro = sttCostMicro(Math.max(ms, Math.ceil(audio.length / 16)), parseVoicePrices(env.ELEVENLABS_PRICES));
     const record = await meter(env, 'athena_listen', cost_micro);
     const text = await transcribe(env, audio, type);
     await record({ provider: 'elevenlabs', input_tokens: Math.ceil(ms / 1000), output_tokens: 0, cost_micro });

@@ -130,8 +130,8 @@ export async function meter(env: Env, feature: AiFeature, estimateMicro = 0): Pr
   const spent = await monthCost(env, s.tz);
   if (spent >= s.ai_monthly_cap_micro || spent + estimateMicro > s.ai_monthly_cap_micro) throw new AiRefused('cap_reached', "This month's AI budget is used up. Raise it in Settings → AI.");
   const voice = VOICE.includes(feature);
-  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${voice ? 'IN' : 'NOT IN'} ('athena_voice','athena_listen')`)
-    .bind(new Date(Date.now() - 3600_000).toISOString()).first<{ n: number }>();
+  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${voice ? 'IN' : 'NOT IN'} (${VOICE.map((_, i) => `?${i + 2}`).join(',')})`)
+    .bind(new Date(Date.now() - 3600_000).toISOString(), ...VOICE).first<{ n: number }>();
   if ((hour?.n ?? 0) >= HOURLY[voice ? 'voice' : 'model']) {
     throw new AiRefused('rate_limited', voice ? '60 voice clips an hour is the limit. Try again in a few minutes.' : '30 questions an hour is the limit. Try again in a few minutes.');
   }

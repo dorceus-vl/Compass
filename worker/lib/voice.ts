@@ -9,8 +9,9 @@ export const MAX_SPEECH = 2500;
 export const MAX_TRANSCRIPT = 8000;
 const API = 'https://api.elevenlabs.io/v1';
 
-const isRow = (s: string) => /^\s*\|.*\|\s*$/.test(s);
-const isSep = (s: string) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(s);
+// Pipe tables, with or without outer pipes: a header row, a separator row with at least one pipe, then rows that have a pipe.
+const isRow = (s: string) => s.includes('|') && !!s.trim();
+const isSep = (s: string) => s.includes('|') && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(s);
 const inline = (s: string) => s
   .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images keep their alt text
   .replace(/\[\[[a-z0-9-]+\|([^\]]+)\]\]/g, '$1') // library links keep their label, or their slug as words
