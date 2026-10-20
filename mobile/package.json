@@ -8,9 +8,11 @@
     "sync": "LANG=en_US.UTF-8 cap sync",
     "open": "LANG=en_US.UTF-8 cap sync ios && cap open ios",
     "build:sim": "LANG=en_US.UTF-8 cap sync ios && xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build",
-    "test": "sh test-swift.sh"
+    "test": "sh test-swift.sh && sh test-java.sh",
+    "build:android": "LANG=en_US.UTF-8 cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.3",
     "@capacitor/core": "8.5.3",
     "@capacitor/ios": "8.5.3"
   },

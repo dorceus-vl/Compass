@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- assets/brand/DESIGN.md: the ground (bg) and the accent (Compass Ivory) -->
+    <color name="compass_ground">#050507</color>
+    <color name="compass_accent">#EDE3C9</color>
+</resources>

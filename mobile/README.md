@@ -1,7 +1,8 @@
-# Compass on iPhone and iPad (Capacitor 8)
+# Compass on iPhone, iPad and Android (Capacitor 8)
 
 A shell around https://compass.knocturnlabs.com: nothing of the app is bundled except `www/offline.html`. The native side
-(`ios/App/App/`) adds what the page can't do itself; `web/src/native.ts` is its caller.
+(`ios/App/App/`, `android/app/src/main/java/com/knocturnlabs/compass/`) adds what the page can't do itself; `web/src/native.ts` is
+its caller. Both platforms follow the same rules.
 
 | File | What |
 |---|---|
@@ -19,15 +20,37 @@ with a Debug build, and distribute with Archive, not a Release build run from Xc
 Shared text (Task 4's Share Extension): write the text to `UserDefaults(suiteName: "group.com.knocturnlabs.compass")` under the key
 `sharedText`. The app reads and clears it when it comes to the front and sends it to the page once.
 
+## Android
+
+| File | What |
+|---|---|
+| `CompassNativePlugin.java` | plugin `CompassNative`: `signIn` (Knocturn ID in a Custom Tab, back at `compass://auth`; coming back without an answer is `cancelled`), `registerPush` (FCM token, asks for notifications on Android 13+; `{ unsupported: true }` without `google-services.json`), `takeSharedText` (always `null`: a share goes out at once as `sharedText`), `openExternal`; events `sharedText`, `notificationTap`; decides every top-level navigation (links, redirects, `window.open`) |
+| `CompassLink.java` | the same rules as `CompassLink.swift`, plus the share text (a browser's title, then its URL) and safe download names; `npm test` checks it with `javac` alone |
+| `CompassDownloads.java` | downloads: Compass's Blob downloads (reports, exports) and Compass-host attachments go to the native side in 512 KB parts and the system's Save dialog asks where; other hosts never download |
+| `CompassMessaging.java` | FCM in front: shows the message like Android does in the background, so a tap opens its `url` the same way |
+| `MainActivity.java` | registers the plugin, WebAuthn in the web view for the app (passkey step-up), and never handles an intent twice (restore, Recents) |
+| `AndroidManifest.xml` | `compass://auth`, App Links for `https://compass.knocturnlabs.com` (`autoVerify`), share `text/plain`, the FCM service |
+
+Push: put the Firebase project's `google-services.json` in `android/app/` (never in git); the build applies Firebase only when it is
+there. Notification taps arrive as the `url` extra (Firebase in the background, `CompassMessaging` in front) and wait until the page
+listens, so a tap that starts the app still opens its page. A new FCM token reaches Compass when the app next starts (it registers again
+silently once push is on).
+
 ## Commands (in `mobile/`)
 
 ```bash
 npm install
 npm run build:sim        # cap sync + unsigned simulator build (CODE_SIGNING_ALLOWED=NO) into build/
-npm test                 # CompassLink's rules, checked with swiftc alone
+npm test                 # CompassLink's rules, checked with swiftc and javac alone
+npm run build:android    # cap sync android + ./gradlew assembleDebug (Java 21, ANDROID_HOME=~/Library/Android/sdk)
 COMPASS_URL=http://localhost:5173 npm run build:sim   # point a build at local dev (npm run dev:worker + npm run dev at the root)
 npm run open             # syncs the production URL, then opens Xcode, for signing and installing on a device
 ```
+
+Android against local dev: `adb reverse tcp:5173 tcp:5173`, then `COMPASS_URL=http://localhost:5173 npm run build:android` and
+`adb install -r android/app/build/outputs/apk/debug/app-debug.apk` (localhost, not 10.0.2.2: only localhost is a secure context, which
+sign-in's PKCE and the dev sign-in need). Cleartext is allowed only in such a build. Rebuild without `COMPASS_URL` before installing it
+anywhere else.
 
 Install on a simulator: `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/App.app`, then
 `xcrun simctl launch booted com.knocturnlabs.compass`. Rebuild without `COMPASS_URL` (or `npm run open`, which syncs first) before anything that is not a local test: the generated

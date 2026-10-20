@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the badge's own black, so the adaptive icon's edge never shows -->
+    <color name="ic_launcher_background">#000000</color>
+</resources>
