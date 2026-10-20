@@ -423,6 +423,35 @@ kc $CF $CT | grep -q '"unavailable":true' || fail "cached calendar served after 
 [ "$(code "$B/api/kelly/calendar?from=$CT&to=$CF")" = 400 ] || fail "calendar validation skipped while off"
 kput '{"enabled":false}' >/dev/null; kb 2026-10-21 | grep -q '"unavailable":true' || fail "brief answered after Kelly was switched off"
 kb $BD | grep -q '"unavailable":true' || fail "cached brief served after Kelly was switched off"
+# Document hand-off (Task 4): "also let Kelly search it" reaches the stub only for a personal document of no project or a live cloud project, and only when the import held.
+kd() { curl -s localhost:8791/docs | js "d.docs.$1"; }
+kimp() { curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/library/import -d "{\"document_id\":\"$1\"$2}"; }
+kdoc() { up "@scripts/fixtures/hello.pdf;type=application/pdf" "${@:2}" | head -1 | js d.document.id; }
+KPR=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke kelly personal","kind":"personal"}' | js d.project.id)
+KWK=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke kelly work","kind":"work"}' | js d.project.id)
+KOF=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke kelly offline","kind":"personal"}' | js d.project.id)
+curl "${H[@]}" -X PATCH $B/api/projects/$KOF -d '{"data_boundary":"offline"}' >/dev/null
+K0=$(kd length)
+KD1=$(kdoc x -F "project_id=$KPR"); KD2=$(kdoc x); KD3=$(kdoc x -F "project_id=$KWK"); KD4=$(kdoc x -F "project_id=$KOF"); KD5=$(kdoc x -F "project_id=$KPR"); KD6=$(kdoc x -F "project_id=$KPR")
+R1=$(kimp $KD1 ''); [ "$(printf '%s' "$R1" | tail -1)" = 201 ] && ! printf '%s' "$R1" | head -1 | grep -q '"kelly"' || fail "import without also_kelly: $R1"
+[ "$(kd length)" = "$K0" ] || fail "a plain import reached Kelly"
+R2=$(kimp $KD1 ',"also_kelly":true'); [ "$(printf '%s' "$R2" | tail -1)" = 201 ] && [ "$(printf '%s' "$R2" | head -1 | js d.kelly)" = sent ] || fail "personal import with also_kelly: $R2"
+[ "$(kd length)" = $((K0 + 1))  ] && [ "$(kd 'at(-1).name')" = hello.pdf ] && [ "$(kd 'at(-1).head')" = %PDF ] && [ "$(kd 'at(-1).size')" -gt 100 ] || fail "the stub did not get the file"
+R3=$(kimp $KD2 ',"also_kelly":true'); [ "$(printf '%s' "$R3" | head -1 | js d.kelly)" = sent ] && [ "$(kd length)" = $((K0 + 2)) ] || fail "unfiled personal document not handed over: $R3"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='you' AND action='kelly.document' AND target='$KD1' AND detail='{\"ok\":true}'" | js 'd[0].results[0].n')" = 1 ] || fail "kelly.document not audited once with no content"
+[ "$(kimp $KD3 ',"also_kelly":true' | tail -1)" = 403 ] && [ "$(kd length)" = $((K0 + 2)) ] || fail "work document reached Kelly (or import not refused)"
+[ "$(kimp $KD4 ',"also_kelly":true' | tail -1)" = 409 ] && [ "$(kd length)" = $((K0 + 2)) ] || fail "offline-project document reached Kelly (or import not refused)"
+[ "$(kimp $KD1 ',"also_kelly":"yes"' | tail -1)" = 400 ] || fail "also_kelly accepted a string"
+curl "${H[@]}" -X DELETE $B/api/documents/$KD5 >/dev/null
+[ "$(kimp $KD5 ',"also_kelly":true' | tail -1)" = 404 ] && [ "$(kd length)" = $((K0 + 2)) ] || fail "trashed document reached Kelly"
+curl "${H[@]}" -X PATCH $B/api/documents/$KD6 -d '{"name":"kelly-refuse.pdf"}' >/dev/null
+R6=$(kimp $KD6 ',"also_kelly":true'); [ "$(printf '%s' "$R6" | tail -1)" = 201 ] && [ "$(printf '%s' "$R6" | head -1 | js d.kelly)" = failed ] && printf '%s' "$R6" | head -1 | grep -q '"page"' || fail "a refusing relay failed the import: $R6"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action='kelly.document' AND target='$KD6' AND detail='{\"ok\":false}'" | js 'd[0].results[0].n')" = 1 ] || fail "failed hand-off not audited"
+for x in $KD1 $KD2 $KD3 $KD4 $KD6; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done
+for x in $(curl "${H[@]}" $B/api/library/imports | js "d.pages.filter(p=>p.title.startsWith('hello')||p.title.startsWith('kelly-refuse')).map(p=>p.slug).join(' ')"); do curl "${H[@]}" -X DELETE $B/api/library/$x >/dev/null; done
+for x in $KPR $KWK $KOF; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+D1X "DELETE FROM audit_log WHERE action='kelly.document'" >/dev/null
+echo "smoke: (z2) kelly document hand-off: personal and unfiled reach the stub; plain, work, offline, trashed never; a refusing relay leaves the import done"
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
 echo "smoke: (z) kelly: PUT validated + audited, brief and calendar gated (off / no scope), via the relay, capped, cached, log shows tasks while they exist"
 kset '{"enabled":false,"scopes":[]}'; D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null

@@ -29,8 +29,9 @@ export function useDocs(project: string | null) {
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const KIND: Record<string, string> = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', md: 'Markdown', txt: 'Text' };
 
-function Row({ d, project, off, reload }: { d: DocumentRow; project: Project | null; off: boolean; reload: () => Promise<void> }) {
+function Row({ d, project, off, relay, reload }: { d: DocumentRow; project: Project | null; off: boolean; relay: boolean; reload: () => Promise<void> }) {
   const [rev, setRev] = useState(0);
+  const [kelly, setKelly] = useState(false);
   const [busy, setBusy] = useState(false);
   const act = async (fn: () => Promise<unknown>, done?: string) => {
     if (busy) return false;
@@ -60,7 +61,13 @@ function Row({ d, project, off, reload }: { d: DocumentRow; project: Project | n
           ? <small className="sub">Work documents stay out of the library</small>
           : project?.data_boundary === 'offline'
           ? <small className="sub">This project is Offline only, so its files stay out of the library.</small>
-          : <button type="button" className="btn" disabled={off || busy} onClick={() => void act(() => api('/library/import', { method: 'POST', json: { document_id: d.id } }), 'Added to the library')}>Add to library</button>)}
+          : <>
+            <button type="button" className="btn" disabled={off || busy} onClick={() => void act(async () => {
+              const r = await api<{ kelly?: 'sent' | 'failed' }>('/library/import', { method: 'POST', json: { document_id: d.id, ...(kelly ? { also_kelly: true } : {}) } });
+              toast(r.kelly === 'failed' ? "Added to the library. Kelly couldn't take it." : r.kelly === 'sent' ? 'Added to the library and shared with Kelly' : 'Added to the library');
+            })}>Add to library</button>
+            {relay && <label className="tap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}><input type="checkbox" checked={kelly} disabled={off || busy} onChange={(e) => setKelly(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />Also let Kelly search it</label>}
+          </>)}
         <button type="button" className="btn" style={{ color: 'var(--danger)', marginLeft: 'auto' }} disabled={off || busy}
           onClick={async () => { if (await confirmAction(`Move "${d.name}" to Trash?`, { danger: true })) await act(() => api(`/documents/${d.id}`, { method: 'DELETE' }), 'Moved to Trash'); }}>Trash</button>
       </div>
@@ -79,6 +86,8 @@ export function Documents({ project }: { project: Project | null }) {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const off = offline || !online();
+  const [relay, setRelay] = useState(false); // Kelly's relay is set up (Settings → Kelly): only then is a document offered to her
+  useEffect(() => { api<{ relay?: boolean }>('/kelly').then((k) => setRelay(k.relay === true)).catch(() => {}); }, []);
   const limit = project?.kind === 'work' ? 10 : 20;
   const upload = async (files: FileList | File[] | null | undefined) => {
     const list = files ? [...files] : [];
@@ -112,7 +121,7 @@ export function Documents({ project }: { project: Project | null }) {
       <div className="sr-only" role="status" aria-live="polite">{error || status}</div>
       {status && !error && <div className="sub" aria-hidden="true">{status}</div>}
       {error && <div className="sub" aria-hidden="true" style={{ color: 'var(--danger)' }}>{error}</div>}
-      {docs.map((d) => <Row key={d.id} d={d} project={project} off={off} reload={reload} />)}
+      {docs.map((d) => <Row key={d.id} d={d} project={project} off={off} relay={relay} reload={reload} />)}
       {!docs.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>No documents yet.</p>}
     </div>
   );

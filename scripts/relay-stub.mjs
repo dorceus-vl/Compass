@@ -1,13 +1,26 @@
 // A stand-in for Kelly-Cloud's Compass relay, for scripts/smoke.sh (and screenshots): node scripts/relay-stub.mjs <secret> [port]
 // GET /api/compass-relay/brief?date= with X-Relay-Secret -> { text, generated_at }. 2000-01-02 answers long HTML-ish text, 2000-01-03 a 500. GET /hits counts authorised brief calls.
+// POST /api/compass-relay/documents (raw bytes, X-File-Name URI-encoded) -> { id }; a name starting "kelly-refuse" answers 500. GET /docs lists what arrived: { docs: [{ name, size, head }] }.
 // GET /api/compass-relay/calendar?from=&to= -> { events }: one event on `from`, one all-day on `to`, junk the Worker must drop. from 2000-01-03 -> 500, 2000-01-02 -> 600 events. GET /cal-hits counts them.
 import { createServer } from 'node:http';
 const [secret, port = '8791'] = process.argv.slice(2);
 if (!secret) { console.error('usage: relay-stub.mjs <secret> [port]'); process.exit(1); }
 let hits = 0, calHits = 0;
+const docs = [];
 createServer((req, res) => {
   const u = new URL(req.url, 'http://x'), send = (code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   if (u.pathname === '/hits') return send(200, { hits });
+  if (u.pathname === '/docs') return send(200, { docs });
+  if (u.pathname === '/api/compass-relay/documents' && req.method === 'POST') {
+    if (req.headers['x-relay-secret'] !== secret) return send(401, { error: 'bad secret' });
+    const chunks = [];
+    return req.on('data', (c) => chunks.push(c)).on('end', () => {
+      const body = Buffer.concat(chunks), name = decodeURIComponent(String(req.headers['x-file-name'] ?? ''));
+      docs.push({ name, size: body.length, head: body.subarray(0, 4).toString('latin1') });
+      if (name.startsWith('kelly-refuse')) return send(500, { error: 'boom' });
+      send(201, { id: `stub-${docs.length}` });
+    });
+  }
   if (u.pathname === '/cal-hits') return send(200, { hits: calHits });
   if (u.pathname === '/api/compass-relay/calendar') {
     if (req.headers['x-relay-secret'] !== secret) return send(401, { error: 'bad secret' });

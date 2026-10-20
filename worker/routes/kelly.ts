@@ -49,9 +49,21 @@ kelly.get('/log', async (c) => {
 });
 
 type Gate = { relay: string; secret: string } | null;
+/** The relay when both its URL and secret are set. */
+export const relayOf = (env: Env): Gate => (env.KELLY_RELAY_URL && env.KELLY_RELAY_SECRET ? { relay: env.KELLY_RELAY_URL.replace(/\/$/, ''), secret: env.KELLY_RELAY_SECRET } : null);
 /** Kelly on, compass:read.tasks granted, and a relay configured; checked before any cache read or relay call so turning her off ends it at once. */
-function gate(env: Env, s: Settings): Gate {
-  return allowed(s.kelly, 'compass:read.tasks') && env.KELLY_RELAY_URL && env.KELLY_RELAY_SECRET ? { relay: env.KELLY_RELAY_URL.replace(/\/$/, ''), secret: env.KELLY_RELAY_SECRET } : null;
+function gate(env: Env, s: Settings): Gate { return allowed(s.kelly, 'compass:read.tasks') ? relayOf(env) : null; }
+/** Every call to the relay: its secret, a 3xx is never followed, a timeout (5 s unless the call needs longer). */
+export const relayFetch = (g: NonNullable<Gate>, path: string, init: RequestInit & { headers?: Record<string, string> } = {}, ms = 5000) =>
+  fetch(`${g.relay}${path}`, { ...init, headers: { ...init.headers, 'X-Relay-Secret': g.secret }, redirect: 'manual', signal: AbortSignal.timeout(ms) });
+/** A document Vlad chose to share goes to Kelly's own search (relay POST /documents); true only when she answers with its id. The caller has already checked the document may leave Compass. Nothing is logged but the failure. */
+export async function sendDocument(env: Env, name: string, bytes: Uint8Array): Promise<boolean> {
+  const g = relayOf(env);
+  if (!g) return false;
+  try {
+    const r = await relayFetch(g, '/documents', { method: 'POST', body: bytes, headers: { 'X-File-Name': encodeURIComponent(name), 'Content-Type': 'application/octet-stream' } }, 60_000);
+    return r.ok && typeof ((await r.json().catch(() => null)) as { id?: unknown } | null)?.id === 'string';
+  } catch (e) { console.error('kelly relay document', e); return false; }
 }
 /** One relay GET, cached in the Worker's own cache (not D1) under `name`. `clean` turns the body into what we keep (null = unusable). 3xx counts as unavailable, never followed. */
 async function relayGet<T>(g: NonNullable<Gate>, name: string, path: string, maxAge: number, clean: (body: unknown) => T | null): Promise<T | null> {
@@ -59,7 +71,7 @@ async function relayGet<T>(g: NonNullable<Gate>, name: string, path: string, max
   const hit = await cache.match(key);
   if (hit) return (await hit.json()) as T;
   try {
-    const r = await fetch(`${g.relay}${path}`, { headers: { 'X-Relay-Secret': g.secret }, redirect: 'manual', signal: AbortSignal.timeout(5000) });
+    const r = await relayFetch(g, path);
     const out = r.ok ? clean(await r.json().catch(() => null)) : null;
     if (out) await cache.put(key, new Response(JSON.stringify(out), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${maxAge}` } }));
     return out;

@@ -7,6 +7,7 @@ import { now, audit } from '../lib/db.ts';
 import { docText } from '../lib/extract.ts';
 import { loadDoc, readBytes } from './documents.ts';
 import { projectAccess } from '../lib/project-context.ts';
+import { sendDocument } from './kelly.ts';
 
 const library = new Hono<{ Bindings: Env; Variables: Variables }>();
 const head = ({ slug, section, title, source }: LibraryPage) => ({ slug, section, title, source });
@@ -27,6 +28,7 @@ library.post('/import', async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
   const doc = typeof body.document_id === 'string' ? await loadDoc(c.env, body.document_id) : null;
   if (!doc) return c.json({ error: 'Not found' }, 404);
+  if (body.also_kelly !== undefined && typeof body.also_kelly !== 'boolean') return c.json({ error: 'also_kelly must be true or false' }, 400);
   const access = await projectAccess(c.env, doc.project_id);
   if (doc.enc_v === 2 || access?.kind === 'work') return c.json({ error: 'Work documents stay out of the library.' }, 403);
   if (!access) return c.json({ error: 'Not found' }, 404); // its project is in Trash
@@ -47,7 +49,14 @@ library.post('/import', async (c) => {
     c.env.DB.prepare('UPDATE documents SET text_indexed = 1, updated_at = ?2 WHERE id = ?1').bind(doc.id, t),
   ]);
   await audit(c.env, 'you', 'library.import', doc.id);
-  return c.json({ page: { slug, section: 'Imports', title, source: 'import' } }, 201);
+  // Kelly's own search too (ruling K4): only a personal document of no project or a live cloud one, and only now that the import held. A failure here never fails the import.
+  let kelly: 'sent' | 'failed' | undefined;
+  if (body.also_kelly === true) {
+    const ok = access.kind === 'personal' && access.boundary === 'cloud' && doc.enc_v !== 2 && await sendDocument(c.env, doc.name, bytes);
+    kelly = ok ? 'sent' : 'failed';
+    await audit(c.env, 'you', 'kelly.document', doc.id, { ok });
+  }
+  return c.json({ page: { slug, section: 'Imports', title, source: 'import' }, ...(kelly ? { kelly } : {}) }, 201);
 });
 
 library.delete('/:slug', async (c) => {
