@@ -43,8 +43,8 @@ button.tt{background:none;border:0;padding:0;margin:0;text-align:left;cursor:poi
 .chip{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-faint)}
 .chip.src{color:var(--src);border-color:color-mix(in srgb,var(--src) 40%,transparent)}
 .chip.work{color:var(--accent);border-color:rgba(var(--accent-rgb),.4)}
-.chip.due{color:var(--warn);border-color:rgba(255,122,69,.4)}
-.chip.over{color:var(--danger);border-color:rgba(255,77,94,.4)}
+.chip.due{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.chip.over{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .stat{background:var(--panel);border:1px solid var(--border-soft);border-radius:14px;padding:12px}
 .stat .n{font-size:26px;font-weight:800;letter-spacing:-1px}
@@ -130,8 +130,8 @@ button.cb{cursor:pointer;background:transparent}
 .tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
 .tabs a{flex:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-dim);white-space:nowrap}
 .tabs a[aria-selected="true"]{background:var(--accent);color:var(--on-accent);border-color:transparent}
-.chip.danger{color:var(--danger);border-color:rgba(255,77,94,.4)}
-.chip.warn{color:var(--warn);border-color:rgba(255,122,69,.4)}
+.chip.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent)}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
 .chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
 .chip.on{background:var(--accent);color:var(--on-accent);border-color:transparent}
 button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
@@ -201,7 +201,7 @@ button.chip{background:none;cursor:pointer;font-size:11px;padding:4px 10px}
 .cp-prop{display:grid;gap:8px;background:var(--field);border:1px solid var(--field-border);border-radius:12px;padding:12px}
 .cp-prop-row{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
 .cp-prop-row input{margin-top:3px;flex:none}
-.cp-err{display:flex;gap:12px;align-items:center;justify-content:space-between;border-color:rgba(255,77,94,.4);color:var(--danger)}
+.cp-err{display:flex;gap:12px;align-items:center;justify-content:space-between;border-color:color-mix(in srgb,var(--danger) 40%,transparent);color:var(--danger)}
 .cp-off{display:grid;gap:10px}
 .cp-compose{display:grid;gap:10px}
 .cp-compose textarea{resize:vertical}

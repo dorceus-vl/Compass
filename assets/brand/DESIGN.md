@@ -21,9 +21,10 @@
 | `--accent-dim` | `#C9BB9A` | pressed, quiet accents |
 | `--accent-rgb` | `237,227,201` | for `rgba()` glows and overlays |
 | `--on-accent` | `#1A1608` | text ON an accent fill |
-| `--ok` | `#3DDC84` | success, done |
-| `--warn` | `#FF7A45` | warnings, due soon |
-| `--danger` | `#FF4D5E` | errors, overdue, Empty Trash |
+| `--card` | `#0E0E14` | task and project cards |
+| `--ok` | `#5CC98B` | success, done (softened in Phase 3b) |
+| `--warn` | `#E39A62` | warnings, due soon (softened) |
+| `--danger` | `#E0606C` | errors, overdue, Empty Trash (softened) |
 
 Source-app colours (a task's origin only, never as the accent):
 
@@ -36,6 +37,31 @@ Source-app colours (a task's origin only, never as the accent):
 | `--kelly` | `#D6336F` |
 | `--nightowl` | `#8B5CF6` |
 | `--sonar` | `#3FD8C9` |
+
+## Colour accents (Phase 3b)
+
+A task's accent is its source app's muted colour; a manual task takes its project's colour; a task with neither is `--text-dim`. A project's colour is its `colour` column when set, otherwise one of six swatches picked by a stable hash of its id. Colour stays in small accents (a bar, a dot, an icon tile); ivory leads. The old source tokens above stay for existing screens.
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--src-finance` | `#6FA8E8` | Finance tasks |
+| `--src-health` | `#6DB98F` | Health tasks |
+| `--src-hollow` | `#D9A55A` | Hollow tasks |
+| `--src-meeting` | `#6CC3BA` | SonarFlow meetings |
+| `--src-email` | `#D8CFB6` | forwarded email |
+| `--src-home` | `#A9C76A` | Home and Aura |
+| `--src-kelly` | `#C77A97` | Kelly |
+| `--src-nightowl` | `#9D95C6` | Night Owl |
+| `--swatch-1..6` | `#C9BB9A` `#7DB4AC` `#9D95C6` `#6FA8E8` `#D9A55A` `#6DB98F` | project colours |
+| `--h-short` / `--h-medium` / `--h-long` | `#DDB46E` / `#7DB4AC` / `#9D95C6` | horizons |
+
+The RAG colours (`--ok`, `--warn`, `--danger`) are softened to the values in the table above; the names are unchanged.
+
+## Motion (Phase 3b)
+
+Motion uses `transform` and `opacity` only. Tokens: `--ease-out: cubic-bezier(.2,.8,.2,1)`, `--ease-spring: cubic-bezier(.3,1.45,.4,1)` (overshoot, for needles and toggles), `--dur-quick: .25s`, `--dur-move: .9s`. Needles use a damped spring (stiffness 0.08, damping 0.78); the lens effect scales a card and fades it by its distance from the viewport middle (factor `1 - 2.4 × offset`). All scroll-linked effects share one `requestAnimationFrame` loop with passive listeners.
+
+`prefers-reduced-motion: reduce` turns every transform and animation off and each screen is complete at rest. Page changes use the View Transitions API when present (a short cross-fade and slide) and switch instantly elsewhere. Swipes (right to complete, Inbox right to keep and left to dismiss) always keep their button equivalents.
 
 **Near-black on the accent.** Light ivory needs dark text, so buttons use `--on-accent`.
 
