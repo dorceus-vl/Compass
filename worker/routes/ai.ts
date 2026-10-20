@@ -7,6 +7,7 @@ import { isEmpty, splitAnswer } from '../../shared/ai-meta.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
+import { shared as sharedItem } from '../lib/agent.ts';
 import { runAi, aiUsage, AiRefused, type AiTurn } from '../lib/ai.ts';
 import { buildSystem, fence, trimHistory } from '../lib/prompt.ts';
 import { retrieve, modelPage } from '../lib/library.ts';
@@ -172,7 +173,7 @@ ai.post('/brief', async (c) => {
       env.DB.prepare('SELECT * FROM projects WHERE deleted_at IS NULL'),
     ]);
     const projects = new Map((ps.results as unknown as Project[]).map((p) => [p.id, p]));
-    const shared = (projectId: string | null, kind: string) => (projectId ? projects.get(projectId)?.data_boundary === 'cloud' : kind === 'personal');
+    const shared = (projectId: string | null, kind: Task['kind']) => sharedItem({ project_id: projectId, kind }, projectId ? projects.get(projectId) ?? null : null);
     let offline = 0, noProject = 0;
     const withheld = (projectId: string | null) => { if (projectId) offline++; else noProject++; };
     const pname = async (id: string | null) => (id ? ` [${(await open(env, 'projects', { ...projects.get(id)! })).name}]` : '');

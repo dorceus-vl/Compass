@@ -12,6 +12,7 @@ settings.get('/', async (c) => c.json(await getSettings(c.env)));
 
 settings.patch('/', async (c) => {
   const body = await c.req.json<Partial<Settings>>().catch(() => ({}) as Partial<Settings>);
+  if (body && typeof body === 'object' && 'kelly' in body) return c.json({ error: 'use_kelly_route' }, 400); // Kelly's grants change only through the passkey-guarded route
   const patch: Partial<Settings> = {};
   const hour = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 23;
   if (hour(body.day_start_hour)) patch.day_start_hour = body.day_start_hour!;

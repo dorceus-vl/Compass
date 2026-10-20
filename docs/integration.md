@@ -69,3 +69,25 @@ curl -s -X POST https://compass.knocturnlabs.com/api/inbox \
   -d '{"app":"finance","kind":"notification","title":"Netflix went up","body":"$16.49 to $18.99","url":"https://finance.knocturnlabs.com/subscriptions.html#watch-netflix","ref":"kelly:finance:https://finance.knocturnlabs.com/subscriptions.html#watch-netflix","suggest":"review_budget"}'
 # {"id":"...","state":"added","task_id":"..."}
 ```
+
+## Agent API (Kelly)
+
+Kelly reads and adds to Compass through `/api/agent/*`, a separate door from the inbox. It is off until Vlad switches it on (Settings JSON `kelly`: `{ enabled, scopes }`; both off by default, changed only through the passkey-guarded Kelly route, never `PATCH /api/settings`, which answers 400 `use_kelly_route`).
+
+Auth: `Authorization: Bearer <AGENT_SECRET_KELLY>` (a Worker secret; local value in `.dev.vars`), compared in constant time; unset never matches. No cookie. A bad or missing secret is a plain 401: no audit row, not counted against the limits.
+
+Scopes (all off by default; there is no delete scope, and Kelly never edits titles, trashes or reopens):
+
+| Scope | Routes |
+|---|---|
+| `compass:read.tasks` | `GET /today`, `GET /tasks?view=today\|overdue\|upcoming\|waiting&limit=` (limit 1 to 50, default 20) |
+| `compass:write.tasks` | `POST /tasks` `{ title (1-120), due_at?: YYYY-MM-DD, horizon?: short\|medium\|long, project_id?, notes? (2000) }` -> 201 `{ task }`; `POST /tasks/:id/done` -> `{ task }` |
+| `compass:read.projects` | `GET /projects` -> `{ projects: [{ id, name, rag, rag_reason, pct_done, next_milestone, open_risks }] }` |
+
+`AgentTask` is `{ id, title, due_at, horizon, status, project, priority }` (decrypted). `/today` returns `{ date, due_today, overdue, waiting, next_milestones: [{ name, project, due_at }], hidden }`; `/tasks` returns `{ date, view, tasks, hidden }`.
+
+Only shared items are visible: a task with no project if it is personal; otherwise only a task or project whose project is live (not in Trash) with the `cloud` data boundary. Everything else answers 404 as if missing (create with such a `project_id`, done on such a task, or on a task that is already done) and shows up only as the number `hidden`. A task made in a work-and-cloud project is sealed like any work row. Kelly's tasks have `source_app` `kelly`; their events have actor `kelly`.
+
+Refusals: `401` bad secret; `403 { error: 'kelly_disabled' }`; `403 { error: 'scope_not_granted', scope }`; `400 { error }` bad body; `404`; `429 { error: 'rate_limited' }` (more than 60 calls in 60 seconds) or `{ error: 'write_limit' }` (more than 30 creates and dones in an hour).
+
+Audit: every authenticated call writes one `audit_log` row: actor `kelly`, action `agent.today`, `agent.tasks.list`, `agent.tasks.create`, `agent.tasks.done` or `agent.projects`, target the task id when there is one, detail `{ "ok": true }` or `{ "refused": "kelly_disabled" | "scope_not_granted" | "not_found" | "rate_limited" | "write_limit" | "invalid" }`. Never task text.

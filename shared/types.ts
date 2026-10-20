@@ -33,12 +33,16 @@ export interface Settings {
   wip_limits: Record<Status, number | null>; saved_views: { name: string; query: string }[]; tz: string;
   push: Record<PushType, boolean>; work_email_domains: string[]; last_review_at: string | null;
   ai_monthly_cap_micro: number; default_provider: Provider;
+  /** What Kelly's agent API may do (changed only through PUT /api/kelly, never PATCH /api/settings). Off by default. */
+  kelly: { enabled: boolean; scopes: AgentScope[] };
 }
+export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass:read.projects';
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
   wip_limits: { new: null, progress: 5, hold: null, waiting: null, done: null }, saved_views: [], tz: 'America/Toronto',
   push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true },
   work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
+  kelly: { enabled: false, scopes: [] },
 };
 export interface TodayAnswer {
   date: string; short: Task[]; medium: Task[]; long: Task[]; overdue: Task[]; done_this_week: number; open_today: number;

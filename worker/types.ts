@@ -15,6 +15,8 @@ export interface Env {
   INBOX_SECRET_KELLY?: string;
   INBOX_SECRET_ID?: string;
   INBOX_SECRET_HOLLOW?: string;
+  /** Bearer secret for the agent API (/api/agent/*, Kelly), compared in constant time. Unset = the API answers 401 to everyone. */
+  AGENT_SECRET_KELLY?: string;
   /** Web Push VAPID keys, base64url (node scripts/gen-vapid.mjs), and the contact subject (mailto:). */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;

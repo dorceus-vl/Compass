@@ -303,5 +303,62 @@ for f in apple-app-site-association assetlinks.json; do
   curl -s $B/.well-known/$f | grep -q 'com.knocturnlabs.compass' || fail "/.well-known/$f does not name the app"
 done
 echo "smoke: (x) /.well-known trust files served as JSON"
+# (y) Phase 5 agent API (Kelly): bearer secret, off by default, scopes, shared-only, audited, limits. Local D1 only.
+AG=$(dv AGENT_SECRET_KELLY); [ -n "$AG" ] || fail "AGENT_SECRET_KELLY missing in .dev.vars"
+ag() { curl -s -w '\n%{http_code}' -X "$1" "$B/api/agent$2" -H "Authorization: Bearer $AG" -H 'Content-Type: application/json' -d "${3:-}"; } # body, then the status on the last line
+agc() { ag "$@" | tail -1; }
+agb() { ag "$@" | sed '$d'; }
+arows() { D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" | js 'd[0].results[0].n'; }
+kset() { D1X "INSERT INTO settings (id,json,updated_at) VALUES (1, json_object('kelly', json('$1')), '$TS') ON CONFLICT(id) DO UPDATE SET json = json_set(json,'\$.kelly',json('$1'))" >/dev/null; }
+D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null # repeated runs must not hit the 30-writes-an-hour cap
+kset '{"enabled":false,"scopes":[]}'
+TODAY=$(curl "${H[@]}" $B/api/settings | js d.tz | node -pe "new Intl.DateTimeFormat('en-CA',{timeZone:require('fs').readFileSync(0,'utf8').trim()}).format(new Date())")
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/settings -d '{"kelly":{"enabled":true,"scopes":[]}}')" = 400 ] || fail "PATCH /api/settings accepted kelly"
+[ "$(curl -s -o /dev/null -w '%{http_code}' $B/api/agent/today)" = 401 ] || fail "agent without a secret not 401"
+A0=$(arows); [ "$(curl -s -o /dev/null -w '%{http_code}' $B/api/agent/today -H 'Authorization: Bearer wrong-secret')" = 401 ] || fail "agent wrong secret not 401"
+[ "$(arows)" = "$A0" ] || fail "a bad secret wrote an audit row"
+[ "$(agc GET /today)" = 403 ] && agb GET /today | grep -q kelly_disabled || fail "agent switched off is not 403 kelly_disabled"
+AP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke agent offline","kind":"work"}' | js d.project.id)
+AC=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke agent cloud","kind":"work"}' | js d.project.id)
+curl "${H[@]}" -X PATCH $B/api/projects/$AC -d '{"data_boundary":"cloud"}' | grep -q '"data_boundary":"cloud"' || fail "agent cloud project"
+PT=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke agent personal $R\",\"due_at\":\"$TODAY\"}" | js d.task.id)
+OT=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke agent hidden $R\",\"project_id\":\"$AP\",\"due_at\":\"$TODAY\"}" | js d.task.id)
+CT=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke agent work cloud $R\",\"project_id\":\"$AC\",\"due_at\":\"$TODAY\"}" | js d.task.id)
+kset '{"enabled":true,"scopes":["compass:read.tasks"]}'
+TD=$(agb GET /today)
+echo "$TD" | grep -q "Smoke agent personal $R" || fail "agent today misses the personal task"
+echo "$TD" | grep -q "Smoke agent work cloud $R" || fail "agent today misses the work-and-cloud task"
+echo "$TD" | grep -q "Smoke agent hidden $R" && fail "agent today shows a work-offline task"
+[ "$(echo "$TD" | js 'd.hidden>=1')" = true ] || fail "agent hidden does not count the offline task"
+[ "$(agc GET "/tasks?view=today&limit=5")" = 200 ] || fail "agent tasks list"
+[ "$(agc POST /tasks '{"title":"x"}')" = 403 ] && agb POST /tasks '{"title":"x"}' | grep -q scope_not_granted || fail "agent write without scope is not 403 scope_not_granted"
+[ "$(agc GET /projects)" = 403 ] || fail "agent projects without scope not 403"
+kset '{"enabled":true,"scopes":["compass:read.tasks","compass:write.tasks","compass:read.projects"]}'
+[ "$(agb GET /projects | js "d.projects.some(p=>p.id==='$AC')&&!d.projects.some(p=>p.id==='$AP')")" = true ] || fail "agent projects: cloud in, offline out"
+NEW=$(agb POST /tasks "{\"title\":\"Smoke agent made $R\",\"due_at\":\"$TODAY\"}"); NID=$(echo "$NEW" | js d.task.id)
+[ -n "$NID" ] && [ "$NID" != undefined ] || fail "agent create"
+[ "$(task $NID source_app)" = kelly ] || fail "agent task source_app is not kelly"
+[ "$(D1X "SELECT actor AS a FROM task_events WHERE task_id='$NID' AND type='created'" | js 'd[0].results[0].a')" = kelly ] || fail "agent created event actor is not kelly"
+IN="{\"title\":\"Smoke agent in work $R\",\"project_id\":\"$AC\"}"; [ "$(agc POST /tasks "$IN")" = 201 ] || fail "agent create in a cloud project"
+[ "$(D1X "SELECT count(*) AS n FROM tasks WHERE title LIKE 'Smoke agent in work%'" | js 'd[0].results[0].n')" = 0 ] || fail "agent task in a work project is stored in plain"
+OFF="{\"title\":\"x\",\"project_id\":\"$AP\"}"; [ "$(agc POST /tasks "$OFF")" = 404 ] || fail "agent create in an offline project not 404"
+[ "$(agc POST /tasks '{"title":""}')" = 400 ] || fail "agent create with no title not 400"
+[ "$(agc POST /tasks/$NID/done)" = 200 ] || fail "agent done"
+[ "$(task $NID status)" = done ] || fail "agent done did not finish the task"
+[ "$(D1X "SELECT actor AS a FROM task_events WHERE task_id='$NID' AND type='done'" | js 'd[0].results[0].a')" = kelly ] || fail "agent done event actor is not kelly"
+[ "$(agc POST /tasks/$OT/done)" = 404 ] || fail "agent done on a hidden task not 404"
+[ "$(task $OT status)" = new ] || fail "agent finished a hidden task"
+[ "$(agc POST /tasks/$NID/done)" = 404 ] || fail "agent done on a finished task not 404"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND action='agent.tasks.done' AND detail LIKE '%not_found%' AND target='$OT'" | js 'd[0].results[0].n')" = 1 ] || fail "hidden done not audited as not_found"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND detail LIKE '%Smoke agent%'" | js 'd[0].results[0].n')" = 0 ] || fail "task text reached the audit log"
+A1=$(arows); agc GET /today >/dev/null; [ "$(arows)" = $((A1 + 1)) ] || fail "agent call did not write exactly one audit row"
+# 2 creates and 1 done are in: 27 more writes make 30, the 31st is refused.
+for i in $(seq 27); do BULK="{\"title\":\"Smoke agent bulk $i $R\"}"; [ "$(agc POST /tasks "$BULK")" = 201 ] || fail "agent write $i refused early"; done
+[ "$(agc POST /tasks '{"title":"one too many"}')" = 429 ] && agb POST /tasks '{"title":"one too many"}' | grep -q write_limit || fail "31st agent write is not 429 write_limit"
+echo "smoke: (y) agent API: 401 w/o audit, off by default, scopes, shared-only (hidden counted), kelly actor, 30 writes then 429"
+kset '{"enabled":false,"scopes":[]}'
+D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
+for x in $(curl "${H[@]}" "$B/api/tasks?status=all" | js "d.tasks.filter(t=>t.title.startsWith('Smoke agent')).map(t=>t.id).join(' ')"); do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+curl "${H[@]}" -X DELETE $B/api/projects/$AP >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$AC >/dev/null
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

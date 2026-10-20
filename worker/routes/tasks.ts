@@ -88,11 +88,11 @@ async function resolveKind(env: Env, projectId: string | null, given: unknown): 
  * The one way a task becomes done: marks it done, writes the 'done' event and, for a recurring task, creates
  * the next occurrence (counted from the user's local date). `task` is the already-edited task; `fields` are its extra changed columns.
  */
-async function completeTask(env: Env, task: Task, fields: string[] = []): Promise<{ task: Task; next?: Task }> {
+export async function completeTask(env: Env, task: Task, fields: string[] = [], actor: TaskEvent['actor'] = 'you'): Promise<{ task: Task; next?: Task }> {
   const t = now();
   const done: Task = { ...task, status: 'done', done_at: t, updated_at: t };
   await updateTask(env, done, ['status', 'done_at', ...fields]);
-  await addEvent(env, done, 'you', 'done');
+  await addEvent(env, done, actor, 'done');
   const rule = parseRecur(done.recur);
   if (!rule) return { task: done };
   const today = localDate((await getSettings(env)).tz);
@@ -100,7 +100,7 @@ async function completeTask(env: Env, task: Task, fields: string[] = []): Promis
   if (!due) return { task: done };
   const next: Task = { ...done, id: crypto.randomUUID(), status: 'new', due_at: due, done_at: null, created_at: t, updated_at: t, sort_in_column: 0, source_ref: null };
   await insertTask(env, next);
-  await addEvent(env, next, 'you', 'created', { recurred_from: done.id });
+  await addEvent(env, next, actor, 'created', { recurred_from: done.id });
   return { task: done, next };
 }
 

@@ -118,8 +118,9 @@ projects.post('/:id/milestones', async (c) => {
 export const portfolio = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 type PortfolioRaw = Project & { open_tasks: number; done_tasks: number; ms_name: string | null; ms_due: string | null; ms_enc: number | null; open_risks: number; high_risks: number; pending_changes: number };
-portfolio.get('/', async (c) => {
-  const { results } = await c.env.DB.prepare(
+/** Active and on-hold projects with their counts, decrypted. Also read by the agent API (which keeps only shared ones). */
+export async function portfolioRows(env: Env): Promise<PortfolioRow[]> {
+  const { results } = await env.DB.prepare(
     `SELECT p.*,
        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done' AND t.deleted_at IS NULL) AS open_tasks,
        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done' AND t.deleted_at IS NULL) AS done_tasks,
@@ -131,14 +132,14 @@ portfolio.get('/', async (c) => {
        (SELECT COUNT(*) FROM change_requests q WHERE q.project_id = p.id AND q.decision = 'pending' AND q.deleted_at IS NULL) AS pending_changes
      FROM projects p WHERE p.status IN ('active', 'on_hold') AND p.deleted_at IS NULL ORDER BY p.sort, p.created_at`,
   ).all<PortfolioRaw>();
-  const rows: PortfolioRow[] = await Promise.all(results.map(async ({ ms_name, ms_due, ms_enc, ...raw }) => {
-    const p = await open(c.env, 'projects', raw);
+  return Promise.all(results.map(async ({ ms_name, ms_due, ms_enc, ...raw }) => {
+    const p = await open(env, 'projects', raw);
     const total = p.done_tasks + p.open_tasks;
-    const name = ms_due && ms_name ? (await open(c.env, 'milestones', { name: ms_name, enc_v: ms_enc ?? 0 })).name : null;
+    const name = ms_due && ms_name ? (await open(env, 'milestones', { name: ms_name, enc_v: ms_enc ?? 0 })).name : null;
     return { ...p, pct_done: total ? Math.round((100 * p.done_tasks) / total) : 0, next_milestone: name && ms_due ? { name, due_at: ms_due } : null };
   }));
-  return c.json({ projects: rows });
-});
+}
+portfolio.get('/', async (c) => c.json({ projects: await portfolioRows(c.env) }));
 
 export const milestones = new Hono<{ Bindings: Env; Variables: Variables }>();
 
