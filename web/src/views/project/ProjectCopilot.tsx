@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Project } from '../../../../shared/types.ts';
-import { Workspace, SpendChip, useUsage } from '../Copilot.tsx';
+import { Workspace, SpendChip, useUsage } from '../Athena.tsx';
 
 export function ProjectCopilot({ project }: { project: Project }) {
   const { usage, refresh } = useUsage();

@@ -28,6 +28,11 @@ const ICONS: Record<string, ReactNode> = {
   lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>,
   chevron: <path d="m9.5 6 6 6-6 6" />,
   plus: <path d="M12 5v14M5 12h14" strokeWidth={2.2} />,
+  bars: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  sheet: <><rect x="3.5" y="3.5" width="17" height="17" rx="2.5" /><path d="M3.5 9h17M3.5 14.5h17M9 3.5v17" /></>,
+  clip: <path d="M20.5 11 12 19.5a5 5 0 0 1-7-7L13.5 4a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L15 7" />,
+  send: <path d="M5 12h14M13 6l6 6-6 6" />,
+
 };
 export const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{ICONS[name]}</svg>;
 

@@ -7,7 +7,7 @@ import { toast } from './dialogs.tsx';
 import { TaskSheet } from './TaskSheet.tsx';
 import { useLibrary } from '../library.ts';
 import { useDocs } from '../views/project/Documents.tsx';
-import { askCopilot } from '../views/Copilot.tsx';
+import { askCopilot } from '../views/Athena.tsx';
 import { taskColor, projectColor } from './colors.ts';
 
 const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/calendar', 'Calendar'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/settings', 'Settings'], ['/trash', 'Trash']];
