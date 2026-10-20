@@ -140,13 +140,12 @@ agent.get('/projects', (c) => call(c, 'agent.projects', 'compass:read.projects',
 }));
 
 /**
- * KN8: Kelly's knowledge search. The collection ids come from the DB here and nowhere else: live, Cloud AI, personal, not the system ("From my apps")
- * collection. A work collection is never queried, whatever the scope says; the result is filtered again on the way out. The audit row carries counts only.
+ * KN8: Kelly's knowledge search. The collection ids come from the DB here and nowhere else: live, Cloud AI, personal ("From my apps" included: its digest is already filtered, KN20). A work collection is never queried, whatever the scope says; the result is filtered again on the way out. The audit row carries counts only.
  */
 agent.get('/knowledge/search', (c) => call(c, 'agent.knowledge.search', 'compass:read.knowledge', async () => {
   const q = (c.req.query('q') ?? '').trim(), raw = c.req.query('limit'), n = raw === undefined ? 5 : Number(raw);
   if (q.length < 2 || q.length > 300 || !Number.isInteger(n) || n < 1 || n > 8) return { status: 400, refused: 'invalid', body: { error: 'q must be 2 to 300 characters; limit a whole number from 1 to 8' } };
-  const { results } = await c.env.DB.prepare("SELECT id FROM knowledge_collections WHERE scope = 'personal' AND boundary = 'cloud' AND system = 0 AND deleted_at IS NULL").all<{ id: string }>();
+  const { results } = await c.env.DB.prepare("SELECT id FROM knowledge_collections WHERE scope = 'personal' AND boundary = 'cloud' AND deleted_at IS NULL").all<{ id: string }>();
   const ids = results.map((r) => r.id);
   try {
     const found = (await hybridSearch(c.env, q, ids, n)).filter((p) => p.collection.scope === 'personal' && ids.includes(p.collection.id));

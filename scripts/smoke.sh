@@ -1079,7 +1079,7 @@ cron; sleep 2; [ "$(donen)" = 2 ] || fail "the cron retried a clean refresh"
 curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$SET0}" >/dev/null
 echo "smoke: (k4) From my apps: five items (compass, finance, health, home, hollow) personal and plain, embedded and searchable, no work task in the Compass part; Refresh now -> 429 within 10 minutes; a second refresh replaces (old rows, passages and answers gone); a failing source keeps yesterday's item with its error, a down relay keeps them all, a good refresh clears the errors; the system collection can't be deleted, changed, filled or emptied by hand; the cron refreshes once after digest_hour and retries a failed day's refresh an hour later"
 # (k5) Knowledge, Task 5 (KN8): Kelly's knowledge search. Scope off -> 403; on -> personal Cloud AI passages only; a work Cloud AI collection, a Locked one, the
-# system collection and a trashed personal one never appear; limit and q validated; audited with counts and no query text.
+# the "From my apps" digest does come back (KN20), a trashed personal one never does; limit and q validated; audited with counts and no query text.
 KS=$(mktemp -d)
 mkdocx $KS/oc-p.docx "The ocelot$R picnic basket is blue."
 mkdocx $KS/oc-w.docx "The ocelot$R vendor contract renews in June."
@@ -1100,15 +1100,18 @@ K5R=$(agb GET "$KQ&limit=8"); [ "$(agc GET "$KQ&limit=8")" = 200 ] || fail "k5: 
 echo "$K5R" | grep -q "vendor contract" && fail "k5: a work Cloud AI passage reached Kelly"
 echo "$K5R" | grep -q "merger terms" && fail "k5: a Locked passage reached Kelly"
 echo "$K5R" | grep -q "Smoke k5 work" && fail "k5: a work collection name reached Kelly"
-agb GET "/knowledge/search?q=ocelot$R+vendor+contract+renews&collections=$K5W" | js 'd.passages.every(p=>!p.text.includes("vendor"))' | grep -q true || fail "k5: a collections= parameter reached the search"
-[ "$(agb GET "/knowledge/search?q=ocelot$R+vendor+contract+renews&limit=8" | js 'd.passages.some(p=>p.text.includes("vendor"))')" = false ] || fail "k5: a work passage matched on its own words"
+# the cron embeds in its own isolate (the local vector store is per isolate), so refresh by hand here to put the digest's vectors where the fetch handlers see them
+stub ''; refresh >/dev/null; SYSEMB || fail "k5: the digest was not embedded"
+[ "$(agb GET "/knowledge/search?q=Stubfinance&limit=8" | js 'd.passages.some(p=>p.text.includes("Stubfinance")&&p.collection==="From my apps")')" = true ] || fail "k5: the From my apps digest did not come back to Kelly"
+agb GET "/knowledge/search?q=ocelot$R+vendor+contract+renews&collections=$K5W" | js 'd.passages.every(p=>!p.text.includes("renews in June"))' | grep -q true || fail "k5: a collections= parameter reached the search"
+[ "$(agb GET "/knowledge/search?q=ocelot$R+vendor+contract+renews&limit=8" | js 'd.passages.some(p=>p.text.includes("renews in June"))')" = false ] || fail "k5: a work passage matched on its own words"
 [ "$(agc GET "/knowledge/search?q=a")" = 400 ] && [ "$(agc GET "/knowledge/search")" = 400 ] && [ "$(agc GET "$KQ&limit=9")" = 400 ] && [ "$(agc GET "$KQ&limit=0")" = 400 ] && [ "$(agc GET "/knowledge/search?q=$(printf 'x%.0s' $(seq 301))")" = 400 ] || fail "k5: q or limit not validated"
 [ "$(agb GET "$KQ&limit=1" | js 'd.passages.length')" = 1 ] || fail "k5: limit 1 not honoured"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND action='agent.knowledge.search' AND detail LIKE '{\"ok\":true,\"passages\":%' AND detail NOT LIKE '%ocelot%'" | js 'd[0].results[0].n')" -ge 2 ] || fail "k5: the search was not audited with counts"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='kelly' AND (detail LIKE '%ocelot%' OR coalesce(target,'') LIKE '%ocelot%')" | js 'd[0].results[0].n')" = 0 ] || fail "k5: the query reached the audit log"
 curl "${H[@]}" "$B/api/kelly/log?limit=50" | js 'd.rows.some(r=>r.action==="agent.knowledge.search")' | grep -q true || fail "k5: the search is not in Kelly's activity"
 curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$K5P >/dev/null
-[ "$(agb GET "$KQ&limit=8" | js 'd.passages.length')" = 0 ] || fail "k5: a trashed personal collection is still searched"
+[ "$(agb GET "$KQ&limit=8" | js 'd.passages.some(p=>p.collection==="Smoke k5 personal")')" = false ] || fail "k5: a trashed personal collection is still searched"
 echo "smoke: (k5) Kelly knowledge search: scope off -> 403; on -> personal passages only in the agreed shape (a work Cloud AI collection, a Locked one and a collections= parameter never reach her), q and limit validated, audited with counts and no query text, a trashed collection leaves"
 D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null; kset '{"enabled":false,"scopes":[]}'
 for x in $K5W $K5L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
