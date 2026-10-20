@@ -11,6 +11,7 @@ import { idb } from '../../store/db.ts';
 import { Link } from '../../router.ts';
 import { PrintDoc } from '../../ui/PrintDoc.tsx';
 import { toast } from '../../ui/dialogs.tsx';
+import { accent, projectColor } from '../../ui/colors.ts';
 import { useDocs } from './Documents.tsx';
 
 type Preset = 'week' | 'two' | 'month' | 'custom';
@@ -172,13 +173,13 @@ export function Report({ project }: { project: Project }) {
         {doc ? <div className="card report-preview" aria-label="Report preview"><PrintDoc doc={doc} /></div>
           : <p style={{ color: 'var(--text-faint)', margin: 0 }}>{valid ? (offline ? 'No saved copy of this report yet. Open it once while online.' : 'Loading the report…') : ''}</p>}
 
-        <h2 style={{ fontSize: 16, margin: '10px 0 0' }}>Templates</h2>
+        <h2 className="rh2">Templates</h2>
         <div className="sub">Filled from the period above. Each builtin has a library page that explains how to use it.</div>
         {BUILTINS.map((b) => {
           const many = (model?.changes.count ?? 0) > 1;
           const make = () => b.make(model!, b.id === 'change_request' && changeId ? { changeId } : undefined);
           return (
-            <div key={b.id} className="card doc-row">
+            <div key={b.id} className="acard doc-row" style={accent(projectColor(project))}>
               <div className="row"><b style={{ flex: '1 1 160px' }}>{b.name}</b><Link to={`/library/${b.guide}`} className="btn">Guide</Link></div>
               {b.id === 'change_request' && many && <label className="sub">Which change
                 <select className="field" style={{ width: 'auto', marginLeft: 8 }} value={changeId} onChange={(e) => setChangeId(e.target.value)}>
@@ -193,7 +194,7 @@ export function Report({ project }: { project: Project }) {
         })}
         {templates.length > 0 && <div className="eyebrow" style={{ marginTop: 6 }}>Your templates</div>}
         {templates.map((t) => (
-          <div key={t.id} className="card doc-row">
+          <div key={t.id} className="acard doc-row" style={accent(projectColor(project))}>
             <div className="row"><b style={{ flex: '1 1 160px', overflowWrap: 'anywhere' }}>{t.name}</b>
               <button type="button" className="btn primary" disabled={!model || off} onClick={() => void fill(t)} aria-label={`Fill ${t.name}`}>Fill</button></div>
             {fillErr?.id === t.id && <div className="sub" role="alert" style={{ color: 'var(--danger)', overflowWrap: 'anywhere' }}>{fillErr.msg}</div>}

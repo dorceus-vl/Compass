@@ -2,11 +2,12 @@ import { useState, type FormEvent } from 'react';
 import type { Lesson, Project } from '../../../../shared/types.ts';
 import { useGov, govCreate, govTrash, useRowSaver } from '../../gov.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
+import { accent, projectColor } from '../../ui/colors.ts';
 
-function Row({ it, reload }: { it: Lesson; reload: () => Promise<void> }) {
+function Row({ it, reload, project }: { it: Lesson; reload: () => Promise<void>; project: Project }) {
   const { save, k } = useRowSaver('lessons', it as never, reload, ['text']);
   return (
-    <div className="card gov-row" style={{ padding: 12 }}>
+    <div className="acard gov-row" style={accent(projectColor(project))}>
       <textarea className="field" rows={2} key={k('text')} aria-label="Lesson" defaultValue={it.text} maxLength={4000} onBlur={(e) => void save('text', e.target.value)} />
       <div className="row">
         <input className="field" style={{ flex: '0 1 220px' }} key={k('category')} aria-label="Category" placeholder="Category" defaultValue={it.category ?? ''} maxLength={60} onBlur={(e) => void save('category', e.target.value)} />
@@ -33,7 +34,7 @@ export function Lessons({ project }: { project: Project }) {
         <input className="field" style={{ flex: '0 1 180px', width: 'auto' }} aria-label="Category" placeholder="Category" maxLength={60} value={category} onChange={(e) => setCategory(e.target.value)} />
         <button className="btn primary" disabled={!text.trim()}>Add</button>
       </form>
-      {items.map((it) => <Row key={it.id} it={it} reload={reload} />)}
+      {items.map((it) => <Row key={it.id} it={it} reload={reload} project={project} />)}
       {!items.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>No lessons yet.</p>}
     </div>
   );

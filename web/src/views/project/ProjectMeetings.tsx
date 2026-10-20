@@ -3,6 +3,7 @@ import type { MeetingReview, Project } from '../../../../shared/types.ts';
 import { api, SignedOut } from '../../api.ts';
 import { idb } from '../../store/db.ts';
 import { Link } from '../../router.ts';
+import { accent, projectColor } from '../../ui/colors.ts';
 
 export function ProjectMeetings({ project }: { project: Project }) {
   const [s, set] = useState<{ meetings: MeetingReview[]; offline: boolean } | null>(null);
@@ -28,7 +29,7 @@ export function ProjectMeetings({ project }: { project: Project }) {
     <div style={{ display: 'grid', gap: 10 }}>
       {s.offline && <div className="sub" role="status">Offline: showing the last copy.</div>}
       {s.meetings.map((m) => (
-        <Link key={m.id} to={`/meetings/${m.id}`} className="card row" style={{ color: 'inherit', justifyContent: 'space-between', padding: 12 }}>
+        <Link key={m.id} to={`/meetings/${m.id}`} className="acard row" style={{ ...accent(projectColor(project)), color: 'inherit', justifyContent: 'space-between' }}>
           <span style={{ overflowWrap: 'anywhere' }}>{m.title}</span>
           <span className="row" style={{ gap: 6 }}><span className="sub">{new Date(m.received_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span><span className="chip">{m.state === 'new' ? 'New' : 'Reviewed'}</span></span>
         </Link>))}

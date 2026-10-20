@@ -3,6 +3,7 @@ import type { DocumentRow, Project } from '../../../../shared/types.ts';
 import { api, online, SignedOut } from '../../api.ts';
 import { idb } from '../../store/db.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
+import { accent, projectColor } from '../../ui/colors.ts';
 
 /** Network first; the list is cached in IndexedDB `meta` (`docs:<project|none|all>`) and shown, marked offline, when the network fails. project: an id, 'none' (unfiled) or null (all). */
 export function useDocs(project: string | null) {
@@ -45,7 +46,7 @@ function Row({ d, project, off, reload }: { d: DocumentRow; project: Project | n
   };
   const lib = d.kind !== 'xlsx';
   return (
-    <div className="card doc-row">
+    <div className="acard doc-row" style={accent(project ? projectColor(project) : 'var(--text-dim)')}>
       <div className="row" style={{ flexWrap: 'nowrap' }}>
         <input key={`${d.name}:${rev}`} className="field" aria-label="Document name" defaultValue={d.name} maxLength={200} disabled={off} onBlur={(e) => void rename(e.target.value)} />
         <span className="chip">{KIND[d.kind] ?? d.kind}</span>

@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { hashIndex } from '../motion.ts';
 
 export const HORIZON_COLOR: Record<'short' | 'medium' | 'long', string> = { short: 'var(--h-short)', medium: 'var(--h-medium)', long: 'var(--h-long)' };
@@ -24,3 +25,6 @@ export function taskColor(t: { source_app: string; project_id: string | null }, 
   const p = t.project_id ? projects.find((x) => x.id === t.project_id) : undefined;
   return p ? projectColor(p) : 'var(--text-dim)';
 }
+
+/** Sets a card's accent (`--ac`, read by .acard) from a colour. */
+export const accent = (color: string) => ({ ['--ac' as string]: color }) as CSSProperties;

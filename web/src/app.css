@@ -157,9 +157,10 @@ button.cb{cursor:pointer;background:transparent}
 .rv-row .act button{padding:6px 12px;border-radius:999px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}
 
 /* Phase 3: project tabs, governance logs, portfolio */
-.tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
-.tabs a{flex:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-dim);white-space:nowrap}
-.tabs a[aria-selected="true"]{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.tabs{position:relative;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.tabs a{position:relative;z-index:1;flex:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--field-border);color:var(--text-dim);white-space:nowrap;transition:color var(--dur-quick)}
+.tabs a[aria-selected="true"]{color:var(--accent);border-color:transparent}
+.tabs .slide{border-radius:999px}
 .chip.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent)}
 .chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
 .chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
@@ -474,3 +475,89 @@ dialog.pal{padding:10px;margin-top:12vh;width:min(640px,calc(100vw - 32px));max-
 .tl-row:hover .tl-edge{fill:var(--tc)}
 .tl-row.lifted{filter:drop-shadow(0 6px 10px rgba(0,0,0,.55)) drop-shadow(0 0 8px color-mix(in srgb,var(--tc) 55%,transparent))}
 .tl-ms path{fill:var(--tc);filter:drop-shadow(0 0 4px var(--tc)) drop-shadow(0 0 12px color-mix(in srgb,var(--tc) 60%,transparent))}
+
+/* ---------- Projects and the project page (Phase 3b Task 5, docs/ui-directions.html .pcard) ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;perspective:1000px}
+.pgrid .hint{grid-column:1/-1;margin:0}
+.pcard{--pc:var(--accent);position:relative;border-radius:20px;min-width:0;transition:transform .2s ease-out,border-color .2s,box-shadow .2s;border:1px solid var(--border-soft);box-shadow:inset 0 2px 0 color-mix(in srgb,var(--pc) 45%,transparent);background:linear-gradient(165deg,var(--field),var(--panel));overflow:hidden}
+.pcard:hover{border-color:color-mix(in srgb,var(--pc) 32%,var(--border-soft));box-shadow:inset 0 2px 0 var(--pc),0 12px 30px rgba(0,0,0,.4)}
+.pcard:has(.lift:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.pcard .glare{position:absolute;inset:0;pointer-events:none;background:radial-gradient(240px circle at var(--gx,50%) var(--gy,0%),color-mix(in srgb,var(--pc) 14%,transparent),transparent 60%);opacity:0;transition:opacity .2s}
+.pcard:hover .glare{opacity:1}
+.pcard .lift{position:relative;z-index:1;display:grid;gap:10px;padding:18px;color:inherit}
+.pcard .lift:focus-visible{outline:none}
+.pmain{display:flex;gap:14px;align-items:center}
+.ptx{min-width:0;flex:1}
+.pcard h3{margin:0;font-size:16.5px;font-weight:800;letter-spacing:-.3px;overflow-wrap:anywhere}
+.pcard .ptx p{margin:4px 0 0;color:var(--text-dim);font-size:13px;overflow-wrap:anywhere}
+.pring{--pc:var(--accent);width:58px;height:58px;border-radius:50%;background:conic-gradient(var(--pc) calc(var(--v)*1%),rgba(255,255,255,.07) 0);display:grid;place-items:center;flex:none;box-shadow:0 0 18px -6px color-mix(in srgb,var(--pc) 60%,transparent)}
+.pring b{width:46px;height:46px;border-radius:50%;background:var(--card);display:grid;place-items:center;font:500 12px var(--mono)}
+.prow{display:flex;justify-content:space-between;gap:8px;color:var(--text-dim);font-size:13px;align-items:center;flex-wrap:wrap;min-width:0}
+.prow>span:first-child{min-width:0;overflow-wrap:anywhere}
+.rag{display:inline-flex;gap:6px;align-items:center;font:600 12px var(--font);padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--rc) 12%,transparent);color:var(--rc);border:1px solid color-mix(in srgb,var(--rc) 35%,transparent);white-space:nowrap}
+.rag i{width:6px;height:6px;border-radius:50%;background:var(--rc)}
+.pcard .chip{display:inline-flex;align-items:center;gap:6px;font:500 11px var(--mono);letter-spacing:0;text-transform:none;color:var(--text-dim);background:rgba(255,255,255,.035);border:1px solid var(--border-soft);padding:4px 9px}
+.pcard .chip i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--sc)}
+@media (prefers-reduced-motion: reduce){.pcard{transform:none !important}}
+
+/* a quiet record card: the accent bar and tinted border are the only colour (rows of the project tabs) */
+.acard{--ac:var(--text-dim);position:relative;background:var(--card);border:1px solid color-mix(in srgb,var(--ac) 14%,var(--border-soft));border-radius:16px;padding:14px 14px 14px 20px;min-width:0;transition:border-color var(--dur-quick),box-shadow var(--dur-quick)}
+.acard::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--ac);opacity:.6;transition:opacity var(--dur-quick)}
+.acard:hover,.acard:focus-within{border-color:color-mix(in srgb,var(--ac) 32%,var(--border-soft));box-shadow:0 10px 24px rgba(0,0,0,.35),0 0 22px color-mix(in srgb,var(--ac) 8%,transparent)}
+.acard:hover::before,.acard:focus-within::before{opacity:1}
+.acard.doc-row{padding:14px 14px 14px 20px}
+
+.phead{--pc:var(--accent);position:relative;display:grid;gap:14px;border-radius:24px;border:1px solid var(--border-soft);padding:18px 20px 18px 24px;overflow:hidden;background:radial-gradient(90% 150% at 0% 0%,color-mix(in srgb,var(--pc) 16%,transparent),transparent 62%),linear-gradient(165deg,var(--field),var(--panel))}
+.phead::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--pc);opacity:.75}
+.pheadmain{display:flex;gap:16px;justify-content:space-between;align-items:center}
+.pname{display:block;width:100%;margin:6px 0 8px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--text);font:800 clamp(24px,3.6vw,32px)/1.1 var(--font);letter-spacing:-.8px;text-overflow:ellipsis}
+.pname:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.pmeta{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;color:var(--text-dim);font-size:13px;min-width:0;overflow-wrap:anywhere}
+.pctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pctl .field{width:auto;padding:9px 12px;font-size:13.5px}
+.ptrash{margin-left:auto;color:var(--danger)}
+.swatches{display:flex;gap:2px;align-items:center}
+.sw{width:30px;height:30px;padding:0;border:0;border-radius:50%;background:none;display:grid;place-items:center;cursor:pointer}
+.sw i{width:20px;height:20px;border-radius:50%;background:var(--sw);box-shadow:0 0 0 2px var(--panel);transition:transform var(--dur-quick) var(--ease-spring),box-shadow var(--dur-quick)}
+.sw:hover i{transform:scale(1.14)}
+.sw[aria-pressed="true"] i{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--sw),0 0 16px color-mix(in srgb,var(--sw) 60%,transparent)}
+.sw:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+
+.pbody{display:flex;flex-direction:column;gap:14px;min-width:0}
+.pbody>*{min-width:0}
+.pbody .card{background:var(--card);border-radius:18px}
+.pbody .btn:hover,.phead .btn:hover{border-color:rgba(var(--accent-rgb),.35)}
+.pbody .btn.primary:hover{filter:brightness(1.06)}
+.rh2{font-size:16px;margin:10px 0 0}
+.pover{display:flex;flex-direction:column;gap:30px;min-width:0}
+.pover .two{align-items:start}
+.qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:14px}
+.qcard{border:1px solid var(--border-soft);border-radius:18px;padding:16px;display:grid;gap:12px;align-content:start;min-width:0}
+.qcard h3{margin:0;font:500 11px var(--mono);letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint)}
+.qcard .field{background:transparent}
+.qf{display:grid;gap:4px;font-size:12px;color:var(--text-faint);min-width:0}
+.qpair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qnote{font-size:12px;color:var(--text-faint)}
+.mrow{--mc:var(--h-long);position:relative;background:var(--card);border-color:var(--border-soft);border-radius:14px;padding:12px 14px 12px 18px}
+.mrow::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--mc);opacity:.7}
+.mrow .cb{position:relative;border-color:var(--mc)}
+.mrow .cb.done{background:var(--mc);border-color:var(--mc)}
+.mrow .cb::after{content:"";position:absolute;inset:-13px} /* a 44 px target around the 18 px box */
+.heat button.has{color:var(--text);font-family:var(--mono)}
+.heat button.d.has{background:color-mix(in srgb,var(--danger) 38%,var(--field));border-color:color-mix(in srgb,var(--danger) 55%,transparent);box-shadow:0 0 16px -2px color-mix(in srgb,var(--danger) 70%,transparent)}
+.heat button.w.has{background:color-mix(in srgb,var(--warn) 34%,var(--field));border-color:color-mix(in srgb,var(--warn) 55%,transparent);box-shadow:0 0 16px -2px color-mix(in srgb,var(--warn) 65%,transparent)}
+.heat button:not(.d):not(.w).has{background:color-mix(in srgb,var(--ok) 22%,var(--field));border-color:color-mix(in srgb,var(--ok) 45%,transparent);box-shadow:0 0 14px -3px color-mix(in srgb,var(--ok) 55%,transparent)}
+@media (max-width:760px),(pointer:coarse){
+  .pname{min-height:44px}
+  .pctl .field{min-height:44px}
+  .sw{width:44px;height:44px}
+  .swatches{order:3;flex-basis:100%;justify-content:space-between;max-width:290px}
+  .ptrash{order:2}
+  .mrow input[type=date]{min-height:44px}
+  .qcard .field{min-height:44px}
+  .qcard textarea.field{min-height:0}
+}
+@media (max-width:480px){.pheadmain .pring{width:50px;height:50px}.pheadmain .pring b{width:39px;height:39px;font-size:11px}.phead{padding:16px 16px 16px 20px}}
+.doc-row>*{min-width:0}
+.doc-row label.sub{flex-wrap:wrap}
+.doc-row select.field{max-width:100%;min-width:0}

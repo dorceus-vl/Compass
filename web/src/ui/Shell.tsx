@@ -24,13 +24,13 @@ const NAV = [
   ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['copilot', '/copilot', 'Copilot'],
 ] as const;
 
-/** Slides one absolutely positioned pill (transform only) to the nav's `a.on`; size is set inline and not animated. Hidden when no link is active. */
-function useSlider(nav: { current: HTMLElement | null }, pill: { current: HTMLElement | null }, key: string) {
+/** Slides one absolutely positioned pill (transform only) to the nav's active link (`sel`, default `a.on`); size is set inline and not animated. Hidden when no link is active. */
+export function useSlider(nav: { current: HTMLElement | null }, pill: { current: HTMLElement | null }, key: string, sel = 'a.on') {
   useLayoutEffect(() => {
     const n = nav.current, p = pill.current;
     if (!n || !p) return;
     const place = () => {
-      const a = n.querySelector<HTMLElement>('a.on');
+      const a = n.querySelector<HTMLElement>(sel);
       if (!a || !a.offsetWidth) { p.style.opacity = '0'; return; } // display:none (the other nav at this width) measures 0
       p.style.opacity = '1';
       p.style.width = `${a.offsetWidth}px`; p.style.height = `${a.offsetHeight}px`;
@@ -40,7 +40,7 @@ function useSlider(nav: { current: HTMLElement | null }, pill: { current: HTMLEl
     const ro = new ResizeObserver(place); ro.observe(n);
     const t = requestAnimationFrame(() => p.classList.add('ready')); // no slide on first paint
     return () => { ro.disconnect(); cancelAnimationFrame(t); };
-  }, [nav, pill, key]);
+  }, [nav, pill, key, sel]);
 }
 
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {

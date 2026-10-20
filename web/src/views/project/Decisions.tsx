@@ -4,11 +4,12 @@ import { useGov, govCreate, govTrash, useRowSaver } from '../../gov.ts';
 import { Link } from '../../router.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { today } from '../../dates.ts';
+import { accent, projectColor } from '../../ui/colors.ts';
 
-function Row({ it, reload }: { it: Decision; reload: () => Promise<void> }) {
+function Row({ it, reload, project }: { it: Decision; reload: () => Promise<void>; project: Project }) {
   const { save, k } = useRowSaver('decisions', it as never, reload, ['text', 'decided_at']);
   return (
-    <div className="card gov-row" style={{ padding: 12 }}>
+    <div className="acard gov-row" style={accent(projectColor(project))}>
       <div className="row">
         <input className="field" style={{ flex: '0 1 160px', width: 'auto' }} type="date" key={k('decided_at')} aria-label="Decided on" defaultValue={it.decided_at} onBlur={(e) => void save('decided_at', e.target.value)} />
         {it.from_meeting_id && <Link to={`/meetings/${it.from_meeting_id}`} className="chip">From meeting{it.at_ref ? ` · ${it.at_ref}` : ''}</Link>}
@@ -35,7 +36,7 @@ export function Decisions({ project }: { project: Project }) {
         <input className="field" style={{ flex: '0 1 160px', width: 'auto' }} type="date" aria-label="Decision date" value={date} onChange={(e) => setDate(e.target.value)} />
         <button className="btn primary" disabled={!text.trim()}>Add</button>
       </form>
-      {items.map((it) => <Row key={it.id} it={it} reload={reload} />)}
+      {items.map((it) => <Row key={it.id} it={it} reload={reload} project={project} />)}
       {!items.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>No decisions logged yet.</p>}
     </div>
   );

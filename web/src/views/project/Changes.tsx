@@ -3,6 +3,7 @@ import type { ChangeRequest, Project } from '../../../../shared/types.ts';
 import { useGov, govCreate, govPatch, govTrash, useRowSaver } from '../../gov.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { today } from '../../dates.ts';
+import { accent } from '../../ui/colors.ts';
 
 function Row({ it, reload }: { it: ChangeRequest; reload: () => Promise<void> }) {
   const { save, k } = useRowSaver('changes', it as never, reload, ['title']);
@@ -12,7 +13,7 @@ function Row({ it, reload }: { it: ChangeRequest; reload: () => Promise<void> })
       <textarea className="field" rows={2} key={k(key)} defaultValue={it[key] ?? ''} maxLength={key === 'description' ? 5000 : 2000} onBlur={(e) => void save(key, e.target.value)} /></label>
   );
   return (
-    <div className="card gov-row" style={{ padding: 12 }}>
+    <div className="acard gov-row" style={accent(it.decision === 'approved' ? 'var(--ok)' : it.decision === 'rejected' ? 'var(--danger)' : 'var(--warn)')}>
       <input className="field" key={k('title')} aria-label="Title" defaultValue={it.title} maxLength={200} onBlur={(e) => void save('title', e.target.value)} />
       <div className="row">
         <select className="field" aria-label="Decision" value={it.decision} onChange={async (e) => {

@@ -5,6 +5,7 @@ import { useGov, govCreate, govPatch, govTrash, useRowSaver } from '../../gov.ts
 import { createTask } from '../../store/useStore.ts';
 import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { fmtDue } from '../../dates.ts';
+import { accent } from '../../ui/colors.ts';
 
 const TYPES: RaidType[] = ['risk', 'assumption', 'issue', 'dependency'];
 const N15 = [1, 2, 3, 4, 5];
@@ -20,7 +21,7 @@ function Row({ it, project, reload }: { it: RaidItem; project: Project; reload: 
     <input className="field" key={k(key)} aria-label={label} placeholder={label} defaultValue={it[key] ?? ''} maxLength={key === 'owner' ? 200 : 2000} onBlur={(e) => void save(key, e.target.value)} />
   );
   return (
-    <div className="card gov-row" style={{ padding: 12, opacity: it.status === 'closed' ? 0.65 : 1 }}>
+    <div className="acard gov-row" style={{ ...accent(it.type !== 'risk' ? 'var(--text-dim)' : score >= 15 ? 'var(--danger)' : score >= 8 ? 'var(--warn)' : score > 0 ? 'var(--ok)' : 'var(--text-dim)'), opacity: it.status === 'closed' ? 0.65 : 1 }}>
       <div className="row"><span className="chip">{it.type}</span>
         {it.type === 'risk' && <span className={`chip ${scoreTone(score)}`} title="Probability × impact">score {score}</span>}
         {it.from_meeting_id && <span className="chip">from meeting</span>}</div>
@@ -76,7 +77,7 @@ export function Raid({ project }: { project: Project }) {
             {[5, 4, 3, 2, 1].map((p) => <Fragment key={p}>
               <span>P{p}</span>
               {N15.map((i) => { const n = openRisks.filter((x) => x.probability === p && x.impact === i).length, tone = scoreTone(p * i);
-                return <button type="button" key={`${p}${i}`} className={tone === 'danger' ? 'd' : tone === 'warn' ? 'w' : ''} aria-pressed={cell?.p === p && cell?.i === i} aria-label={`Probability ${p}, impact ${i}: ${n} open`}
+                return <button type="button" key={`${p}${i}`} className={`${tone === 'danger' ? 'd' : tone === 'warn' ? 'w' : ''}${n ? ' has' : ''}`} aria-pressed={cell?.p === p && cell?.i === i} aria-label={`Probability ${p}, impact ${i}: ${n} open`}
                   onClick={() => setCell(cell?.p === p && cell?.i === i ? null : { p, i })}>{n || ''}</button>; })}
             </Fragment>)}
             <span />{N15.map((i) => <span key={i} style={{ textAlign: 'center' }}>I{i}</span>)}
