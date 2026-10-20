@@ -18,5 +18,7 @@ export function fmtDue(ymd: string | null, t = today()): { text: string; tone: '
   if (diff < 7) return { text: DOW[date.getDay()], tone: '' };
   return { text: date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }), tone: '' };
 }
+/** Whole days from `t` to the date `ymd` (negative when it is past). */
+export const daysUntil = (ymd: string, t = today()) => utcDays(ymd) - utcDays(t);
 /** Whole local days since an ISO timestamp. */
 export const daysSince = (iso: string, t = today()) => utcDays(t) - utcDays(new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)));

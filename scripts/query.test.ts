@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/query.test.ts
 import assert from 'node:assert/strict';
-import { parseQuery, applyQuery, arrange } from '../web/src/query.ts';
+import { parseQuery, applyQuery, arrange, pathMilestones } from '../web/src/query.ts';
 
 const p = [{ id: 'p1', name: 'ERP migration' }];
 const mk = (o: Record<string, unknown>) => ({ id: 'x', title: '', status: 'new', kind: 'personal', horizon: 'short', project_id: null, due_at: null, priority: 0, tags: '[]', deleted_at: null, ...o }) as any;
@@ -24,4 +24,13 @@ assert.deepEqual(ar([]), ['1,2,3', 3]);
 assert.deepEqual(ar(['d2']), ['1,2,3,d2', 3]);
 assert.deepEqual(ar(['d1', 'd2'], 2), ['1,2,d1,d2', 3], 'finished cards come after the limited open ones and do not use its slots');
 assert.deepEqual(ar(['2']), ['1,2,3', 3], 'an undone task is just open again');
+// pathMilestones: by date (undated last), done / next (first open) / ahead; more than 6 → 6 around today
+const ms = (o: [string, string | null, string | null][]) => o.map(([id, due_at, done_at], i) => ({ id, due_at, done_at, sort: i }) as any);
+const pm = (xs: any[], t = '2026-10-19') => pathMilestones(xs, t).map((x) => `${x.m.id}:${x.state}`).join(' ');
+assert.equal(pm(ms([['c', '2026-11-01', null], ['a', '2026-09-01', '2026-09-01'], ['u', null, null], ['b', '2026-10-01', '2026-10-01']])), 'a:done b:done c:next u:ahead');
+assert.equal(pm(ms([['a', '2026-10-01', null], ['b', '2026-11-01', null]])), 'a:next b:ahead', 'a late open one is next');
+const many = ms([['1', '2026-01-01', 'x'], ['2', '2026-02-01', 'x'], ['3', '2026-03-01', 'x'], ['4', '2026-04-01', 'x'], ['5', '2026-11-01', null], ['6', '2026-12-01', null], ['7', '2027-01-01', null], ['8', '2027-02-01', null], ['9', '2027-03-01', null]]);
+assert.equal(pm(many), '3:done 4:done 5:next 6:ahead 7:ahead 8:ahead', 'two before today, the rest after');
+assert.equal(pm(many, '2027-06-01'), '4:done 5:next 6:ahead 7:ahead 8:ahead 9:ahead', 'past the end: the last six');
+assert.equal(pm([]), '');
 console.log('query: ok');

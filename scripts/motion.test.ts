@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { lensFactor, lensOffset, angleTo, unwrap, springStep, hashIndex } from '../web/src/motion.ts';
+import { lensFactor, lensOffset, angleTo, unwrap, springStep, hashIndex, nearestTurn } from '../web/src/motion.ts';
 import { taskColor, projectColor, PROJECT_SWATCHES, HORIZON_COLOR } from '../web/src/ui/colors.ts';
 
 const near = (a: number, b: number, e = 1e-9) => assert.ok(Math.abs(a - b) <= e, `${a} !≈ ${b}`);
@@ -42,4 +42,11 @@ assert.equal(taskColor({ source_app: 'manual', project_id: null }, projects), 'v
 assert.equal(taskColor({ source_app: 'manual', project_id: 'gone' }, projects), 'var(--text-dim)');
 assert.ok(PROJECT_SWATCHES.includes(taskColor({ source_app: 'manual', project_id: 'p2' }, projects)));
 assert.equal(projectColor({ id: 'p2', colour: null }), projectColor({ id: 'p2', colour: null }));
+// ring: the turn that shows face `i` of 3, reached the short way from the current turn
+assert.equal(nearestTurn(0, 0), 0);
+assert.equal(nearestTurn(0, 1), 1);
+assert.equal(nearestTurn(0, 2), -1, 'face 2 is one step back, not two forward');
+assert.equal(nearestTurn(5, 0), 6, 'turn 5 shows face 2; face 0 is one step on');
+assert.equal(nearestTurn(-4, 2), -4, 'already there (-4 shows face 2)');
+assert.equal(nearestTurn(nearestTurn(7, 2), 2), nearestTurn(7, 2), 'idempotent');
 console.log('motion ok');

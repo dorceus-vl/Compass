@@ -20,6 +20,14 @@ export function springStep(pos: number, vel: number, target: number, k = 0.08, d
   return [pos + v, v];
 }
 
+/** The ring turn closest to `turn` that shows face `i` of `n` (face shown = turn mod n), so the ring never spins the long way. */
+export function nearestTurn(turn: number, i: number, n = 3): number {
+  let d = i - (((turn % n) + n) % n);
+  if (d > n / 2) d -= n;
+  if (d < -n / 2) d += n;
+  return turn + d;
+}
+
 /** Stable index 0..n-1 from a string (FNV-1a), for project swatches. */
 export function hashIndex(s: string, n: number): number {
   let h = 0x811c9dc5;
@@ -49,17 +57,22 @@ const schedule = () => {
 };
 
 /** Adds cb to the shared loop (runs it once now); returns the remover. */
+let layoutWatch: ResizeObserver | null = null;
 function onFrame(cb: () => void): () => void {
-  if (frameCbs.size === 0) { addEventListener('scroll', schedule, { passive: true, capture: true }); addEventListener('resize', schedule, { passive: true }); }
+  if (frameCbs.size === 0) {
+    addEventListener('scroll', schedule, { passive: true, capture: true }); addEventListener('resize', schedule, { passive: true });
+    // content loading above a list moves it without a scroll: re-run when the page's height changes
+    layoutWatch = new ResizeObserver(schedule); layoutWatch.observe(document.body);
+  }
   frameCbs.add(cb);
   cb();
   return () => {
     frameCbs.delete(cb);
-    if (frameCbs.size === 0) { removeEventListener('scroll', schedule, { capture: true }); removeEventListener('resize', schedule); }
+    if (frameCbs.size === 0) { removeEventListener('scroll', schedule, { capture: true }); removeEventListener('resize', schedule); layoutWatch?.disconnect(); layoutWatch = null; }
   };
 }
 
-/** Runs cb on every animation frame after a scroll or resize, and once on mount; one shared loop for the whole app. */
+/** Runs cb on every animation frame after a scroll, a resize or a change in the page's height, and once on mount; one shared loop for the whole app. */
 export function useScrollFrame(cb: () => void, deps: unknown[]): void {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onFrame(cb), deps);

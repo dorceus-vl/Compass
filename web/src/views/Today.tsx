@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Settings, TodayAnswer } from '../../../shared/types.ts';
+import type { Horizon, Settings, Task, TodayAnswer } from '../../../shared/types.ts';
 import { briefText } from '../../../shared/brief.ts';
 import { api, online } from '../api.ts';
 import { idb } from '../store/db.ts';
@@ -9,14 +9,22 @@ import { useStore } from '../store/useStore.ts';
 import { TaskList, useFinished } from '../ui/TaskCard.tsx';
 import { arrange } from '../query.ts';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
-import { today, startOfWeek, fmtDue } from '../dates.ts';
+import { today, startOfWeek, daysUntil } from '../dates.ts';
 import { Link } from '../router.ts';
 import { AddedStrip } from '../ui/AddedStrip.tsx';
+import { Hero, greetingFor } from '../ui/Hero.tsx';
+import { HorizonDial, HORIZONS, HORIZON_LABEL, cap } from '../ui/HorizonDial.tsx';
+import { HorizonRing } from '../ui/HorizonRing.tsx';
+import { MilestonePath } from '../ui/MilestonePath.tsx';
+import { SectionHead } from '../ui/SectionHead.tsx';
+
+const FEED_LIMIT = 12;
 
 export function Today() {
   const { tasks, milestones, projects, ready } = useStore();
   const [open, setOpen] = useState<string | null>(null);
   const [kind, setKind] = useState<'all' | 'personal' | 'work'>('all');
+  const [hz, setHz] = useState<Horizon>('short');
   const [finished, onFinish] = useFinished();
   const t = today();
   const [ai, setAi] = useState<string | null>(null); // the copilot's version of today's brief, kept in `meta` for the rest of the day
@@ -30,26 +38,25 @@ export function Today() {
   }, [t]);
   if (!ready) return null;
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && (kind === 'all' || x.kind === kind));
-  const openTasks = live.filter((x) => x.status !== 'done').sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : 1);
-  const overdue = openTasks.filter((x) => x.due_at && x.due_at < t);
   // the lists also keep, after the open ones, what was finished from a card during this visit, so its check can undo it
   const byDue = [...live].sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : 1);
+  const openTasks = byDue.filter((x) => x.status !== 'done');
   const overdueList = arrange(byDue.filter((x) => x.due_at && x.due_at < t), finished);
+  const byHz = Object.fromEntries(HORIZONS.map((h) => [h, openTasks.filter((x) => x.horizon === h)])) as Record<Horizon, Task[]>;
+  const counts = Object.fromEntries(HORIZONS.map((h) => [h, byHz[h].length])) as Record<Horizon, number>;
+  const feed = arrange(byDue.filter((x) => x.horizon === hz), finished, FEED_LIMIT);
   const doneWeek = live.filter((x) => x.status === 'done' && x.done_at && x.done_at >= startOfWeek(t)).length;
-  const col = (h: 'short' | 'medium' | 'long', title: string) => {
-    const xs = arrange(byDue.filter((x) => x.horizon === h), finished, 12);
-    return (
-      <div className="hz">
-        <div className="hh"><b>{title}</b><small>{xs.open}</small></div>
-        {xs.shown.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Nothing here. ⌘K or + to add.</p>}
-        <TaskList tasks={xs.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} />
-        {xs.open > 12 && <Link to="/list" className="chip">+{xs.open - 12} more in List</Link>}
-      </div>
-    );
-  };
+
+  // Milestones of live projects, open and dated, soonest first. The line shows the project of the nearest one still ahead
+  // (or, when every open one is late, the latest-late one's project); the hero counts days to the nearest one ahead.
+  const liveProject = (id: string) => projects.find((p) => p.id === id && !p.deleted_at);
+  const dueMs = milestones.filter((m) => !m.deleted_at && !m.done_at && m.due_at && liveProject(m.project_id)).sort((a, b) => a.due_at! < b.due_at! ? -1 : 1);
+  const ahead = dueMs.find((m) => m.due_at! >= t);
+  const lineMs = ahead ?? dueMs[0];
+  const lineProject = lineMs ? liveProject(lineMs.project_id) : undefined;
+
   // The brief covers everything, whatever the Personal/Work filter shows.
   const every = tasks.filter((x) => !x.deleted_at && !x.parent_id && x.status !== 'done');
-  const dueMs = milestones.filter((m) => !m.deleted_at && !m.done_at && m.due_at).sort((a, b) => a.due_at! < b.due_at! ? -1 : 1);
   const answer: TodayAnswer = {
     date: t, short: every.filter((x) => x.horizon === 'short'), medium: every.filter((x) => x.horizon === 'medium'), long: every.filter((x) => x.horizon === 'long'),
     overdue: every.filter((x) => x.due_at && x.due_at < t), open_today: every.filter((x) => x.due_at && x.due_at <= t).length, done_this_week: doneWeek,
@@ -64,28 +71,49 @@ export function Today() {
     } catch (e) { toast((e as Error).message || 'The copilot could not write it'); }
     finally { setWriting(false); }
   };
-  const next = milestones.filter((m) => !m.done_at && m.due_at).sort((a, b) => a.due_at! < b.due_at! ? -1 : 1).slice(0, 4);
+  const daysLeft = lineMs ? daysUntil(lineMs.due_at!, t) : 0;
   return (
-    <>
-      <div className="head">
-        <div>
-          <div className="eyebrow">{new Date().toLocaleDateString('en-CA', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-          <h1 style={{ marginTop: 6 }}>Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, <b>Vlad</b></h1>
-          <div className="sub">{openTasks.filter((x) => x.due_at && x.due_at <= t).length} due today · <span style={{ color: overdue.length ? 'var(--danger)' : undefined }}>{overdue.length} overdue</span> · {doneWeek} done this week</div>
-        </div>
-        <div className="seg">{(['all', 'personal', 'work'] as const).map((k) => <button type="button" key={k} className={kind === k ? 'on' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}</div>
-      </div>
+    <div className="today">
+      <Hero greeting={greetingFor(new Date().getHours())} stats={{
+        today: openTasks.filter((x) => x.due_at === t).length, overdue: overdueList.open,
+        nextMilestone: ahead ? { name: ahead.name, days: daysUntil(ahead.due_at!, t) } : null,
+      }} />
+      <AddedStrip onOpen={setOpen} />
       <section className="card brief" aria-label="Today's brief">
         <div className="eyebrow">{ai ? 'Copilot' : "Compass's summary"}</div>
         <p>{ai ?? briefText(answer, t)}</p>
         {!ai && canAsk && online() && <button type="button" className="btn" disabled={writing} onClick={() => void writeIt()}>{writing ? 'Writing…' : 'Write it with the copilot'}</button>}
       </section>
-      <AddedStrip onOpen={setOpen} />
-      {overdueList.shown.length > 0 && <div className="inbox" style={{ borderColor: 'rgba(255,77,94,.35)' }}><div className="top"><h2>Overdue <small>{overdueList.open}</small></h2></div><TaskList tasks={overdueList.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} /></div>}
-      <div className="horizons">{col('short', 'Short · this week')}{col('medium', 'Medium · this quarter')}{col('long', 'Long · this year and beyond')}</div>
-      {next.length > 0 && <div className="inbox"><div className="top"><h2>Next milestones</h2></div>
-        {next.map((m) => <div key={m.id} className="task"><div className="tt">{m.name}</div><span className="chip" style={{ marginLeft: 'auto' }}>{projects.find((p) => p.id === m.project_id)?.name} · {fmtDue(m.due_at).text}</span></div>)}</div>}
+      <section aria-labelledby="hz-h">
+        <SectionHead id="hz-h" eyebrow="Your horizons" title="Turn the compass, the horizons follow">
+          <div className="seg" role="group" aria-label="Show">{(['all', 'personal', 'work'] as const).map((k) => <button type="button" key={k} className={kind === k ? 'on' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>{cap(k)}</button>)}</div>
+        </SectionHead>
+        <div className="hzgrid">
+          <HorizonDial value={hz} counts={counts} onChange={setHz} />
+          <HorizonRing value={hz} tasks={byHz} onChange={setHz} />
+        </div>
+      </section>
+      {overdueList.shown.length > 0 && (
+        <section aria-labelledby="od-h">
+          <SectionHead id="od-h" eyebrow="Needs attention" title="Overdue"><span className="note">{overdueList.open} open</span></SectionHead>
+          <TaskList tasks={overdueList.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} />
+        </section>
+      )}
+      <section aria-labelledby="feed-h">
+        <SectionHead id="feed-h" eyebrow={`${cap(hz)} horizon`} title={HORIZON_LABEL[hz]}><span className="note">{feed.open} open · swipe right to finish</span></SectionHead>
+        {feed.shown.length === 0 && <p className="hint">Nothing here. ⌘K or + to add.</p>}
+        <TaskList tasks={feed.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} />
+        {feed.open > FEED_LIMIT && <Link to="/list" className="chip more">+{feed.open - FEED_LIMIT} more in List</Link>}
+      </section>
+      {lineMs && lineProject && (
+        <section aria-labelledby="ms-h">
+          <SectionHead id="ms-h" eyebrow="Milestones" title={<Link to={`/projects/${lineProject.id}`}>{lineProject.name}</Link>}>
+            <span className="note">{lineMs.name} {daysLeft > 1 ? `in ${daysLeft} days` : daysLeft === 1 ? 'tomorrow' : daysLeft === 0 ? 'today' : `${-daysLeft}d late`}</span>
+          </SectionHead>
+          <MilestonePath milestones={milestones.filter((m) => m.project_id === lineProject.id)} today={t} />
+        </section>
+      )}
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
-    </>
+    </div>
   );
 }

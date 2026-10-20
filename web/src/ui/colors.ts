@@ -10,6 +10,9 @@ const SOURCE_COLOR: Record<string, string> = {
   home: 'var(--src-home)', aura: 'var(--src-home)', kelly: 'var(--src-kelly)', nightowl: 'var(--src-nightowl)',
 };
 
+/** A source app's muted colour (--src-*), or faint text for an app without one. */
+export const sourceColor = (app: string): string => SOURCE_COLOR[app] ?? 'var(--text-faint)';
+
 export function projectColor(p: { id: string; colour: string | null }): string {
   return p.colour || PROJECT_SWATCHES[hashIndex(p.id, PROJECT_SWATCHES.length)];
 }

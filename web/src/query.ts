@@ -35,3 +35,16 @@ export function arrange<T extends { id: string; status: string }>(tasks: T[], fi
   const open = tasks.filter((t) => t.status !== 'done');
   return { shown: [...open.slice(0, limit), ...tasks.filter((t) => t.status === 'done' && finished.has(t.id))], open: open.length };
 }
+
+type PathMs = { id: string; due_at: string | null; done_at: string | null; sort: number };
+/** The milestone line's points: by date (undated last), done / next (the first open one) / ahead; more than `max` shows `max` around today. */
+export function pathMilestones<M extends PathMs>(ms: M[], today: string, max = 6): { m: M; state: 'done' | 'next' | 'ahead' }[] {
+  const sorted = [...ms].sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : (a.due_at ?? '9') > (b.due_at ?? '9') ? 1 : a.sort - b.sort);
+  const next = sorted.findIndex((m) => !m.done_at);
+  const all = sorted.map((m, i) => ({ m, state: m.done_at ? 'done' as const : i === next ? 'next' as const : 'ahead' as const }));
+  if (all.length <= max) return all;
+  let at = sorted.findIndex((m) => !m.due_at || m.due_at >= today);
+  if (at < 0) at = sorted.length;
+  const from = Math.min(Math.max(0, at - 2), sorted.length - max);
+  return all.slice(from, from + max);
+}

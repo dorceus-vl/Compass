@@ -3,7 +3,9 @@ import { useInbox, reviewPath, safeUrl, openTask } from '../inbox.ts';
 import { navigate } from '../router.ts';
 import { trashTask } from '../store/useStore.ts';
 import { confirmAction, toast } from './dialogs.tsx';
-import { SRC, appLabel } from './sources.ts';
+import { appLabel } from './sources.ts';
+import { sourceColor } from './colors.ts';
+import { SectionHead } from './SectionHead.tsx';
 
 type Inbox = ReturnType<typeof useInbox>;
 
@@ -18,7 +20,7 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
   };
   const btn = (label: string, fn: () => void, primary = false) => <button type="button" key={label} className={primary ? 'p' : undefined} disabled={off} title={tip} onClick={fn}>{label}</button>;
   return (
-    <div className={`ai${active ? ' active' : ''}`} id={id} role={id ? 'option' : undefined} aria-selected={id ? !!active : undefined} style={{ ['--src' as string]: SRC[item.app] ?? 'var(--text-faint)' }}>
+    <div className={`ai${active ? ' active' : ''}`} id={id} role={id ? 'option' : undefined} aria-selected={id ? !!active : undefined} style={{ ['--src' as string]: sourceColor(item.app) }}>
       <span className="src">{appLabel(item.app)}{item.state === 'added' && <span className="chip" style={{ marginLeft: 8 }}>Added</span>}</span>
       <div className="t">{item.title}</div>
       {item.body && <div className="m">{item.body}</div>}
@@ -45,9 +47,11 @@ export function AddedStrip({ onOpen }: { onOpen: (taskId: string) => void }) {
   if (!inbox.items.length) return null;
   const fresh = inbox.items.filter((i) => i.state === 'new').length;
   return (
-    <div className="inbox">
-      <div className="top"><h2>Added by your apps <small>{fresh} new{inbox.offline ? ' · offline' : ''}</small></h2>{inbox.items.length > 4 && <a className="chip" href="/inbox" onClick={(e) => { e.preventDefault(); navigate('/inbox'); }}>All {inbox.items.length}</a>}</div>
+    <section className="strip" aria-labelledby="strip-h">
+      <SectionHead id="strip-h" eyebrow={`From your apps · ${fresh} new${inbox.offline ? ' · offline' : ''}`} title="Added by your apps">
+        {inbox.items.length > 4 && <a className="chip" href="/inbox" onClick={(e) => { e.preventDefault(); navigate('/inbox'); }}>All {inbox.items.length}</a>}
+      </SectionHead>
       <div className="auto">{inbox.items.slice(0, 4).map((i) => <InboxCard key={i.id} item={i} inbox={inbox} onOpen={onOpen} />)}</div>
-    </div>
+    </section>
   );
 }
