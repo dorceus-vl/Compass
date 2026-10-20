@@ -29,3 +29,9 @@ export function applyQuery(tasks: Task[], q: Query, projects: Pick<Project, 'id'
     return q.words.every((w) => t.title.toLowerCase().includes(w));
   });
 }
+
+/** What a task list shows: its open tasks (at most `limit`), then the ones finished from it during this visit. */
+export function arrange<T extends { id: string; status: string }>(tasks: T[], finished: ReadonlySet<string>, limit = Infinity): { shown: T[]; open: number } {
+  const open = tasks.filter((t) => t.status !== 'done');
+  return { shown: [...open.slice(0, limit), ...tasks.filter((t) => t.status === 'done' && finished.has(t.id))], open: open.length };
+}

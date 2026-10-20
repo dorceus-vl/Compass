@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Project, Rag } from '../../../shared/types.ts';
 import { useStore, resolveId, updateProject, trashProject, createMilestone, updateMilestone, createTask } from '../store/useStore.ts';
-import { TaskList, shownInList } from '../ui/TaskCard.tsx';
+import { TaskList, useFinished } from '../ui/TaskCard.tsx';
+import { arrange } from '../query.ts';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { navigate, Link } from '../router.ts';
@@ -26,6 +27,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
   const [newTask, setNewTask] = useState('');
   const [boundaryBusy, setBoundaryBusy] = useState(false);
   const [newMs, setNewMs] = useState({ name: '', due_at: '', gate: false });
+  const [finished, onFinish] = useFinished();
   const p = projects.find((x) => x.id === id);
   // A tmp- id is swapped for the server's once sync replays the create; follow it instead of showing "not found".
   useEffect(() => {
@@ -46,7 +48,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
     </label>
   );
   const ms = milestones.filter((m) => m.project_id === p.id && !m.deleted_at).sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'));
-  const openTasks = tasks.filter((t) => t.project_id === p.id && !t.deleted_at && !t.parent_id && shownInList(t)).sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9'));
+  const openTasks = arrange(tasks.filter((t) => t.project_id === p.id && !t.deleted_at && !t.parent_id).sort((a, b) => (a.due_at ?? '9').localeCompare(b.due_at ?? '9')), finished);
   // Direct call, not the offline queue: a queued PATCH cannot answer the passkey prompt. api() retries with the step-up answer.
   const setBoundary = async (data_boundary: Project['data_boundary']) => {
     if (data_boundary === p.data_boundary || boundaryBusy) return;
@@ -91,8 +93,8 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
               <div style={{ marginTop: 4 }}>Offline only: the copilot never sends this project to Claude or Gemini.</div></div>
             <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 10 }}>{inp('objectives', 'Objectives', 'area')}{inp('scope_in', 'In scope', 'area')}{inp('scope_out', 'Out of scope', 'area')}{inp('success_criteria', 'Success criteria', 'area')}</div>
           </div>
-          <div className="hz"><div className="hh"><b>Open tasks</b><small>{openTasks.filter((t) => t.status !== 'done').length}</small></div>
-            <TaskList tasks={openTasks} projects={projects} onOpen={setOpen} />
+          <div className="hz"><div className="hh"><b>Open tasks</b><small>{openTasks.open}</small></div>
+            <TaskList tasks={openTasks.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} />
             <form onSubmit={async (e) => { e.preventDefault(); if (!newTask.trim()) return; await createTask({ title: newTask.trim(), project_id: p.id, kind: p.kind }); setNewTask(''); }}>
               <input className="field" placeholder="Add a task to this project…" value={newTask} onChange={(e) => setNewTask(e.target.value)} /></form></div>
         </div>

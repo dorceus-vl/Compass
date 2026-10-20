@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { Project, Task } from '../../../shared/types.ts';
 import { completeTask, updateTask } from '../store/useStore.ts';
 import { fmtDue } from '../dates.ts';
@@ -10,27 +10,29 @@ const GLYPH: Record<string, string> = { finance: '$', health: '+', hollow: 'H', 
 const TONE = { over: 'var(--danger)', due: 'var(--accent)', '': 'var(--text-dim)' };
 const SWIPE = 110; // px to the right that completes, as in the preview
 
-// Tasks finished from a card stay on screen (struck through) so the check can undo them; until the page reloads.
-// ponytail: session-wide set, clear it per view if done cards ever pile up.
-const finished = new Set<string>();
-/** Open tasks, plus the ones just finished from a card in this session. */
-export const shownInList = (t: Task) => t.status !== 'done' || finished.has(t.id);
+/** Ids finished from a view's cards during this visit (gone when the view unmounts), so they stay struck through and the check can undo. */
+export function useFinished(): [ReadonlySet<string>, (id: string) => void] {
+  const [finished, set] = useState<ReadonlySet<string>>(() => new Set());
+  return [finished, (id) => set((s) => new Set(s).add(id))];
+}
 
-export function TaskCard({ task, projects, onOpen }: { task: Task; projects: Project[]; onOpen: (id: string) => void }) {
+type CardProps = { task: Task; projects: Project[]; onOpen: (id: string) => void; onFinish?: (id: string) => void };
+
+export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
   const body = useRef<HTMLDivElement>(null);
   const reveal = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x0: number; dx: number } | null>(null);
   const swiped = useRef(false);
   const reduce = useReducedMotion();
-  const due = fmtDue(task.due_at);
   const done = task.status === 'done';
+  const due = fmtDue(task.due_at), tone = done ? '' : due.tone; // a finished task is not late
   const color = taskColor(task, projects);
   const project = task.project_id ? projects.find((p) => p.id === task.project_id) : undefined;
   const ico = GLYPH[task.source_app] ?? (task.source_app !== 'manual' ? task.source_app[0].toUpperCase() : project ? project.name.trim()[0]?.toUpperCase() ?? '•' : '•');
 
   const finish = (x: number, y: number) => {
-    if (done) { finished.delete(task.id); void updateTask(task.id, { status: 'new' }); return; }
-    finished.add(task.id);
+    if (done) { void updateTask(task.id, { status: 'new' }); return; }
+    onFinish?.(task.id);
     confetti(x, y, color);
     void completeTask(task.id);
   };
@@ -76,12 +78,12 @@ export function TaskCard({ task, projects, onOpen }: { task: Task; projects: Pro
             {task.source_app !== 'manual' && <span className="chip" style={{ ['--sc' as string]: color }}><i />{appLabel(task.source_app)}</span>}
             {task.kind === 'work' && <span className="chip" style={{ ['--sc' as string]: 'var(--accent)' }}><i />Work</span>}
             {task.status === 'waiting' && <span className="chip" style={{ ['--sc' as string]: 'var(--warn)' }}><i />waiting{task.waiting_on ? ` · ${task.waiting_on}` : ''}</span>}
-            {due.text && <span className="chip when" style={{ ['--sc' as string]: TONE[due.tone] }}><i />{due.text}</span>}
+            {due.text && <span className="chip when" style={{ ['--sc' as string]: TONE[tone] }}><i />{due.text}</span>}
             {task.source_url && <a className="chip" href={task.source_url} target="_blank" rel="noopener">open ↗</a>}
           </div>
         </div>
         <div className="due">
-          {due.text && <b className={due.tone}>{due.text}</b>}
+          {due.text && <b className={tone}>{due.text}</b>}
           <button type="button" className="check" aria-label={`Done: ${task.title}`} aria-pressed={done}
             onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); finish(r.left + r.width / 2, r.top + r.height / 2); }}><i /></button>
         </div>
@@ -91,8 +93,8 @@ export function TaskCard({ task, projects, onOpen }: { task: Task; projects: Pro
 }
 
 /** A vertical list of task cards with the lens effect. */
-export function TaskList({ tasks, projects, onOpen }: { tasks: Task[]; projects: Project[]; onOpen: (id: string) => void }) {
+export function TaskList({ tasks, ...card }: Omit<CardProps, 'task'> & { tasks: Task[] }) {
   const ref = useRef<HTMLDivElement>(null);
   useLens(ref, ':scope > .tcard');
-  return <div className="tlist" ref={ref}>{tasks.map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={onOpen} />)}</div>;
+  return <div className="tlist" ref={ref}>{tasks.map((t) => <TaskCard key={t.id} task={t} {...card} />)}</div>;
 }
