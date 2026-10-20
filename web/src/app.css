@@ -862,3 +862,13 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
 .ath-set-voice{border-top:1px solid var(--border-soft);padding-top:10px;display:flex;flex-direction:column}
 .ath-set-voice .field{max-width:220px}
 @media (max-width:760px){.ath-set-top{grid-template-columns:minmax(0,1fr)}.ath-set-prev{max-width:200px}}
+
+/* Split an email into tasks (Task 4b) */
+.icard .act button.split{min-height:44px}
+dialog.split-sheet{max-width:640px;max-height:min(86vh,760px);overflow-y:auto}
+.split-title{margin:6px 0 10px;font-size:18px;overflow-wrap:anywhere}
+.split-field{display:grid;gap:4px;margin-top:14px;font-size:12px;color:var(--text-faint)}
+.split-sheet .mlist{margin-top:12px}
+.split-sheet .btn,.split-sheet .field,.split-sheet .tog{min-height:44px}
+.split-actions{justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.split-sheet[data-phase=review] .split-actions{margin-bottom:-20px;padding:12px 0 20px;position:sticky;bottom:-20px;background:var(--card)}

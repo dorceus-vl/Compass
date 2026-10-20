@@ -1,14 +1,19 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
-import type { InboxItem, InboxApp, MeetingReview, MeetingNotes, Rule, Task, SourceApp } from '../../shared/types.ts';
+import type { InboxItem, InboxApp, MeetingReview, MeetingNotes, Rule, Task, SourceApp, TaskEvent } from '../../shared/types.ts';
 import { appsForSecret, parseInboxBody, isWorkAccount, INBOX_APPS, type InboxPost } from '../lib/inbox-parse.ts';
 import { parseRule, matchRule, taskFromRule, safeRegex, dedupeChanges } from '../lib/rules.ts';
 import { seal, openAll, open } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
-import { oneOf, text, num, bool, dateTime } from '../lib/validate.ts';
+import { oneOf, text, num, bool, dateTime, date } from '../lib/validate.ts';
 import { notifyIngest } from '../lib/notify.ts';
 import { buildTaskFromSource, insertTaskStmt, updateTask, loadTask, addEvent } from './tasks.ts';
+import { AiRefused, runAi } from '../lib/ai.ts';
+import { buildSplitSystem, fence } from '../lib/prompt.ts';
+import { projectAccess } from '../lib/project-context.ts';
+import { parseSplit, splitRefusal, MAX_PROPOSALS, type SplitRefusal } from '../lib/split.ts';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 const inbox = new Hono<{ Bindings: Env; Variables: Variables }>();
 export const rules = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -245,6 +250,91 @@ inbox.post('/:id/snooze', async (c) => {
   item.state = 'snoozed'; item.snoozed_until = until.toISOString(); item.updated_at = now(); // UTC, so the wake-up compare is UTC to UTC
   await c.env.DB.prepare(`UPDATE inbox_items SET state = 'snoozed', snoozed_until = ?2, updated_at = ?3 WHERE id = ?1`).bind(item.id, item.snoozed_until, item.updated_at).run();
   return c.json({ item });
+});
+
+// ---- Split a forwarded email into tasks (Task 4b): Athena proposes on demand, nothing is stored until Vlad accepts. ----
+const SPLIT_MSG: Record<SplitRefusal, string> = {
+  pick_cloud_project: 'Athena can read work email only inside a project that allows cloud AI. Pick a work project that does.',
+  offline_boundary: 'This project is Offline only: its email is not sent to a model.',
+  unknown_project: 'project_id is not a project',
+};
+/** The item must be a live forwarded email, and the project (re-read here, whatever the client says) must let it go where it is going. Null means allowed. */
+async function splitGate(env: Env, item: InboxItem | null, projectId: string | null): Promise<{ status: ContentfulStatusCode; body: { error: string; message?: string } } | null> {
+  if (!item) return { status: 404, body: { error: 'Not found' } };
+  if (item.kind !== 'email') return { status: 400, body: { error: 'Only a forwarded email can be split' } };
+  if (item.state !== 'new' && item.state !== 'kept') return { status: 409, body: { error: 'not_open', message: 'This email has already been handled.' } };
+  const why = splitRefusal(!!item.work, projectId, projectId ? await projectAccess(env, projectId) : null);
+  return why ? { status: why === 'unknown_project' ? 400 : 409, body: { error: why, message: SPLIT_MSG[why] } } : null;
+}
+const projectIdOf = (b: unknown): string | null | undefined => {
+  const v = (b as { project_id?: unknown } | null)?.project_id;
+  return v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : undefined; // undefined: not a string
+};
+/** The email's full text when we kept it (forwarded mail keeps up to 20 000 characters in the payload), else its short body. */
+const emailText = (item: InboxItem): string => {
+  let p: { text?: unknown } | null = null;
+  try { p = item.payload ? JSON.parse(item.payload) : null; } catch { /* not JSON */ }
+  return (typeof p?.text === 'string' ? p.text : item.body ?? '').slice(0, 12_000);
+};
+
+inbox.post('/:id/split', async (c) => {
+  const body = await c.req.json<unknown>().catch(() => null);
+  const projectId = projectIdOf(body);
+  if (projectId === undefined) return c.json({ error: 'project_id must be a project id or null' }, 400);
+  const item = await loadItem(c.env, c.req.param('id'));
+  const no = await splitGate(c.env, item, projectId);
+  if (no) return c.json(no.body, no.status);
+  try {
+    const settings = await getSettings(c.env);
+    const out = await runAi(c.env, 'copilot', {
+      provider: settings.default_provider, maxTokens: 1800, system: buildSplitSystem({ today: localDate(settings.tz), tz: settings.tz }),
+      messages: [{ role: 'user', content: fence('email', `Subject: ${item!.title}\n\n${emailText(item!)}`) }],
+    });
+    return c.json({ proposals: parseSplit(out.text) });
+  } catch (e) {
+    if (e instanceof AiRefused) return c.json({ error: e.code, message: e.message }, e.status as ContentfulStatusCode);
+    throw e;
+  }
+});
+
+inbox.post('/:id/split/accept', async (c) => {
+  const body = await c.req.json<unknown>().catch(() => null);
+  const raw = (body as { tasks?: unknown } | null)?.tasks;
+  if (!Array.isArray(raw) || !raw.length || raw.length > MAX_PROPOSALS) return c.json({ error: `tasks must be a list of 1 to ${MAX_PROPOSALS}` }, 400);
+  const projectId = projectIdOf(body);
+  if (projectId === undefined) return c.json({ error: 'project_id must be a project id or null' }, 400);
+  const rows: { title: string; due_at: string | null; horizon: Task['horizon']; notes: string | null }[] = [];
+  for (const t of raw as Record<string, unknown>[]) {
+    const title = text(120)(t?.title, 'title'), notes = text(300)(t?.notes, 'notes'), due = date()(t?.due_at, 'due_at'), horizon = oneOf('short', 'medium', 'long')(t?.horizon ?? 'short', 'horizon');
+    for (const r of [title, notes, due, horizon]) if ('error' in r) return c.json({ error: r.error }, 400);
+    if (!(title as { value: unknown }).value) return c.json({ error: 'title must be 1-120 characters' }, 400);
+    rows.push({ title: (title as { value: string }).value, notes: (notes as { value: string | null }).value, due_at: (due as { value: string | null }).value, horizon: (horizon as { value: Task['horizon'] }).value });
+  }
+  const item = await loadItem(c.env, c.req.param('id'));
+  const no = await splitGate(c.env, item, projectId);
+  if (no) return c.json(no.body, no.status);
+  const t = now();
+  const guard = c.env.DB.prepare(`SELECT CASE WHEN (SELECT state FROM inbox_items WHERE id = ?1) IN ('new','kept') THEN 1 ELSE json('not json') END`).bind(item!.id); // errors, rolling the batch back, when two accepts race
+  const writes: D1PreparedStatement[] = [guard];
+  const made: Task[] = [];
+  for (const r of rows) {
+    const task = await buildTaskFromSource(c.env, { ...r, project_id: projectId, kind: item!.work ? 'work' : 'personal', source_app: 'email', source_kind: 'email', source_ref: null, source_url: item!.url });
+    task.sort_in_column += 1000 * made.length; // every task read the same column maximum; step them apart
+    writes.push(await insertTaskStmt(c.env, task));
+    const ev: TaskEvent = { id: crypto.randomUUID(), task_id: task.id, at: t, actor: 'you', type: 'created', data: JSON.stringify({ inbox_id: item!.id, split: true }), enc_v: 0 };
+    const s = await seal(c.env, 'task_events', { ...ev }, task.kind);
+    writes.push(c.env.DB.prepare('INSERT INTO task_events (id, task_id, at, actor, type, data, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7)').bind(s.id, s.task_id, s.at, s.actor, s.type, s.data, s.enc_v));
+    made.push(task);
+  }
+  writes.push(c.env.DB.prepare(`UPDATE inbox_items SET state = 'added', updated_at = ?2 WHERE id = ?1 AND state IN ('new','kept')`).bind(item!.id, t));
+  try { await c.env.DB.batch(writes); }
+  catch (e) {
+    const cur = await loadItem(c.env, item!.id);
+    if (cur && cur.state !== 'new' && cur.state !== 'kept') return c.json({ error: 'not_open', message: 'This email has already been handled.' }, 409);
+    throw e;
+  }
+  await audit(c.env, 'you', 'inbox.split', item!.id, { tasks: made.length });
+  return c.json({ item: { ...item!, state: 'added', updated_at: t }, tasks: made }, 201);
 });
 
 // ---- Rules: configuration, not user content, so DELETE is a real delete (no trash). ----

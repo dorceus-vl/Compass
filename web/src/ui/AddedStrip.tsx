@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { InboxItem } from '../../../shared/types.ts';
 import { useInbox, reviewPath, safeUrl, openTask } from '../inbox.ts';
 import { navigate } from '../router.ts';
@@ -7,11 +8,13 @@ import { appLabel, appGlyph } from './sources.ts';
 import { sourceColor, accent } from './colors.ts';
 import { useSwipe } from './useSwipe.ts';
 import { SectionHead } from './SectionHead.tsx';
+import { SplitSheet } from './SplitSheet.tsx';
 
 type Inbox = ReturnType<typeof useInbox>;
 
 /** One item, as the "Added by your apps" card; the Inbox view reuses it (`id`, `active` for the listbox). */
 export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem; inbox: Inbox; onOpen: (taskId: string) => void; id?: string; active?: boolean }) {
+  const [splitting, setSplitting] = useState(false);
   const off = inbox.offline || !navigator.onLine;
   const tip = off ? 'Needs a connection' : undefined;
   const link = safeUrl(item.url);
@@ -23,7 +26,7 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
   const meeting = item.kind === 'meeting', fresh = item.state === 'new';
   const keep = () => (meeting ? reviewPath(item).then(navigate) : inbox.keep(item.id));
   const swipe = useSwipe<HTMLDivElement>({
-    right: meeting || (fresh && !off), left: (meeting || fresh) && !off, skip: 'a, button', fly: true,
+    right: meeting || (fresh && !off), left: (meeting || fresh) && !off, skip: 'a, button, dialog', fly: true,
     onSwipe: (dir) => (dir === 'right' ? keep() : inbox.dismiss(item.id)),
   });
   return (
@@ -45,6 +48,7 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
               {item.task_id && btn('Undo', () => void undo())}
             </> : <>
               {btn('Keep', () => void inbox.keep(item.id), true)}
+              {item.kind === 'email' && <button type="button" className="split" disabled={off} title={tip} onClick={() => setSplitting(true)}>Split into tasks</button>}
               {btn('Snooze', () => void inbox.snooze(item.id))}
               {btn('Dismiss', () => void inbox.dismiss(item.id))}
             </>}
@@ -52,6 +56,7 @@ export function InboxCard({ item, inbox, onOpen, id, active }: { item: InboxItem
           </div>
         </div>
       </div>
+      {splitting && <SplitSheet item={item} onClose={() => setSplitting(false)} />}
     </div>
   );
 }

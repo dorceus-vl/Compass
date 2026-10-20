@@ -631,5 +631,49 @@ echo "smoke: (z2) kelly document hand-off: personal and unfiled reach the stub; 
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
 echo "smoke: (z) kelly: PUT validated + audited, brief and calendar gated (off / no scope), via the relay, capped, cached, log shows tasks while they exist"
 kset '{"enabled":false,"scopes":[]}'; D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
+# (a5) Split an email into tasks (Task 4b) on the stub: proposals only for an email whose project lets it go; accept makes the ticked tasks, marks the item added, writes events.
+SRID=$(curl "${H[@]}" -X POST $B/api/rules -d "{\"name\":\"Smoke split $R\",\"app\":\"kelly\",\"mode\":\"inbox\",\"dedupe\":\"always\",\"sort\":1,\"match\":{\"title_regex\":\"smokesplit$R\"},\"then_set\":{}}" | js d.rule.id)
+semail() { post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke smokesplit$R $1\",\"ref\":\"smoke:split:$R:$1\",\"body\":\"Please send the budget by Friday and book the room.\",\"payload\":{\"from\":\"Ann\",\"account\":\"$2\"}}" | js d.id; }
+sapi() { curl -s -o $AV/s -w '%{http_code}' -b $J -H "Origin: $B" -H 'Content-Type: application/json' -X POST $B/api/inbox/$1 -d "$2"; }
+SU() { D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='copilot'" | js 'd[0].results[0].n'; }
+AV=$(mktemp -d)
+SPE=$(semail personal me@gmail.com); SWE=$(semail work me@bell.ca)
+[ -n "$SPE" ] && [ "$SPE" != null ] && [ -n "$SWE" ] && [ "$SWE" != null ] || fail "split: the emails did not land in the inbox"
+SE() { D1X "SELECT count(*) AS n FROM tasks WHERE source_app='email' AND source_kind='email'" | js 'd[0].results[0].n'; }
+SE0=$(SE); U0=$(SU)
+[ "$(sapi $SPE/split '{}')" = 200 ] && [ "$(js 'd.proposals.length+","+d.proposals[0].due_at+","+d.proposals[2].due_at+","+d.proposals[2].horizon' < $AV/s)" = "3,2033-01-14,null,long" ] || fail "split of a personal email: $(cat $AV/s)"
+[ "$(SU)" = $((U0 + 1)) ] || fail "split wrote no usage row"
+[ "$(sapi $SWE/split '{}')" = 409 ] && grep -q '"error":"pick_cloud_project"' $AV/s || fail "work email without a project was not refused: $(cat $AV/s)"
+SWP2=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke split work","kind":"work"}' | js d.project.id)
+SPP2=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke split personal","kind":"personal"}' | js d.project.id)
+[ "$(sapi $SWE/split "{\"project_id\":\"$SWP2\"}")" = 409 ] && grep -q '"error":"pick_cloud_project"' $AV/s || fail "work email into an Offline-only project was not refused"
+[ "$(sapi $SWE/split "{\"project_id\":\"$SPP2\"}")" = 409 ] && grep -q '"error":"pick_cloud_project"' $AV/s || fail "work email into a personal project was not refused"
+[ "$(sapi $SPE/split "{\"project_id\":\"$SWP2\"}")" = 409 ] && grep -q '"error":"offline_boundary"' $AV/s || fail "personal email into an Offline-only project was not refused"
+[ "$(sapi $SPE/split '{"project_id":"nope"}')" = 400 ] || fail "split into an unknown project"
+[ "$(SU)" = $((U0 + 1)) ] || fail "a refused split was billed or stored"
+curl "${H[@]}" -X PATCH $B/api/projects/$SWP2 -d '{"data_boundary":"cloud"}' >/dev/null
+[ "$(sapi $SWE/split "{\"project_id\":\"$SWP2\"}")" = 200 ] && [ "$(js d.proposals.length < $AV/s)" = 3 ] || fail "work email into a cloud work project: $(cat $AV/s)"
+SNI=$(post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"notification\",\"title\":\"Smoke smokesplit$R note\",\"ref\":\"smoke:split:$R:n\"}" | js d.id)
+[ "$(sapi $SNI/split '{}')" = 400 ] || fail "a notification was split"
+[ "$(sapi nope/split '{}')" = 404 ] || fail "split of a missing item"
+TASKS='[{"title":"Send the budget","due_at":"2033-01-14","horizon":"short","notes":"From Ann."},{"title":"Book the room","due_at":null,"horizon":"medium","notes":null}]'
+ACC0="{\"project_id\":null,\"tasks\":$TASKS}"; ACCW="{\"project_id\":\"$SWP2\",\"tasks\":$TASKS}"
+[ "$(sapi $SPE/split/accept '{"tasks":[]}')" = 400 ] && [ "$(sapi $SPE/split/accept '{"tasks":[{"title":"x","due_at":"soon"}]}')" = 400 ] || fail "accept validation"
+[ "$(sapi $SWE/split/accept "$ACC0")" = 409 ] || fail "work accept without a project"
+[ "$(SE)" = "$SE0" ] || fail "a refused accept made tasks"
+[ "$(sapi $SPE/split/accept "$ACC0")" = 201 ] && [ "$(js 'd.tasks.length+","+d.tasks[0].source_app+","+d.item.state' < $AV/s)" = "2,email,added" ] || fail "personal accept: $(cat $AV/s)"
+SPT=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); SPT1=${SPT%% *}
+[ "$(task $SPT1 due_at)" = 2033-01-14 ] && [ "$(task $SPT1 kind)" = personal ] || fail "split task fields"
+[ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').state")" = added ] || fail "the email was not marked added"
+[ "$(D1X "SELECT count(*) AS n FROM task_events WHERE type='created' AND task_id IN ('$(echo $SPT | sed "s/ /','/")')" | js 'd[0].results[0].n')" = 2 ] || fail "split tasks have no created events"
+[ "$(sapi $SPE/split/accept "$ACC0")" = 409 ] && grep -q not_open $AV/s || fail "a second accept was not refused"
+[ "$(sapi $SPE/split '{}')" = 409 ] || fail "an added email was split again"
+[ "$(sapi $SWE/split/accept "$ACCW")" = 201 ] || fail "work accept: $(cat $AV/s)"
+SWT=$(js 'd.tasks[0].id' < $AV/s)
+[ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$SWT' AND enc_v=2 AND title NOT LIKE '%budget%'" | js 'd[0].results[0].n')" = 1 ] || fail "a split work task is not ciphertext"
+for x in $SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+for x in $SWP2 $SPP2; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+curl "${H[@]}" -X POST $B/api/inbox/$SNI/dismiss >/dev/null; curl "${H[@]}" -X DELETE $B/api/rules/$SRID >/dev/null; rm -rf $AV
+echo "smoke: (a5) email split: proposals for personal and cloud-work email; work without a cloud work project, Offline-only, personal-kind refused (409, not billed); accept 2 of 3 -> 2 tasks, item added, events written, second accept 409; work tasks sealed"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

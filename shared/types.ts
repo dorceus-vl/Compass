@@ -98,6 +98,8 @@ export type Provider = 'claude' | 'gemini';
 /** Model features, and Athena's voice (ElevenLabs text-to-speech) and listening (speech-to-text), metered the same way. */
 export type AiFeature = 'copilot' | 'status_report' | 'plan_review' | 'brief' | 'athena_voice' | 'athena_listen';
 export interface ProposedTask { title: string; horizon: Horizon; due_at: string | null }
+/** One task Athena proposes from a forwarded email (Task 4b); lives in the client until Vlad accepts it. */
+export interface SplitProposal { title: string; due_at: string | null; horizon: Horizon; notes: string | null }
 export interface ProposedRaid { type: RaidType; text: string; probability: number | null; impact: number | null }
 export interface Proposals { tasks: ProposedTask[]; raid: ProposedRaid[]; decisions: { text: string }[] }
 export interface AiThread { id: string; project_id: string | null; title: string; provider: Provider; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }

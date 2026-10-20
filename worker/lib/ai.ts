@@ -112,6 +112,10 @@ async function monthCost(env: Env, tz: string): Promise<number> {
 }
 
 function stubAnswer(call: AiCall): Read {
+  if (call.system.includes('You are splitting one forwarded email')) { // the email split (Task 4b): three obvious stub proposals, one with a date, one with a bad date
+    const list = [{ title: 'Stub task one', due_at: '2033-01-14', horizon: 'short', notes: 'Stub note.' }, { title: 'Stub task two', due_at: null, horizon: 'medium', notes: null }, { title: 'Stub task three', due_at: 'not a date', horizon: 'long', notes: null }];
+    return { text: JSON.stringify(list), input_tokens: 100, output_tokens: 50 };
+  }
   const last = [...call.messages].reverse().find((t) => t.role === 'user')?.content ?? '';
   const slug = call.system.match(/<<<data page ([^ \n]+)/)?.[1];
   const meta = { citations: slug ? [slug] : [], proposals: { tasks: [{ title: 'Stub task', horizon: 'short', due_at: null }], raid: [], decisions: [] } };
