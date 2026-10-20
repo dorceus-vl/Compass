@@ -84,7 +84,9 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   // KN17: a meeting or email item also goes with its source's project, before the purge unfiles the review and the task below (an Offline-only project's notes never come back as unfiled).
   const goneItems = `SELECT id FROM knowledge_items WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR collection_id IN (${goneColls}) OR document_id IN (${goneDocs})
     OR (source = 'meeting' AND source_id IN (SELECT id FROM meeting_reviews WHERE project_id IN (${goneProjects})))
-    OR (source = 'email' AND source_id IN (SELECT ib.id FROM inbox_items ib JOIN tasks t ON t.id = ib.task_id WHERE t.project_id IN (${goneProjects})))`;
+    OR (source = 'email' AND source_id IN (SELECT ib.id FROM inbox_items ib JOIN tasks t ON t.id = ib.task_id WHERE t.project_id IN (${goneProjects})))
+    OR (source = 'email' AND source_id IN (SELECT ib.id FROM inbox_items ib JOIN tasks t ON t.id = ib.task_id JOIN projects p ON p.id = t.project_id WHERE t.id IN (${goneTasks}) AND p.data_boundary = 'offline'))`;
+  // KN18: likewise an email item whose task goes while it sits in an Offline-only project; in any other project its content was already allowed where it is, so it stays.
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
