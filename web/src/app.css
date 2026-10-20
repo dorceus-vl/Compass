@@ -834,6 +834,16 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
 @media (max-width:760px),(pointer:coarse){
   .ath-tool,.chip.ath-more{min-height:44px}
 }
+/* Athena's voice (Phase 5b Task 4): the header switch, the mic, and the stage as a stop button while she speaks. */
+.ath-headr{gap:10px;align-items:center}
+.ath-voice{display:flex;align-items:center;gap:6px;background:var(--field);border:1px solid var(--field-border);border-radius:999px;padding:0 4px 0 14px;color:var(--text-dim);font-size:13px;cursor:pointer}
+.ath-face{position:relative;min-width:0}
+.ath-hush{position:absolute;inset:0;width:100%;border:0;padding:0;background:transparent;border-radius:20px;cursor:pointer}
+.ath-hush:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18),inset 0 0 0 1px var(--accent)}
+.ath-icon.mic{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.ath-icon.mic[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.15)}
+.ath-icon:disabled{opacity:.5;cursor:not-allowed}
+@media (max-width:760px){.ath-hush{border-radius:12px}}
 
 /* Settings → Athena card (Phase 5b Task 3) */
 .ath-set-top{display:grid;grid-template-columns:minmax(140px,200px) minmax(0,1fr);gap:18px;align-items:start;margin-bottom:8px}

@@ -4,6 +4,11 @@ import type { AthenaClip, AthenaClipState } from '../../shared/types.ts';
 import { now, audit, getSettings, patchSettings } from '../lib/db.ts';
 import { parseRange } from '../lib/range.ts';
 import { MAX_CLIP_BYTES, MAX_CLIPS, MAX_PORTRAIT_BYTES, MEDIA_TYPE, sniffMedia } from '../lib/athena-media.ts';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { AiRefused, meter } from '../lib/ai.ts';
+import { open as openRow, sealBytes, openBytes } from '../lib/enc.ts';
+import { projectAccess } from '../lib/project-context.ts';
+import { speechText, synthesize, transcribe, parseVoicePrices, ttsCostMicro, sttCostMicro, sniffAudio, voiceKey } from '../lib/voice.ts';
 
 const athena = new Hono<{ Bindings: Env; Variables: Variables }>();
 const STATES: readonly string[] = ['idle', 'listening', 'thinking', 'speaking'];
@@ -111,6 +116,88 @@ athena.get('/media/:id', async (c) => {
   if (!obj) return c.json({ error: 'Not found' }, 404);
   if (!range) return new Response(obj.body, { status: 200, headers: { ...base, 'Content-Length': String(row.bytes) } });
   return new Response(obj.body, { status: 206, headers: { ...base, 'Content-Range': `bytes ${range.start}-${range.end}/${row.bytes}`, 'Content-Length': String(range.end - range.start + 1) } });
+});
+
+// ---------------------------------------------------------------- voice (ruling A6): ElevenLabs only from here, metered, never logged
+
+const VOICE_OFF = { error: 'voice_off', message: "Athena's voice isn't set up yet: it needs the ElevenLabs key and a voice picked in Settings → Athena." };
+const VOICE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const TEST_LINE = "Hello Vlad, it's Athena. This is how I'll sound when I read my answers.";
+const MAX_RECORDING = 2 * 1024 * 1024, MAX_RECORDING_MS = 60_000;
+const mp3 = (body: BodyInit) => new Response(body, { headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
+const refused = (e: unknown) => {
+  if (e instanceof AiRefused) return Response.json({ error: e.code, message: e.message }, { status: e.status as ContentfulStatusCode });
+  throw e;
+};
+
+/** Text-to-speech of a stored answer (cached in R2 per message, sealed for a work thread), or `{ test: true, voice_id? }`: a fixed line, uncached. */
+athena.post('/speak', async (c) => {
+  const env = c.env;
+  const b = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
+  const settings = await getSettings(env);
+  try {
+    if (b.test === true) {
+      const voice = b.voice_id === undefined || b.voice_id === null ? settings.athena.voice_id : b.voice_id;
+      if (voice !== null && !(typeof voice === 'string' && VOICE_ID.test(voice))) return c.json({ error: 'voice_id must be an ElevenLabs voice id (letters and digits)' }, 400);
+      if (!voice || !voiceKey(env)) return c.json(VOICE_OFF, 409);
+      const prices = parseVoicePrices(env.ELEVENLABS_PRICES), cost_micro = ttsCostMicro(TEST_LINE.length, prices);
+      const record = await meter(env, 'athena_voice', cost_micro);
+      const audio = await synthesize(env, voice, TEST_LINE);
+      await record({ provider: 'elevenlabs', input_tokens: TEST_LINE.length, output_tokens: 0, cost_micro });
+      return mp3(audio);
+    }
+    if (typeof b.message_id !== 'string' || !b.message_id) return c.json({ error: 'message_id must be a message id' }, 400);
+    // The answer, in a live thread, read with its project's boundary (the same check chat makes): Offline-only or trashed never reaches ElevenLabs.
+    const row = await env.DB.prepare('SELECT m.*, t.project_id FROM ai_messages m JOIN ai_threads t ON t.id = m.thread_id WHERE m.id = ?1 AND t.deleted_at IS NULL')
+      .bind(b.message_id).first<{ id: string; role: string; content: string; enc_v: number; project_id: string | null }>();
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (row.role !== 'assistant') return c.json({ error: 'Only answers are read aloud' }, 400);
+    const access = await projectAccess(env, row.project_id);
+    if (!access) return c.json({ error: 'Not found' }, 404);
+    if (access.boundary === 'offline') return c.json({ error: 'offline_boundary', message: 'This project is Offline only: its answers are not sent to ElevenLabs.' }, 409);
+
+    const key = `athena-tts/${row.id}`, context = `athena-tts:${row.id}`;
+    const hit = await env.FILES.get(key);
+    if (hit) return mp3(hit.customMetadata?.sealed === '1' ? await openBytes(env, await hit.text(), context) : hit.body);
+
+    const voice = settings.athena.voice_id;
+    if (!voice || !voiceKey(env)) return c.json(VOICE_OFF, 409);
+    const text = speechText((await openRow(env, 'ai_messages', { ...row })).content);
+    if (!text) return c.json({ error: 'nothing_to_say', message: 'This answer has nothing to read aloud.' }, 400);
+    const cost_micro = ttsCostMicro(text.length, parseVoicePrices(env.ELEVENLABS_PRICES));
+    const record = await meter(env, 'athena_voice', cost_micro);
+    const audio = await synthesize(env, voice, text);
+    await record({ provider: 'elevenlabs', input_tokens: text.length, output_tokens: 0, cost_micro });
+    // Work answers are sealed at rest like their rows; the cache is best effort (a failed write only costs a replay).
+    await (access.kind === 'work'
+      ? env.FILES.put(key, await sealBytes(env, audio, context), { customMetadata: { sealed: '1' } })
+      : env.FILES.put(key, audio, { httpMetadata: { contentType: 'audio/mpeg' } })).catch(() => console.warn('[athena] could not cache an answer\'s audio'));
+    return mp3(audio);
+  } catch (e) { return refused(e); }
+});
+
+/** Speech-to-text of a recording (raw body, WebM or MP4, 2 MB and 60 s at most). The text goes into the Ask box; it is never sent on its own. */
+athena.post('/listen', async (c) => {
+  const env = c.env;
+  const type = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  if (type !== 'audio/webm' && type !== 'audio/mp4') return c.json({ error: 'Recordings are audio/webm or audio/mp4.' }, 415);
+  const len = c.req.header('content-length');
+  if (!len || !/^\d+$/.test(len)) return c.json({ error: 'Length Required' }, 411);
+  if (Number(len) > MAX_RECORDING) return c.json({ error: 'Recordings must be 2 MB or smaller.' }, 413);
+  const ms = Number(c.req.header('x-duration-ms'));
+  if (!Number.isInteger(ms) || ms < 1 || ms > MAX_RECORDING_MS) return c.json({ error: 'X-Duration-Ms must be 1 to 60000' }, 400);
+  if (!voiceKey(env)) return c.json(VOICE_OFF, 409);
+  const audio = new Uint8Array(await c.req.arrayBuffer());
+  if (!audio.length) return c.json({ error: 'The recording is empty.' }, 400);
+  if (audio.length > MAX_RECORDING) return c.json({ error: 'Recordings must be 2 MB or smaller.' }, 413);
+  if (sniffAudio(audio) !== type.slice(6)) return c.json({ error: 'That recording is not the audio it says it is.' }, 415);
+  try {
+    const cost_micro = sttCostMicro(ms, parseVoicePrices(env.ELEVENLABS_PRICES));
+    const record = await meter(env, 'athena_listen', cost_micro);
+    const text = await transcribe(env, audio, type);
+    await record({ provider: 'elevenlabs', input_tokens: Math.ceil(ms / 1000), output_tokens: 0, cost_micro });
+    return c.json({ text });
+  } catch (e) { return refused(e); }
 });
 
 export default athena;

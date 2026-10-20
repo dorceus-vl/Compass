@@ -66,6 +66,20 @@ public class Check {
         check("Title".equals(CompassLink.shared("Title", "")), "subject only");
         check(CompassLink.shared(null, "  ") == null && CompassLink.shared(" ", null) == null, "nothing");
 
+        // Capture (Athena's mic): only the page on the server the app shows, only the microphone.
+        String[] mic = { CompassLink.AUDIO_CAPTURE };
+        check(CompassLink.mayCapture("https://compass.knocturnlabs.com/", mic, prod), "mic on compass");
+        check(CompassLink.mayCapture("https://compass.knocturnlabs.com", mic, prod), "origin without a slash");
+        check(CompassLink.mayCapture("http://localhost:5173/", mic, dev), "mic on the local server");
+        check(!CompassLink.mayCapture("https://compass.knocturnlabs.com/", new String[] { "android.webkit.resource.VIDEO_CAPTURE" }, prod), "camera refused");
+        check(!CompassLink.mayCapture("https://compass.knocturnlabs.com/", new String[] { CompassLink.AUDIO_CAPTURE, "android.webkit.resource.VIDEO_CAPTURE" }, prod), "mic + camera refused");
+        check(!CompassLink.mayCapture("https://compass.knocturnlabs.com/", new String[] { "android.webkit.resource.MIDI_SYSEX" }, prod), "midi refused");
+        check(!CompassLink.mayCapture("https://compass.knocturnlabs.com/", new String[0], prod) && !CompassLink.mayCapture("https://compass.knocturnlabs.com/", null, prod), "nothing asked");
+        for (String bad : new String[] { null, "", "null", "https://evil.com/", "http://compass.knocturnlabs.com/", "https://compass.knocturnlabs.com.evil.com/",
+                "https://compass.knocturnlabs.com:8443/", "https://me@compass.knocturnlabs.com/", "https://id.knocturnlabs.com/", "file:///x", "http://localhost:5173/" }) {
+            check(!CompassLink.mayCapture(bad, mic, prod), "mic refused: " + bad);
+        }
+
         // Download names can't name a folder.
         check("report.docx".equals(CompassLink.fileName("report.docx")), "plain name");
         check("passwd".equals(CompassLink.fileName("../../etc/passwd")), "no path");

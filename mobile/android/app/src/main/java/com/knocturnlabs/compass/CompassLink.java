@@ -67,6 +67,16 @@ final class CompassLink {
         return compass || onServer(abs, server) ? abs.toString() : null;
     }
 
+    /** The web view's capture request (WebChromeClient.onPermissionRequest): granted only when the page asking is on the server the app
+     *  shows and asks for the microphone alone (Athena's mic). The camera, MIDI, protected media and every other origin are refused. */
+    static final String AUDIO_CAPTURE = "android.webkit.resource.AUDIO_CAPTURE";
+    static boolean mayCapture(String origin, String[] resources, URI server) {
+        URI url = parse(origin);
+        if (url == null || resources == null || resources.length == 0 || !onServer(url, server)) return false;
+        for (String r : resources) if (!AUDIO_CAPTURE.equals(r)) return false;
+        return true;
+    }
+
     /** What a share (ACTION_SEND text/plain) puts in quick add: browsers send the page title as the subject and the URL as the text,
      *  so the title goes first (quick add's title) and the URL after it (its notes). Null when there is nothing. */
     static String shared(String subject, String text) {

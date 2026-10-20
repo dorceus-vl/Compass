@@ -95,7 +95,8 @@ export interface DocumentRow {
 }
 export interface LibraryPage { slug: string; section: string; title: string; body: string; source: 'bundled' | 'import' | 'lesson' }
 export type Provider = 'claude' | 'gemini';
-export type AiFeature = 'copilot' | 'status_report' | 'plan_review' | 'brief';
+/** Model features, and Athena's voice (ElevenLabs text-to-speech) and listening (speech-to-text), metered the same way. */
+export type AiFeature = 'copilot' | 'status_report' | 'plan_review' | 'brief' | 'athena_voice' | 'athena_listen';
 export interface ProposedTask { title: string; horizon: Horizon; due_at: string | null }
 export interface ProposedRaid { type: RaidType; text: string; probability: number | null; impact: number | null }
 export interface Proposals { tasks: ProposedTask[]; raid: ProposedRaid[]; decisions: { text: string }[] }

@@ -24,10 +24,14 @@
     "AI_MODEL_CLAUDE": "claude-sonnet-5-5",
     "AI_MODEL_GEMINI": "gemini-3.6-flash",
     // USD per million tokens; update when a provider changes prices.
-    "AI_PRICES": "{\"claude\":{\"in\":3,\"out\":15},\"gemini\":{\"in\":0.75,\"out\":3.75}}"
+    "AI_PRICES": "{\"claude\":{\"in\":3,\"out\":15},\"gemini\":{\"in\":0.75,\"out\":3.75}}",
+    // Phase 5b Athena's voice (worker/lib/voice.ts). The key ELEVENLABS_API_KEY is a secret Vlad puts himself. Prices in USD; update when ElevenLabs changes them.
+    "ATHENA_TTS_MODEL": "eleven_turbo_v2_5",
+    "ATHENA_STT_MODEL": "scribe_v1",
+    "ELEVENLABS_PRICES": "{\"tts_per_1k_chars\":0.18,\"stt_per_minute\":0.40}"
   },
   // Every 15 minutes: Trash purge (30 days), audit purge (90 days). Later phases add pushes here.
   "triggers": { "crons": ["*/15 * * * *"] },
   "routes": [{ "pattern": "compass.knocturnlabs.com", "custom_domain": true }]
-  // Secrets (wrangler secret put): COMPASS_DATA_KEY; Phase 5: AGENT_SECRET_KELLY, KELLY_RELAY_SECRET; Phase 2: INBOX_SECRET_KELLY/ID/HOLLOW, VAPID_PUBLIC_KEY/PRIVATE_KEY, EMAIL_INBOX_ADDRESS, ALLOWED_FORWARDERS (scripts/setup-phase2.sh).
+  // Secrets (wrangler secret put): COMPASS_DATA_KEY; Phase 5b: ELEVENLABS_API_KEY; Phase 5: AGENT_SECRET_KELLY, KELLY_RELAY_SECRET; Phase 2: INBOX_SECRET_KELLY/ID/HOLLOW, VAPID_PUBLIC_KEY/PRIVATE_KEY, EMAIL_INBOX_ADDRESS, ALLOWED_FORWARDERS (scripts/setup-phase2.sh).
 }

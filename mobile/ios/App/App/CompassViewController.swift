@@ -37,6 +37,15 @@ final class CompassWindows: NSObject, WKUIDelegate {
         return nil
     }
 
+    /// getUserMedia: Capacitor's handler grants every page the camera and the mic; here only the Compass page gets the mic (Athena's
+    /// mic, CompassLink.mayCapture). iOS still asks once with NSMicrophoneUsageDescription.
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        guard let server else { return decisionHandler(.deny) }
+        let ok = CompassLink.mayCapture(scheme: origin.protocol, host: origin.host, port: origin.port, microphoneOnly: type == .microphone, server: server)
+        decisionHandler(ok ? .grant : .deny)
+    }
+
     override func responds(to selector: Selector!) -> Bool { super.responds(to: selector) || inner?.responds(to: selector) == true }
     override func forwardingTarget(for selector: Selector!) -> Any? { inner?.responds(to: selector) == true ? inner : nil }
 }

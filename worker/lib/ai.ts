@@ -8,11 +8,13 @@ export type AiImage = { media_type: 'image/png' | 'image/jpeg'; data: string };
 export type AiCall = { provider: Provider; system: string; messages: AiTurn[]; maxTokens: number; images?: AiImage[] };
 export type AiResult = { text: string; input_tokens: number; output_tokens: number; cost_micro: number };
 type Prices = Record<Provider, { in: number; out: number }>;
-type Code = 'no_key' | 'cap_reached' | 'rate_limited' | 'offline_boundary' | 'provider_error';
+type Code = 'no_key' | 'cap_reached' | 'rate_limited' | 'offline_boundary' | 'provider_error' | 'voice_off';
 
-const STATUS: Record<Code, number> = { no_key: 503, cap_reached: 409, rate_limited: 429, offline_boundary: 409, provider_error: 502 };
+const STATUS: Record<Code, number> = { no_key: 503, cap_reached: 409, rate_limited: 429, offline_boundary: 409, provider_error: 502, voice_off: 409 };
 const NAMES: Record<Provider, string> = { claude: 'Claude', gemini: 'Gemini' };
-const HOURLY_LIMIT = 30;
+/** Ruling A9: model calls and voice calls (ElevenLabs) have their own hourly limits; both count against the monthly cap. */
+const VOICE: readonly AiFeature[] = ['athena_voice', 'athena_listen'];
+const HOURLY = { model: 30, voice: 60 };
 
 export class AiRefused extends Error {
   code: Code;
@@ -101,6 +103,9 @@ export function readGemini(j: any): Read {
 
 const hasKey = (env: Env, p: Provider) => !!(p === 'claude' ? env.ANTHROPIC_API_KEY : env.GEMINI_API_KEY);
 
+/** The local stub (AI_STUB=1 with DEV_LOGIN=1): answers without keys and never calls out. */
+export const isStub = (env: Env) => env.AI_STUB === '1' && env.DEV_LOGIN === '1';
+
 async function monthCost(env: Env, tz: string): Promise<number> {
   const r = await env.DB.prepare('SELECT COALESCE(SUM(cost_micro), 0) AS c FROM ai_usage WHERE at >= ?1').bind(monthStartUtc(tz, new Date())).first<{ c: number }>();
   return r?.c ?? 0;
@@ -113,16 +118,37 @@ function stubAnswer(call: AiCall): Read {
   return { text: `Stub answer for: ${last.slice(0, 4000)}\n\n[stub: ${call.images?.length ?? 0} image(s)]\n\n\`\`\`compass-meta\n${JSON.stringify(meta)}\n\`\`\``, input_tokens: 100, output_tokens: 50 };
 }
 
+export type Usage = { provider: Provider | 'elevenlabs'; input_tokens: number; output_tokens: number; cost_micro: number };
+
+/**
+ * The one metering path (model and voice calls alike): the monthly cap (with this call's estimate, when known) and the hourly limit of
+ * the feature's group are checked first; the returned `record` writes the usage row and an audit row with no content once the call
+ * has succeeded (a model's tokens are known only then).
+ */
+export async function meter(env: Env, feature: AiFeature, estimateMicro = 0): Promise<(u: Usage) => Promise<void>> {
+  const s = await getSettings(env);
+  const spent = await monthCost(env, s.tz);
+  if (spent >= s.ai_monthly_cap_micro || spent + estimateMicro > s.ai_monthly_cap_micro) throw new AiRefused('cap_reached', "This month's AI budget is used up. Raise it in Settings → AI.");
+  const voice = VOICE.includes(feature);
+  const hour = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1 AND feature ${voice ? 'IN' : 'NOT IN'} ('athena_voice','athena_listen')`)
+    .bind(new Date(Date.now() - 3600_000).toISOString()).first<{ n: number }>();
+  if ((hour?.n ?? 0) >= HOURLY[voice ? 'voice' : 'model']) {
+    throw new AiRefused('rate_limited', voice ? '60 voice clips an hour is the limit. Try again in a few minutes.' : '30 questions an hour is the limit. Try again in a few minutes.');
+  }
+  return async (u) => {
+    await env.DB.prepare('INSERT INTO ai_usage (id, at, feature, provider, input_tokens, output_tokens, cost_micro) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
+      .bind(crypto.randomUUID(), now(), feature, u.provider, u.input_tokens, u.output_tokens, u.cost_micro).run();
+    await audit(env, 'you', 'ai.' + feature, null, u);
+  };
+}
+
 /** One model call, with the key, cap and hourly checks first and the usage row + audit (never content) after. */
 export async function runAi(env: Env, feature: AiFeature, call: AiCall): Promise<AiResult> {
-  if (!hasKey(env, call.provider) && !(env.AI_STUB === '1' && env.DEV_LOGIN === '1')) throw new AiRefused('no_key', `${NAMES[call.provider]} isn't set up yet.`);
-  const s = await getSettings(env);
-  if (await monthCost(env, s.tz) >= s.ai_monthly_cap_micro) throw new AiRefused('cap_reached', "This month's AI budget is used up. Raise it in Settings → AI.");
-  const hour = await env.DB.prepare('SELECT COUNT(*) AS n FROM ai_usage WHERE at >= ?1').bind(new Date(Date.now() - 3600_000).toISOString()).first<{ n: number }>();
-  if ((hour?.n ?? 0) >= HOURLY_LIMIT) throw new AiRefused('rate_limited', '30 questions an hour is the limit. Try again in a few minutes.');
+  if (!hasKey(env, call.provider) && !isStub(env)) throw new AiRefused('no_key', `${NAMES[call.provider]} isn't set up yet.`);
+  const record = await meter(env, feature);
 
   let out: Read;
-  if (env.AI_STUB === '1' && env.DEV_LOGIN === '1') out = stubAnswer(call);
+  if (isStub(env)) out = stubAnswer(call);
   else {
     const { url, init } = call.provider === 'claude' ? anthropicRequest(env, call) : geminiRequest(env, call);
     try {
@@ -135,9 +161,7 @@ export async function runAi(env: Env, feature: AiFeature, call: AiCall): Promise
     }
   }
   const cost_micro = costMicro(parsePrices(env.AI_PRICES), call.provider, out.input_tokens, out.output_tokens);
-  await env.DB.prepare('INSERT INTO ai_usage (id, at, feature, provider, input_tokens, output_tokens, cost_micro) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
-    .bind(crypto.randomUUID(), now(), feature, call.provider, out.input_tokens, out.output_tokens, cost_micro).run();
-  await audit(env, 'you', 'ai.' + feature, null, { provider: call.provider, input_tokens: out.input_tokens, output_tokens: out.output_tokens, cost_micro });
+  await record({ provider: call.provider, input_tokens: out.input_tokens, output_tokens: out.output_tokens, cost_micro });
   return { ...out, cost_micro };
 }
 

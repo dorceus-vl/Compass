@@ -1,10 +1,11 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { AthenaClipState, Settings } from '../../../shared/types.ts';
-import { api, online, SignedOut } from '../api.ts';
+import { api, ApiError, online, SignedOut } from '../api.ts';
 import { mediaUrl, reloadAthenaMedia, useAthenaMedia, useReducedMotion } from '../athena-media.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { CardHead } from '../ui/CardHead.tsx';
 import { AthenaAvatar } from '../ui/AthenaAvatar.tsx';
+import { stopSpeech, testVoice, useSpeech } from '../athena-voice.ts';
 
 const STATES: { id: AthenaClipState; label: string; hint: string }[] = [
   { id: 'idle', label: 'Idle', hint: 'Waiting for you. Also plays for any state with no clips of its own.' },
@@ -28,6 +29,15 @@ export function AthenaCard({ s, save }: { s: Settings; save: Patch }) {
   }, [pv, reduced]);
   const shown = pv === 'auto' ? STATES[auto]!.id : pv;
   const clips = media?.clips ?? [];
+  const voiceRef = useRef<HTMLInputElement>(null);
+  const speech = useSpeech(), testing = speech?.id === 'test';
+  useEffect(() => () => stopSpeech(), []);
+  const test = () => {
+    if (testing) { stopSpeech(); return; }
+    if (!online()) { toast('Testing her voice needs a connection'); return; }
+    // The id in the box, saved or not, so a voice can be tried before it is kept. Metered like any read-aloud.
+    testVoice(voiceRef.current?.value.trim() || null).catch((e) => { if (!(e instanceof SignedOut)) toast(e instanceof ApiError ? e.message : "Couldn't play her voice"); });
+  };
 
   const send = async (key: string, path: string, f: File, type: string, headers: Record<string, string> = {}) => {
     if (!online()) { toast('Uploading needs a connection'); return; }
@@ -53,7 +63,7 @@ export function AthenaCard({ s, save }: { s: Settings; save: Patch }) {
   };
   const remove = async (key: string, path: string) => {
     setBusy(key);
-    try { await api(path, { method: 'DELETE' }); await reloadAthenaMedia(); toast('Removed. It stays in Trash for 30 days.'); }
+    try { await api(path, { method: 'DELETE' }); await reloadAthenaMedia(); toast('Removed'); }
     catch (e) { if (!(e instanceof SignedOut)) toast((e as Error).message); }
     finally { setBusy(''); }
   };
@@ -95,10 +105,14 @@ export function AthenaCard({ s, save }: { s: Settings; save: Patch }) {
       <p className="kelly-note">Short silent MP4 loops, H.264, 720p or less, 3 to 10 seconds, up to 15 MB each and 40 in all. With several clips for a state she plays them in turn.</p>
       <div className="ath-set-voice">
         <b>Voice</b>
-        <label className="kelly-row"><span>ElevenLabs voice id</span>
-          <input key={s.athena.voice_id ?? ''} className="field" defaultValue={s.athena.voice_id ?? ''} placeholder="not chosen" maxLength={64} autoComplete="off" spellCheck={false}
-            onBlur={(e) => { const v = e.target.value.trim() || null; if (v !== s.athena.voice_id) void save({ athena: { ...s.athena, voice_id: v } }); }} /></label>
-        <label className="kelly-row"><span>Speak her answers</span><span className="tog"><input type="checkbox" role="switch" checked={s.athena.speak_answers} disabled={!s.athena.voice_id}
+        <p className="hint">Paste a voice id from your ElevenLabs voice library, then press Test. Each read-aloud counts against the monthly AI cap; a replay is free.</p>
+        <div className="kelly-row"><label htmlFor="ath-voice-id">ElevenLabs voice id</label>
+          <span className="ath-btns">
+            <input id="ath-voice-id" ref={voiceRef} key={s.athena.voice_id ?? ''} className="field" defaultValue={s.athena.voice_id ?? ''} placeholder="not chosen" maxLength={64} autoComplete="off" spellCheck={false}
+              onBlur={(e) => { const v = e.target.value.trim() || null; if (v !== s.athena.voice_id) void save({ athena: { ...s.athena, voice_id: v } }); }} />
+            <button type="button" className="btn" aria-pressed={testing} onClick={test}>{testing ? (speech.phase === 'loading' ? 'Loading…' : 'Stop') : 'Test'}</button>
+          </span></div>
+        <label className="kelly-row"><span>Speak answers</span><span className="tog"><input type="checkbox" role="switch" checked={s.athena.speak_answers} disabled={!s.athena.voice_id}
           onChange={(e) => void save({ athena: { ...s.athena, speak_answers: e.target.checked } })} /><i /></span></label>
       </div>
     </div>

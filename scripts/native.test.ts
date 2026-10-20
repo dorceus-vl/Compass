@@ -192,4 +192,15 @@ assert.equal(stepUpInBrowser(new TypeError('no WebAuthn'), 'mac', false), true);
 assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'AbortError' }), 'mac', true), false);
 assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedError' }), 'ios', true), false);
 assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedError' }), null, false), false);
+// Athena's mic in the shells (ruling A8): the plist keys and the Android permission, with the same sentence everywhere.
+{
+  const { readFileSync } = await import('node:fs');
+  const why = '<key>NSMicrophoneUsageDescription</key>\n\t<string>Athena listens when you hold the mic.</string>';
+  for (const f of ['mobile/ios/App/App/Info.plist', 'mac/src-tauri/Info.plist']) assert.ok(readFileSync(f, 'utf8').includes(why), `${f}: microphone purpose`);
+  const manifest = readFileSync('mobile/android/app/src/main/AndroidManifest.xml', 'utf8');
+  assert.ok(manifest.includes('android.permission.RECORD_AUDIO') && manifest.includes('android.permission.MODIFY_AUDIO_SETTINGS'), 'Android mic permissions');
+  assert.ok(!manifest.includes('android.permission.CAMERA'), 'no camera');
+  assert.ok(readFileSync('mobile/android/app/src/main/java/com/knocturnlabs/compass/MainActivity.java', 'utf8').includes('CompassLink.mayCapture('), 'Android capture goes through CompassLink');
+  assert.ok(readFileSync('mobile/ios/App/App/CompassViewController.swift', 'utf8').includes('CompassLink.mayCapture('), 'iOS capture goes through CompassLink');
+}
 console.log('native: ok');

@@ -25,6 +25,16 @@ enum CompassLink {
         }
     }
 
+    /// The web view's capture request (WKUIDelegate requestMediaCapturePermissionFor): granted only when the page asking is on the server
+    /// the app shows and asks for the microphone alone (Athena's mic). WebKit gives a default port as 0.
+    static func mayCapture(scheme: String, host: String, port: Int, microphoneOnly: Bool, server: URL) -> Bool {
+        guard microphoneOnly, !host.isEmpty else { return false }
+        var c = URLComponents()
+        c.scheme = scheme; c.host = host; c.port = port == 0 ? nil : port
+        guard let url = c.url else { return false }
+        return onServer(url, server)
+    }
+
     /// What openExternal may open: a web page, mailto: or tel:. Anything else is nil.
     static func external(_ raw: String?) -> URL? {
         guard let raw, let url = URL(string: raw), ["http", "https", "mailto", "tel"].contains(url.scheme?.lowercased() ?? "") else { return nil }

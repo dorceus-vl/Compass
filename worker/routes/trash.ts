@@ -72,7 +72,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING id`),
-    q(`DELETE FROM ai_messages WHERE thread_id IN (${goneThreads})`),
+    q(`DELETE FROM ai_messages WHERE thread_id IN (${goneThreads}) RETURNING id`), // their read-aloud audio goes below
     q(`DELETE FROM ai_threads WHERE id IN (${goneThreads})`),
     q(`DELETE FROM library_pages WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
     q(`DELETE FROM library_pages WHERE import_doc_id IN (${goneDocs})`), // an import goes with its document (FK)
@@ -91,8 +91,10 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email'))));
   await Promise.all((docs.results as { r2_key: string }[]).map(({ r2_key }) => env.FILES.delete(r2_key).catch(() => console.warn('[trash] could not delete a document file'))));
   await Promise.all((clips.results as { r2_key: string }[]).map(({ r2_key }) => env.FILES.delete(r2_key).catch(() => console.warn('[trash] could not delete an Athena clip'))));
+  const tts = (messages.results as { id: string }[]).map(({ id }) => `athena-tts/${id}`); // R2 deletes up to 1,000 keys a call; a missing key is fine
+  for (let i = 0; i < tts.length; i += 1000) await env.FILES.delete(tts.slice(i, i + 1000)).catch(() => console.warn('[trash] could not delete an answer\'s audio'));
   return {
-    task_events: events.meta.changes, tasks: tasks.results.length, ai_messages: messages.meta.changes, ai_threads: threads.meta.changes, documents: docs.results.length,
+    task_events: events.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
     raid_items: raid.meta.changes, change_requests: changes.meta.changes, lessons: lessons.meta.changes, decisions: decisions.meta.changes,
     milestones: milestones.meta.changes, projects: projects.meta.changes, athena_clips: clips.results.length,
   };

@@ -42,6 +42,12 @@ export interface Env {
   AI_MODEL_GEMINI: string;
   /** JSON {"claude":{"in":usd,"out":usd},"gemini":{...}}: USD per million tokens, for the usage cost. */
   AI_PRICES: string;
+  /** Athena's voice (Phase 5b): the ElevenLabs key (a secret Vlad puts; unset = no voice), the text-to-speech and speech-to-text models,
+   *  and their prices as JSON {"tts_per_1k_chars":usd,"stt_per_minute":usd} (vars). */
+  ELEVENLABS_API_KEY?: string;
+  ATHENA_TTS_MODEL: string;
+  ATHENA_STT_MODEL: string;
+  ELEVENLABS_PRICES: string;
   /** "1" with DEV_LOGIN=1 answers from a canned stub instead of calling a provider (local tests only). */
   AI_STUB?: string;
 }

@@ -325,6 +325,53 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(D1X "SELECT count(*) AS n FROM athena_cli
 ! npx wrangler r2 object get compass-files/athena/$AC1 --local --file $AM/gone >/dev/null 2>&1 || fail "the purge left the clip's file in R2"
 rm -rf $AM
 echo "smoke: (a3) athena clips: upload (mp4 only, first bytes, 15 MB, 411/413/415), Range 206/416 with Content-Range, full GET 200, portrait, settings patch, soft delete, purge removes the R2 file"
+# (a4) Athena's voice on the stub (AI_STUB=1: a silent mp3 and "stub transcript", usage rows written as if billed; ElevenLabs never called).
+AV=$(mktemp -d)
+VU() { D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='$1'" | js 'd[0].results[0].n'; }
+speak() { curl -s -D $AV/h -o $AV/$2 -w '%{http_code}' -b $J -H "Origin: $B" -H 'Content-Type: application/json' -X POST $B/api/athena/speak -d "$1"; }
+SPP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke voice personal","kind":"personal"}' | js d.project.id)
+SWP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke voice work","kind":"work"}' | js d.project.id)
+curl "${H[@]}" -X PATCH $B/api/projects/$SWP -d '{"data_boundary":"cloud"}' | grep -q '"data_boundary":"cloud"' || fail "voice work project to cloud" # work projects start Offline only
+SPC=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$SPP\",\"message\":\"Smoke personal voice\"}")
+SPA=$(printf '%s' "$SPC" | js 'd.messages[1].id'); SPQ=$(printf '%s' "$SPC" | js 'd.messages[0].id')
+[ "$(speak "{\"message_id\":\"$SPA\"}" off)" = 409 ] && grep -q '"error":"voice_off"' $AV/off || fail "no voice picked: not voice_off"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"athena":{"voice_id":"SmokeVoice1","speak_answers":true}}' >/dev/null
+V0=$(VU athena_voice)
+[ "$(speak "{\"message_id\":\"$SPA\"}" a1.mp3)" = 200 ] && grep -qi '^content-type: audio/mpeg' $AV/h || fail "speak a personal answer"
+[ "$(head -c 2 $AV/a1.mp3 | xxd -p)" = fffb ] && [ "$(wc -c < $AV/a1.mp3 | tr -d ' ')" -lt 5120 ] || fail "the stub's audio is not a short mp3"
+[ "$(VU athena_voice)" = $((V0 + 1)) ] || fail "speak wrote no usage row"
+[ "$(speak "{\"message_id\":\"$SPA\"}" a2.mp3)" = 200 ] && cmp -s $AV/a1.mp3 $AV/a2.mp3 || fail "replay"
+[ "$(VU athena_voice)" = $((V0 + 1)) ] || fail "a replay was billed again (not served from R2)"
+npx wrangler r2 object get compass-files/athena-tts/$SPA --local --file $AV/r2 >/dev/null 2>&1 && cmp -s $AV/r2 $AV/a1.mp3 || fail "the personal answer's audio is not cached plain in R2"
+[ "$(speak "{\"message_id\":\"$SPQ\"}" q)" = 400 ] || fail "a question was read aloud"
+[ "$(speak '{"message_id":"nope"}' n)" = 404 ] || fail "a missing message"
+SW=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$SWP\",\"message\":\"Smoke work voice\"}" | js 'd.messages[1].id')
+[ "$(speak "{\"message_id\":\"$SW\"}" w.mp3)" = 200 ] && [ "$(head -c 2 $AV/w.mp3 | xxd -p)" = fffb ] || fail "speak a work answer"
+npx wrangler r2 object get compass-files/athena-tts/$SW --local --file $AV/wr2 >/dev/null 2>&1 && ! cmp -s $AV/wr2 $AV/w.mp3 && [ "$(head -c 2 $AV/wr2 | xxd -p)" != fffb ] || fail "the work answer's audio is not sealed in R2"
+SOP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke voice offline","kind":"personal"}' | js d.project.id)
+SO=$(curl "${H[@]}" -X POST $B/api/ai/chat -d "{\"project_id\":\"$SOP\",\"message\":\"Smoke offline voice\"}" | js 'd.messages[1].id')
+curl "${H[@]}" -X PATCH $B/api/projects/$SOP -d '{"data_boundary":"offline"}' >/dev/null
+V1=$(VU athena_voice)
+[ "$(speak "{\"message_id\":\"$SO\"}" o)" = 409 ] && grep -q '"error":"offline_boundary"' $AV/o || fail "an Offline-only answer was read aloud"
+[ "$(VU athena_voice)" = "$V1" ] || fail "an Offline-only refusal was billed"
+for x in $SOP $SPP $SWP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+[ "$(speak '{"test":true}' t.mp3)" = 200 ] && [ "$(VU athena_voice)" = $((V1 + 1)) ] || fail "voice test"
+[ "$(speak '{"test":true,"voice_id":"a b/../c"}' tb)" = 400 ] || fail "a bad test voice id"
+printf '\x1a\x45\xdf\xa3smoke-webm-recording' > $AV/rec.webm; printf 'ID3not-a-recording' > $AV/rec.mp3
+listen() { curl -s -o $AV/l -w '%{http_code}' -b $J -H "Origin: $B" -H "Content-Type: $1" -H "X-Duration-Ms: $2" --data-binary @$3 $B/api/athena/listen; }
+L0=$(VU athena_listen)
+[ "$(listen 'audio/webm;codecs=opus' 1500 $AV/rec.webm)" = 200 ] && [ "$(js d.text < $AV/l)" = "stub transcript" ] || fail "listen: $(cat $AV/l)"
+[ "$(VU athena_listen)" = $((L0 + 1)) ] || fail "listen wrote no usage row"
+[ "$(listen audio/webm 61000 $AV/rec.webm)" = 400 ] || fail "a recording over 60 s"
+[ "$(listen audio/mp4 1500 $AV/rec.webm)" = 415 ] || fail "a webm declared mp4"
+[ "$(listen audio/mpeg 1500 $AV/rec.mp3)" = 415 ] || fail "an mp3 upload"
+head -c 2100000 /dev/zero > $AV/big.webm; [ "$(listen audio/webm 1500 $AV/big.webm)" = 413 ] || fail "a recording over 2 MB"
+[ "$(VU athena_listen)" = $((L0 + 1)) ] || fail "a refused recording was billed"
+[ "$(D1X "SELECT count(*) AS n FROM ai_usage WHERE feature IN ('athena_voice','athena_listen') AND provider='elevenlabs' AND at >= '$AT0'" | js 'd[0].results[0].n')" -ge 3 ] || fail "voice rows are not elevenlabs"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE action IN ('ai.athena_voice','ai.athena_listen') AND (detail LIKE '%stub transcript%' OR detail LIKE '%Stub answer%')" | js 'd[0].results[0].n')" = 0 ] || fail "voice audit rows hold content"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"athena":{"voice_id":null,"speak_answers":false}}' >/dev/null
+rm -rf $AV
+echo "smoke: (a4) athena voice: voice_off without a voice; personal answer -> audio/mpeg, replay from R2 (no new usage row); work answer sealed in R2; question 400; Offline-only 409 (not billed); test line; listen -> stub transcript with one usage row; 60 s, type, first bytes and 2 MB refused"
 # Status report data (Phase 3 Task 10): W1 is a cloud work project here, so its rows are sealed and come back readable; the stub writes the summary.
 curl "${H[@]}" -X POST $B/api/projects/$W1/raid -d '{"type":"risk","text":"Smoke report risk","probability":4,"impact":5}' >/dev/null
 SR='{"project_id":"'$W1'","from":"2026-01-01","to":"2026-12-31","ai":true}'

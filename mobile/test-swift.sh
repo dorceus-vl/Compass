@@ -48,6 +48,15 @@ for bad: Any? in [nil, 3, "", "https://evil.com/", "//evil.com/x", "javascript:a
                   "https://compass.knocturnlabs.com.evil.com/", "compass://auth", "data:text/html,x", "https://compass.knocturnlabs.com:8443/"] {
     check(CompassLink.open(bad, server: prod) == nil, "tap refused: \(String(describing: bad))")
 }
+// Capture (Athena's mic): only the page on the server the app shows, only the microphone.
+check(CompassLink.mayCapture(scheme: "https", host: "compass.knocturnlabs.com", port: 0, microphoneOnly: true, server: prod), "mic on compass")
+check(CompassLink.mayCapture(scheme: "http", host: "localhost", port: 5173, microphoneOnly: true, server: dev), "mic on the local server")
+check(!CompassLink.mayCapture(scheme: "https", host: "compass.knocturnlabs.com", port: 0, microphoneOnly: false, server: prod), "camera refused")
+for (scheme, host, port) in [("https", "evil.com", 0), ("http", "compass.knocturnlabs.com", 0), ("https", "compass.knocturnlabs.com.evil.com", 0),
+                             ("https", "compass.knocturnlabs.com", 8443), ("https", "id.knocturnlabs.com", 0), ("https", "", 0), ("file", "", 0),
+                             ("http", "localhost", 5173)] {
+    check(!CompassLink.mayCapture(scheme: scheme, host: host, port: port, microphoneOnly: true, server: prod), "mic refused: \(scheme)://\(host):\(port)")
+}
 print("CompassLink: all checks passed")
 SWIFT
 swiftc -o "$out/check" ios/App/App/CompassLink.swift "$out/main.swift"

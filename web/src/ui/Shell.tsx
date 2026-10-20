@@ -33,6 +33,7 @@ const ICONS: Record<string, ReactNode> = {
   sheet: <><rect x="3.5" y="3.5" width="17" height="17" rx="2.5" /><path d="M3.5 9h17M3.5 14.5h17M9 3.5v17" /></>,
   clip: <path d="M20.5 11 12 19.5a5 5 0 0 1-7-7L13.5 4a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L15 7" />,
   send: <path d="M5 12h14M13 6l6 6-6 6" />,
+  mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>,
 
 };
 export const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{ICONS[name]}</svg>;

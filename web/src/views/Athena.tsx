@@ -18,6 +18,7 @@ import { toast } from '../ui/dialogs.tsx';
 import { fmtDue, today } from '../dates.ts';
 import { athenaGreeting, dueItems } from '../athena-greeting.ts';
 import { AthenaAvatar, type AthenaState } from '../ui/AthenaAvatar.tsx';
+import { micSupported, primeAudio, speakAnswer, stopSpeech, useAthenaVoice, useMic, useSpeech, type MicPhase } from '../athena-voice.ts';
 
 const NAME: Record<Provider, string> = { claude: 'Claude', gemini: 'Gemini' };
 const OTHER: Record<Provider, Provider> = { claude: 'gemini', gemini: 'claude' };
@@ -161,9 +162,21 @@ async function copy(m: AiMessage) {
   try { await navigator.clipboard.writeText(copyText(m.content)); toast('Copied'); }
   catch { toast('Copy is blocked here: select the text instead'); }
 }
+/** Why her voice didn't play, as a toast (the server's own sentence for voice_off, Offline only, the cap or the hourly limit). */
+const voiceErr = (e: unknown) => {
+  if (e instanceof SignedOut) return;
+  toast(e instanceof ApiError ? e.message : (e as Error).name === 'NotAllowedError' ? 'Tap "Read it aloud" to hear her.' : "Couldn't play her voice. Try again.");
+};
+/** "Read it aloud" (or stop): the tap primes the audio element so iOS lets it play once the audio arrives. */
+const readAloud = (id: string, playing: boolean) => {
+  if (playing) { stopSpeech(); return; }
+  stopSpeech(); primeAudio();
+  speakAnswer(id).catch(voiceErr);
+};
 
 function Answer({ m, project, onSave, onOther, onShorter }: { m: AiMessage; project: Project | null; onSave: () => void; onOther: false | (() => void); onShorter: false | (() => void) }) {
   const { pages } = useLibrary();
+  const speech = useSpeech(), mine = speech?.id === m.id;
   const p = m.provider ?? 'claude';
   return (
     <article className="card cp-msg ath-msg" aria-label={`Answer from ${NAME[p]}`}>
@@ -173,7 +186,8 @@ function Answer({ m, project, onSave, onOther, onShorter }: { m: AiMessage; proj
       {m.proposals && <ProposalsPanel m={m} project={project} />}
       <div className="row ath-tools" role="group" aria-label="Answer tools">
         <button type="button" className="ath-tool" onClick={() => void copy(m)}>Copy</button>
-        {/* Task 4 adds "Read it aloud" here. */}
+        <button type="button" className="ath-tool" aria-pressed={mine} disabled={project?.data_boundary === 'offline'} onClick={() => readAloud(m.id, mine)}>
+          {mine ? (speech.phase === 'loading' ? 'Loading…' : 'Stop reading') : 'Read it aloud'}</button>
         {onShorter && <button type="button" className="ath-tool" onClick={onShorter}>Make it shorter</button>}
         <button type="button" className="ath-tool" aria-pressed={!!m.saved} aria-label={m.saved ? 'Unsave this answer' : 'Save this answer'} onClick={onSave}>{m.saved ? '★ Saved' : '☆ Save'}</button>
         {onOther && <button type="button" className="ath-tool" onClick={onOther}>Ask {NAME[OTHER[p]]} too</button>}
@@ -217,8 +231,9 @@ type Att = { id: string; name: string };
 type Err = { message: string; again: 'send' | Provider };
 type Run = { message: string; preset?: PresetId; docs: Att[]; shorter?: boolean };
 
-function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
-  id: string | null; projectId?: string; page?: string; usage: Usage | null; onOpen: (id: string | null, replace?: boolean) => void; onSent: () => void; onBusy: (b: boolean) => void;
+function Conversation({ id, projectId, page, usage, speakOn, onOpen, onSent, onBusy, onMic }: {
+  id: string | null; projectId?: string; page?: string; usage: Usage | null; speakOn: boolean; onOpen: (id: string | null, replace?: boolean) => void;
+  onSent: (answerId?: string) => void; onBusy: (b: boolean) => void; onMic: (p: MicPhase) => void;
 }) {
   const { projects } = useStore();
   const [thread, setThread] = useState<AiThread | null>(null);
@@ -246,6 +261,15 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
   const [live, setLive] = useState(''); // the one polite live region: what is happening, announced to screen readers
   const refocus = () => ta.current?.focus();
   useEffect(() => onBusy(busy), [busy, onBusy]);
+  // The mic: its text goes into the box (never sent on its own); the stage shows her listening while it records.
+  const mic = useMic((t) => { setText((x) => (x.trim() ? `${x.trimEnd()} ${t}` : t)); setLive('Transcript added to the box'); refocus(); }, (msg) => { setAttErr(msg); setLive(msg); });
+  useEffect(() => onMic(mic.phase), [mic.phase, onMic]);
+  const touch = useRef(false);
+  const startMic = () => {
+    setAttErr('');
+    if (!online()) { setAttErr('The mic needs a connection.'); return; }
+    mic.start();
+  };
 
   // Load the thread when the route points at another one; the thread this component just created is already in state.
   useEffect(() => {
@@ -281,6 +305,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
     setErr(null); follow.current = true;
     if (project?.data_boundary === 'offline') { showOff('Offline only: nothing leaves Compass for this project.'); refocus(); return; }
     if (!online()) { showOff('No connection: nothing was sent. This is what Compass has on this device.'); refocus(); return; }
+    if (speakOn) { stopSpeech(); primeAudio(); } // still inside the tap: iOS lets her answer play when it arrives
     setOff(null); setBusy(true); setPending({ text: r.message, docs: r.docs }); setLive('Athena is answering…');
     try {
       const a = await ask(r.shorter
@@ -290,7 +315,7 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
       setThread(a.thread); setMsgs((x) => [...x, ...a.messages]); setMissing(false);
       if (!r.shorter) { setText(''); setPreset(null); setAtt([]); }
       if (!id) onOpen(a.thread.id, true);
-      onSent(); setLive('Answer ready');
+      onSent(a.messages.at(-1)?.id); setLive('Answer ready');
     } catch (e) { fail(e, 'send'); }
     finally { setBusy(false); setPending(null); refocus(); }
   };
@@ -300,7 +325,8 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
   const askToo = async (p: Provider) => {
     if (!thread || busy) return;
     setErr(null); setBusy(true); follow.current = true; setLive('Athena is answering…');
-    try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true }); setMsgs((x) => [...x, ...r.messages]); onSent(); setLive('Answer ready'); }
+    if (speakOn) { stopSpeech(); primeAudio(); }
+    try { const r = await ask({ thread_id: thread.id, provider: p, rerun: true }); setMsgs((x) => [...x, ...r.messages]); onSent(r.messages.at(-1)?.id); setLive('Answer ready'); }
     catch (e) { fail(e, p); }
     finally { setBusy(false); refocus(); }
   };
@@ -372,11 +398,18 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
             <label className="ath-icon" title="Attach a file">
               <Icon name="clip" /><span className="sr-only">Attach a file</span>
               <input type="file" multiple className="sr-only" accept={ACCEPT} disabled={up || busy} onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} /></label>
-            {/* Task 4 adds the microphone button here. */}
+            {micSupported() && <button type="button" className="ath-icon mic" aria-pressed={mic.phase === 'rec' || mic.phase === 'starting'}
+              aria-label={mic.phase === 'off' ? 'Talk to Athena' : mic.phase === 'busy' ? 'Writing down what you said' : 'Stop listening'} title="Hold to talk, or click to start and stop"
+              disabled={busy || mic.phase === 'busy' || project?.data_boundary === 'offline'}
+              onPointerDown={(e) => { touch.current = e.pointerType !== 'mouse'; if (touch.current) { e.preventDefault(); startMic(); } }}
+              onPointerUp={() => { if (touch.current) mic.stop(); }} onPointerCancel={() => { if (touch.current) mic.stop(); }}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={() => { if (touch.current) { touch.current = false; return; } if (mic.phase === 'off') startMic(); else mic.stop(); }}>
+              <Icon name="mic" /></button>}
             <button type="button" className="ath-icon send" aria-label="Send" disabled={!canSend} onClick={() => send()}><Icon name="send" /></button>
           </div>
         </div>
-        <small className="sub">⌘↵ to send</small>
+        <small className="sub">{mic.phase === 'rec' || mic.phase === 'starting' ? (touch.current ? 'Listening… let go to finish.' : 'Listening… click the mic to finish.') : mic.phase === 'busy' ? 'Writing down what you said…' : '⌘↵ to send'}</small>
       </section>
 
       <section aria-labelledby="ath-or" className="ath-help">
@@ -416,10 +449,13 @@ function Conversation({ id, projectId, page, usage, onOpen, onSent, onBusy }: {
 }
 
 // ---------------------------------------------------------------- the stage (left) and the room: used by the screen and the project tab
-function Stage({ state }: { state: AthenaState }) {
+function Stage({ state, onStop }: { state: AthenaState; onStop?: () => void }) {
   return (
     <section className="ath-stage" aria-label="Athena">
-      <AthenaAvatar state={state} size="stage" />
+      <div className="ath-face">
+        <AthenaAvatar state={state} size="stage" />
+        {onStop && <button type="button" className="ath-hush" aria-label="Stop Athena speaking" onClick={onStop} />}
+      </div>
       <div className="ath-plate">
         <div><b>Athena</b><span>Project counsel</span></div>
         <ul className="ath-traits"><li>Colleague</li><li>Rigorous PM</li><li>Mentor</li></ul>
@@ -433,17 +469,30 @@ export function Workspace({ projectId, openId, onOpen, page, usage, refreshUsage
 }) {
   const [rev, setRev] = useState(0);
   const [thinking, setThinking] = useState(false);
-  const [speaking, setSpeaking] = useState(false); // ruling A7: 4 s after an answer arrives (Task 4 holds it for the length of the audio)
+  const [mic, setMic] = useState<MicPhase>('off');
+  const [speaking, setSpeaking] = useState(false); // ruling A7: 4 s after an answer arrives when her voice is off; with it on, the audio's own length
   const talk = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(talk.current), []);
-  const answered = () => { clearTimeout(talk.current); setSpeaking(true); talk.current = setTimeout(() => setSpeaking(false), 4000); };
+  useEffect(() => () => { clearTimeout(talk.current); stopSpeech(); }, []);
+  const [voice] = useAthenaVoice();
+  const speakOn = !!voice?.speak_answers && !!voice.voice_id;
+  const speech = useSpeech();
+  const answered = (answerId?: string) => {
+    clearTimeout(talk.current); setSpeaking(false);
+    if (speakOn && answerId) { speakAnswer(answerId).catch(voiceErr); return; }
+    setSpeaking(true); talk.current = setTimeout(() => setSpeaking(false), 4000);
+  };
+  const hush = () => { stopSpeech(); clearTimeout(talk.current); setSpeaking(false); };
+  const state: AthenaState = mic === 'rec' || mic === 'starting' ? 'listening'
+    : thinking || mic === 'busy' || speech?.phase === 'loading' ? 'thinking'
+    : speech?.phase === 'playing' || speaking ? 'speaking' : 'idle';
   const [n, setN] = useState<number | null>(null);
   useEffect(() => { loadThreads(projectId).then((t) => setN(t.length)).catch(() => {}); }, [projectId, rev]);
   return (
     <div className={`ath${projectId ? ' ath-project' : ''}`}>
-      {!projectId && <Stage state={thinking ? 'thinking' : speaking ? 'speaking' : 'idle'} />}
+      {!projectId && <Stage state={state} onStop={speech || speaking ? hush : undefined} />}
       <div className="ath-main">
-        <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} usage={usage} onOpen={onOpen} onBusy={setThinking} onSent={() => { setRev((x) => x + 1); refreshUsage(); answered(); }} />
+        <Conversation id={openId && openId !== 'new' ? openId : null} projectId={projectId} page={page} usage={usage} speakOn={speakOn} onOpen={onOpen} onBusy={setThinking} onMic={setMic}
+          onSent={(answerId) => { setRev((x) => x + 1); refreshUsage(); answered(answerId); }} />
         <details className="ath-threads" open={!!projectId || undefined}>
           <summary>Conversations{n ? ` (${n})` : ''}</summary>
           <button type="button" className="btn primary" onClick={() => onOpen('new')}>New conversation</button>
@@ -457,6 +506,19 @@ export function Workspace({ projectId, openId, onOpen, page, usage, refreshUsage
 export const SpendChip = ({ usage }: { usage: Usage | null }) => usage
   ? <span className={`chip ${usage.month_cost_micro >= usage.cap_micro ? 'danger' : ''}`} title="AI spend this month, against the monthly cap">This month: {spend(usage)}</span> : null;
 
+/** "Speak answers" on the screen's header (the same setting as Settings → Athena); off until her voice is picked. */
+function SpeakSwitch() {
+  const [v, setSpeak] = useAthenaVoice();
+  if (!v) return null;
+  const ready = !!v.voice_id;
+  return (
+    <label className="ath-voice" title={ready ? undefined : 'Pick her voice in Settings → Athena first'}>Speak answers
+      <span className="tog"><input type="checkbox" role="switch" aria-label="Speak Athena's answers" checked={ready && v.speak_answers} disabled={!ready}
+        onChange={(e) => { const on = e.target.checked; if (!on) stopSpeech(); setSpeak(on).catch((x) => toast((x as Error).message)); }} /><i /></span>
+    </label>
+  );
+}
+
 export function AthenaView({ id }: { id?: string }) {
   const { usage, refresh } = useUsage();
   const page = new URLSearchParams(location.search).get('page') ?? undefined;
@@ -464,7 +526,7 @@ export function AthenaView({ id }: { id?: string }) {
     <>
       <div className="head"><div><div className="eyebrow">Counsel</div><h1 style={{ marginTop: 6 }}><b>Athena</b></h1>
         <div className="sub">Your PM colleague. Bring her an email, a status update, a spreadsheet or any document; answers cite the library, and nothing reaches the board until you add it.</div></div>
-        <SpendChip usage={usage} /></div>
+        <div className="row ath-headr"><SpeakSwitch /><SpendChip usage={usage} /></div></div>
       <Workspace openId={id ?? null} page={page} usage={usage} refreshUsage={refresh} onOpen={(to, replace) => navigate(to === null ? '/athena' : `/athena/${to}`, replace)} />
     </>
   );
