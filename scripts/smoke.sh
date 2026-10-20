@@ -958,12 +958,17 @@ E3T=$(kn "SELECT task_id AS n FROM inbox_items WHERE id='$E3ID'"); K3PP=$(curl "
 curl "${H[@]}" -X PATCH $B/api/projects/$K3PP -d '{"data_boundary":"offline"}' >/dev/null
 curl "${H[@]}" -X PATCH $B/api/tasks/$E3T -d "{\"project_id\":\"$K3PP\"}" | grep -q "\"project_id\":\"$K3PP\"" || fail "move the email's task"
 ! ks "platypus+dinner" $K3P | grep -q 'platypus' || fail "an email whose task sits in an Offline-only project is still searchable"
+# rule 5: the email turns work while it sits in the personal collection (as a work rule's Keep does; set directly here) -> the sweep seals its title and passages in place
+D1X "UPDATE inbox_items SET work = 1 WHERE id='$E3ID'" >/dev/null; cron
+for _ in $(seq 1 40); do [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SEI' AND enc_v=0")" = 0 ] && break; sleep 0.25; done
+[ "$(kn "SELECT count(*) AS n FROM knowledge_items WHERE id='$SEI' AND enc_v=2 AND title NOT LIKE '%Smoke k3 email%'")" = 1 ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SEI' AND enc_v=2 AND text NOT LIKE '%platypus%'")" -ge 1 ] && [ "$(kn "SELECT count(*) AS n FROM knowledge_chunks WHERE item_id='$SEI' AND enc_v=0")" = 0 ] || fail "an email that turned work still sits plain in the personal collection"
+[ "$(curl "${H[@]}" $B/api/knowledge/collections/$K3P/items | js "d.items.find(i=>i.id==='$SEI').title")" = "Smoke k3 email $R" ] || fail "the sealed email item did not open"
 # a failed knowledge search (here the 120/h query bucket) never fails the chat: she answers without it and says so
 KNOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z); kfill 120 k3q 0
 KF=$(kj -X POST $B/api/ai/chat -d '{"message":"anything","knowledge":{"collections":"all"}}'); D1X "DELETE FROM ai_usage WHERE id LIKE 'smoke-kb-k3q-%'" >/dev/null
 [ "$(kst "$KF")" = 200 ] && kbody "$KF" | js 'd.messages[1].content' | grep -q "I couldn't search your knowledge just now" && ! kbody "$KF" | js 'd.messages[1].content' | grep -q 'stub passages' || fail "a 429 knowledge search failed the chat or said nothing: $KF"
 [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-inbox/$E3ID -d '{}')")" = 400 ] && [ "$(kst "$(kj -X POST $B/api/knowledge/items/from-meeting/nope -d "{\"collection_id\":\"$K3C\"}")")" = 404 ] || fail "save validation"
-echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
+echo "smoke: (k3) KN16: a saved meeting filed into an Offline-only project leaves search and the stub, loses its vectors, shows excluded; an email follows its task's project, and turned work it is sealed in place by the sweep; same source twice -> the same item (200); a 429 knowledge search -> answer with the note"
 echo "smoke: (k3) meeting -> work only (409 personal), Cloud AI item sealed, embedded, ready, searchable; filed under an Offline-only project -> 409 offline_boundary for Cloud AI, Locked ok; personal email -> personal only, ready and searchable"
 for x in $K3P $K3C $K3L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
 for x in $D3P $D3W $D3L; do curl "${H[@]}" -X DELETE $B/api/documents/$x >/dev/null; done

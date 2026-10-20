@@ -3,7 +3,7 @@
 // every pick and search goes through LIVE / vectorWanted (worker/lib/knowledge.ts).
 import type { Env } from '../types.ts';
 import { AiRefused, isStub, meter } from './ai.ts';
-import { open } from './enc.ts';
+import { open, seal } from './enc.ts';
 import { now } from './db.ts';
 import { buildIndex, search, tokens } from '../../shared/search.ts';
 import { HOME, HOME_COLS, LIVE, vectorWanted, type PassageHome } from './knowledge.ts';
@@ -172,6 +172,7 @@ export async function embedPending(env: Env, limit: number, only: { item?: strin
  * changes happen and by the 15-minute cron as a safety sweep. Returns how many were removed.
  */
 export async function unembedStale(env: Env): Promise<number> {
+  await sealTurnedWork(env);
   // ponytail: scans every embedded passage; fine at one user, add an embedded = 1 index or a per-project filter if it grows.
   const { results } = await env.DB.prepare(`SELECT c.id, ${HOME_COLS} FROM ${HOME} WHERE c.embedded = 1`).all<PassageHome & { id: string }>();
   const stale = results.filter((r) => !vectorWanted(r)).map((r) => r.id);
@@ -181,4 +182,28 @@ export async function unembedStale(env: Env): Promise<number> {
     await env.DB.prepare(`UPDATE knowledge_chunks SET embedded = 0 WHERE id IN (${ph(part.length)})`).bind(...part).run();
   }
   return stale.length;
+}
+
+/**
+ * Rule 5: an email saved to a personal collection that later turned work (kept into a work task) is already out of search (LIVE); here its title
+ * and passages are sealed in place with the work key (per row, enc_v = 2), so work content never sits plain. Run first by every sweep. Idempotent;
+ * returns how many items it sealed.
+ */
+export async function sealTurnedWork(env: Env): Promise<number> {
+  const { results } = await env.DB.prepare(`SELECT i.id, i.title, i.enc_v FROM knowledge_items i JOIN knowledge_collections k ON k.id = i.collection_id
+    JOIN inbox_items ib ON i.source = 'email' AND ib.id = i.source_id
+    WHERE k.scope = 'personal' AND ib.work = 1 AND (i.enc_v = 0 OR EXISTS (SELECT 1 FROM knowledge_chunks c WHERE c.item_id = i.id AND c.enc_v = 0))`).all<{ id: string; title: string; enc_v: number }>();
+  // ponytail: one UPDATE per passage; an email is a handful of passages, batch it if this ever covers big items.
+  for (const it of results) {
+    if (!it.enc_v) {
+      const s = await seal(env, 'knowledge_items', { title: it.title, enc_v: 0 }, 'work');
+      await env.DB.prepare('UPDATE knowledge_items SET title = ?2, enc_v = ?3 WHERE id = ?1 AND enc_v = 0').bind(it.id, s.title, s.enc_v).run();
+    }
+    const cs = (await env.DB.prepare('SELECT id, text, locator FROM knowledge_chunks WHERE item_id = ?1 AND enc_v = 0').bind(it.id).all<{ id: string; text: string; locator: string }>()).results;
+    for (const c of cs) {
+      const s = await seal(env, 'knowledge_chunks', { text: c.text, locator: c.locator, enc_v: 0 }, 'work');
+      await env.DB.prepare('UPDATE knowledge_chunks SET text = ?2, locator = ?3, enc_v = ?4 WHERE id = ?1 AND enc_v = 0').bind(c.id, s.text, s.locator, s.enc_v).run();
+    }
+  }
+  return results.length;
 }

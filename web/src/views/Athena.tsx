@@ -357,7 +357,7 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
     setOff(null); setBusy(true); setPending({ text: r.message, docs: r.docs }); setLive('Athena is answering…');
     try {
       const a = await ask(r.shorter
-        ? { thread_id: thread!.id, provider: prov, message: r.message, knowledge }
+        ? { thread_id: thread!.id, provider: prov, message: r.message } // "Make it shorter" rewrites the last answer: no knowledge search
         : { thread_id: thread?.id, project_id: thread ? undefined : projSel || undefined, kind: newKind, provider: prov, message: r.message, preset: r.preset, page: thread ? undefined : page, knowledge, ...(r.docs.length ? { document_ids: r.docs.map((d) => d.id) } : {}) });
       cur.current = a.thread.id;
       setThread(a.thread); setMsgs((x) => [...x, ...a.messages]); setMissing(false);

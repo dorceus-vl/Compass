@@ -3,8 +3,9 @@
 // the KN6 boundary transition and which passages may hold a vector (the pure rule and its SQL twin agree).
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { rerank, embed, embedMetered, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices } from '../worker/lib/vectors.ts';
+import { rerank, embed, embedMetered, hashVector, upsert, query, remove, embedCostMicro, parseKnowledgePrices, sealTurnedWork } from '../worker/lib/vectors.ts';
 import { boundaryChange, vectorWanted, HOME, HOME_COLS, LIVE, type PassageHome } from '../worker/lib/knowledge.ts';
+import { open } from '../worker/lib/enc.ts';
 import { meter, AiRefused } from '../worker/lib/ai.ts';
 
 // rerank: vector score and keywords together; a keyword match lifts a passage over a slightly closer vector, no keyword keeps the vector order
@@ -132,6 +133,31 @@ const live = new Set((db.prepare(`SELECT c.id FROM ${HOME} WHERE ${LIVE}`).all()
 cases.forEach(([, want, why], n) => assert.equal(live.has(String(n)), want, 'SQL: ' + why));
 const homes = db.prepare(`SELECT c.id, ${HOME_COLS} FROM ${HOME}`).all() as unknown as (PassageHome & { id: string })[];
 for (const r of homes) assert.equal(vectorWanted(r), live.has(r.id), 'HOME_COLS feeds vectorWanted: ' + cases[Number(r.id)][2]);
+
+// Rule 5: an email that turned work while saved in a personal collection is sealed in place by the sweep (title and passages); nothing else is touched.
+{
+  const w = new DatabaseSync(':memory:');
+  w.exec(`CREATE TABLE knowledge_collections (id TEXT, scope TEXT); CREATE TABLE inbox_items (id TEXT, work INTEGER);
+    CREATE TABLE knowledge_items (id TEXT, collection_id TEXT, source TEXT, source_id TEXT, title TEXT, enc_v INTEGER); CREATE TABLE knowledge_chunks (id TEXT, item_id TEXT, text TEXT, locator TEXT, enc_v INTEGER)`);
+  w.exec(`INSERT INTO knowledge_collections VALUES ('kp','personal'),('kw','work'); INSERT INTO inbox_items VALUES ('e1',1),('e0',0);
+    INSERT INTO knowledge_items VALUES ('turned','kp','email','e1','Wombat budget',0),('still','kp','email','e0','Picnic',0),('meet','kp','meeting','e1','Notes',0);
+    INSERT INTO knowledge_chunks VALUES ('c1','turned','The wombat budget is 9k.','part 1',0),('c2','turned','Second part.','part 2',0),('c3','still','Picnic on Sunday.','part 1',0),('c4','meet','Meeting text.','§ Summary',0)`);
+  const wd1 = { prepare(q: string) {
+    const st = (a: unknown[]) => ({ first: async () => w.prepare(q).get(...(a as never[])) ?? null, run: async () => ({ meta: { changes: Number(w.prepare(q).run(...(a as never[])).changes) } }),
+      all: async () => ({ results: w.prepare(q).all(...(a as never[])) }) });
+    return { ...st([]), bind: (...a: unknown[]) => st(a) };
+  } };
+  const wenv = { DB: wd1, COMPASS_DATA_KEY: 'k' } as never;
+  assert.equal(await sealTurnedWork(wenv), 1, 'one item turned work');
+  const item = w.prepare("SELECT title, enc_v FROM knowledge_items WHERE id = 'turned'").get() as { title: string; enc_v: number };
+  const rows = w.prepare("SELECT text, locator, enc_v FROM knowledge_chunks WHERE item_id = 'turned' ORDER BY id").all() as { text: string; locator: string; enc_v: number }[];
+  assert.ok(item.enc_v === 2 && !item.title.includes('Wombat'), 'title sealed');
+  assert.ok(rows.every((r) => r.enc_v === 2 && !r.text.includes('wombat') && !r.text.includes('Second') && !r.locator.includes('part')), 'passages sealed, locators too');
+  assert.equal((await open(wenv, 'knowledge_items', item)).title, 'Wombat budget', 'opens with the work key');
+  assert.deepEqual(await Promise.all(rows.map(async (r) => (await open(wenv, 'knowledge_chunks', r)).text)), ['The wombat budget is 9k.', 'Second part.']);
+  assert.equal((w.prepare("SELECT count(*) AS n FROM knowledge_chunks WHERE enc_v = 0 AND item_id IN ('still','meet')").get() as { n: number }).n, 2, 'a personal email and a meeting stay as they are');
+  assert.equal(await sealTurnedWork(wenv), 0, 'idempotent');
+}
 
 // meter, on real SQL (node:sqlite): query embeds have their own bucket of 120 an hour, outside the 30 model calls; background ingest batches
 // skip it (KN14) and are marked by output_tokens = passage count, so a big ingest never fills it; the monthly cap applies to both.
