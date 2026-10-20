@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["K948BT44PM.com.knocturnlabs.compass"],
+        "components": [{ "/": "/api/*", "exclude": true }, { "/": "*" }]
+      }
+    ]
+  },
+  "webcredentials": { "apps": ["K948BT44PM.com.knocturnlabs.compass"] }
+}

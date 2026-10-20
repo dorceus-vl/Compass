@@ -298,5 +298,10 @@ NS=$(curl -s -o /tmp/compass-native.json -w '%{http_code}' -X POST $B/api/auth/n
 case "$NS" in 401|502|503) ;; *) fail "native sign-in with a bad code answered $NS";; esac
 [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST $B/api/auth/native -H 'Content-Type: application/json' -d '{}')" = 403 ] || fail "native sign-in skipped the same-origin check"
 echo "smoke: (w) device push: apns+fcm registered, local (rows kept), outbox has the test push; /api/auth/native bad code -> $NS"
+for f in apple-app-site-association assetlinks.json; do
+  curl -s -i $B/.well-known/$f | tr -d '\r' | grep -iq '^content-type: application/json' || fail "/.well-known/$f is not application/json"
+  curl -s $B/.well-known/$f | grep -q 'com.knocturnlabs.compass' || fail "/.well-known/$f does not name the app"
+done
+echo "smoke: (x) /.well-known trust files served as JSON"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"

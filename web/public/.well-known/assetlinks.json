@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.knocturnlabs.compass",
+      "sha256_cert_fingerprints": ["43:4C:7E:34:FE:69:C3:A7:4C:73:96:C1:E1:B5:F8:DF:99:31:78:44:95:55:DF:86:C6:B5:62:C9:F4:CD:E7:92"]
+    }
+  }
+]
