@@ -1,0 +1,9 @@
+node_modules
+build
+ios/App/Pods
+ios/App/build
+ios/DerivedData
+*.xcuserstate
+xcuserdata
+*.app
+android/app/google-services.json

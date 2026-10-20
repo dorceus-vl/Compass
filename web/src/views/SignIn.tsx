@@ -111,6 +111,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             <button className="btn primary" type="button" onClick={appSignIn} disabled={busy}>Sign in with Knocturn ID</button>
             <p className="error" role="alert">{error}</p>
             {sh === 'android' && <button className="link" type="button" onClick={() => { setError(''); setPw(true); }}>Use password instead</button>}
+            {location.hostname === 'localhost' && <button className="link" type="button" onClick={devSignIn}>Dev sign-in</button>}
           </section>
         ) : step === 'password' ? (
           <form className="stack" onSubmit={submit}>
