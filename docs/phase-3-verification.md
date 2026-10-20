@@ -12,6 +12,7 @@
 ## Verified in production
 
 - `/` keeps CSP, HSTS and `X-Frame-Options: DENY`.
+- Scheduled runs: two production runs watched after the deploy, all outcomes ok, no exceptions or error logs.
 - `/library.json` → 200 JSON with 43 pages.
 - Without a session: `/api/library`, `/api/portfolio`, `/api/ai/usage`, `/api/documents`, `/api/export` → 401; `POST /api/ai/chat` → 403 (same-origin check first); `POST /api/inbox` without a secret → 401.
 - Locally before deploy: typecheck, 32 self-checks, build and the full smoke (governance, library boundary, copilot with the stub, offline refusal storing nothing, sealed work rows, documents and imports, zip caps, reports, brief boundary, export) pass.
