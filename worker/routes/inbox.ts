@@ -275,6 +275,7 @@ async function splitGate(env: Env, item: InboxItem | null, projectId: string | n
 }
 /** The live task an email already became (by a rule, Keep or an earlier split), if any; trashed tasks don't count. */
 const originalTask = (env: Env, item: InboxItem): Promise<Task | null> => (item.task_id ? loadTask(env, item.task_id) : Promise.resolve(null));
+const STALE = { error: 'already_split', message: 'This email changed since Athena read it (it may already have been split). Split it again to review the current state.' };
 const projectIdOf = (b: unknown): string | null | undefined => {
   const v = (b as { project_id?: unknown } | null)?.project_id;
   return v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : undefined; // undefined: not a string
@@ -296,10 +297,10 @@ inbox.post('/:id/split', async (c) => {
   try {
     const settings = await getSettings(c.env);
     const out = await runAi(c.env, 'copilot', {
-      provider: settings.default_provider, maxTokens: 1800, system: buildSplitSystem({ today: localDate(settings.tz), tz: settings.tz }),
+      provider: settings.default_provider, maxTokens: 3000, system: buildSplitSystem({ today: localDate(settings.tz), tz: settings.tz }),
       messages: [{ role: 'user', content: fence('email', `Subject: ${item!.title}\n\n${emailText(item!)}`) }],
     });
-    return c.json({ proposals: parseSplit(out.text) });
+    return c.json({ proposals: parseSplit(out.text), token: item!.updated_at }); // the token: this accept's compare-and-swap (the item as it was when Athena read it)
   } catch (e) {
     if (e instanceof AiRefused) return c.json({ error: e.code, message: e.message }, e.status as ContentfulStatusCode);
     throw e;
@@ -322,12 +323,15 @@ inbox.post('/:id/split/accept', async (c) => {
   const item = await loadItem(c.env, c.req.param('id'));
   const no = await splitGate(c.env, item, projectId);
   if (no) return c.json(no.body, no.status);
+  const token = (body as { token?: unknown }).token;
+  if (typeof token !== 'string' || !token) return c.json({ error: 'token must be the token its split returned' }, 400);
+  if (item!.updated_at !== token) return c.json(STALE, 409);
   const original = await originalTask(c.env, item!);
   const trash = (body as { trash_original?: unknown }).trash_original === true && !!original;
   const t = now();
-  // Errors (rolling the batch back) when the item was handled meanwhile, or, when the original is being trashed, when it was trashed or finished meanwhile: two accepts racing make one set of tasks.
-  const guard = c.env.DB.prepare(`SELECT CASE WHEN (SELECT state FROM inbox_items WHERE id = ?1) IN ('new','kept','added') AND (?2 IS NULL OR (SELECT 1 FROM tasks WHERE id = ?2 AND deleted_at IS NULL AND status != 'done')) THEN 1 ELSE json('not json') END`)
-    .bind(item!.id, trash ? original!.id : null);
+  // Compare-and-swap: errors (rolling the batch back) unless the item is still exactly as the split read it (its updated_at is the token, and the batch below bumps it), so of two accepts of one split only one wins; also when the item was handled meanwhile or, when the original is being trashed, that was trashed or finished meanwhile.
+  const guard = c.env.DB.prepare(`SELECT CASE WHEN (SELECT state FROM inbox_items WHERE id = ?1) IN ('new','kept','added') AND (SELECT updated_at FROM inbox_items WHERE id = ?1) = ?3 AND (?2 IS NULL OR (SELECT 1 FROM tasks WHERE id = ?2 AND deleted_at IS NULL AND status != 'done')) THEN 1 ELSE json('not json') END`)
+    .bind(item!.id, trash ? original!.id : null, token);
   const writes: D1PreparedStatement[] = [guard];
   const made: Task[] = [];
   for (const r of rows) {
@@ -344,7 +348,9 @@ inbox.post('/:id/split/accept', async (c) => {
   try { await c.env.DB.batch(writes); }
   catch (e) {
     const cur = await loadItem(c.env, item!.id), orig = trash ? await c.env.DB.prepare('SELECT deleted_at, status FROM tasks WHERE id = ?1').bind(original!.id).first<{ deleted_at: string | null; status: string }>() : null;
-    if (!cur || !['new', 'kept', 'added'].includes(cur.state) || (orig && (orig.deleted_at || orig.status === 'done'))) return c.json({ error: 'not_open', message: 'This email has already been handled.' }, 409);
+    if (!cur || !['new', 'kept', 'added'].includes(cur.state)) return c.json({ error: 'not_open', message: 'This email has already been handled.' }, 409);
+    if (cur.updated_at !== token) return c.json(STALE, 409);
+    if (orig && (orig.deleted_at || orig.status === 'done')) return c.json({ error: 'not_open', message: 'This email has already been handled.' }, 409);
     throw e;
   }
   if (trash) await audit(c.env, 'you', 'task.trash', original!.id);

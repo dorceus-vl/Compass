@@ -24,6 +24,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
   const [rows, setRows] = useState<Row[]>([]);
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
+  const token = useRef(''); // what the split returned; the accept sends it back, so one split makes one set of tasks
   const [trash, setTrash] = useState(true); // the email already became a task: move that one to Trash when the new ones are added
   const [offline, setOffline] = useState(!navigator.onLine);
   const live = useRef(true);
@@ -40,8 +41,9 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
     if (offline) return;
     setPhase('loading');
     try {
-      const { proposals } = await api<{ proposals: SplitProposal[] }>(`/inbox/${item.id}/split`, { method: 'POST', json: { project_id: project || null } });
+      const { proposals, token: t } = await api<{ proposals: SplitProposal[]; token: string }>(`/inbox/${item.id}/split`, { method: 'POST', json: { project_id: project || null } });
       if (!live.current) return;
+      token.current = t;
       setRows(proposals.map((p) => ({ on: true, title: p.title, due: p.due_at && YMD.test(p.due_at) ? p.due_at : '', horizon: p.horizon, notes: p.notes })));
       setPhase('review');
     } catch (e) {
@@ -57,7 +59,7 @@ export function SplitSheet({ item, onClose }: { item: InboxItem; onClose: () => 
     if (busy || offline || !ticked.length) return;
     setBusy(true);
     try {
-      await api(`/inbox/${item.id}/split/accept`, { method: 'POST', json: { project_id: project || null, trash_original: !!item.task_id && trash,
+      await api(`/inbox/${item.id}/split/accept`, { method: 'POST', json: { project_id: project || null, trash_original: !!item.task_id && trash, token: token.current,
         tasks: ticked.map((r) => ({ title: r.title.trim().slice(0, 120), due_at: r.due || null, horizon: r.horizon, notes: r.notes })) } });
       toast(`Added ${ticked.length} task${ticked.length === 1 ? '' : 's'}`);
       await pull().catch(() => {});

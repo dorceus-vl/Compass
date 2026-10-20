@@ -657,20 +657,22 @@ SNI=$(post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"notification\",\"title\":\"Sm
 [ "$(sapi $SNI/split '{}')" = 400 ] || fail "a notification was split"
 [ "$(sapi nope/split '{}')" = 404 ] || fail "split of a missing item"
 TASKS='[{"title":"Send the budget","due_at":"2033-01-14","horizon":"short","notes":"From Ann."},{"title":"Book the room","due_at":null,"horizon":"medium","notes":null}]'
-ACC0="{\"project_id\":null,\"tasks\":$TASKS}"; ACCT="{\"project_id\":null,\"trash_original\":true,\"tasks\":$TASKS}"; ACCW="{\"project_id\":\"$SWP2\",\"tasks\":$TASKS}"
+# an accept sends back the token its split returned (the item's updated_at): acc ITEM PROJECT-JSON TRASH [TOKEN]; the token defaults to the item's current one
+tok() { curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$1').updated_at"; }
+acc() { local b="{\"project_id\":$2,\"trash_original\":$3,\"token\":\"${4:-$(tok $1)}\",\"tasks\":$TASKS}"; sapi "$1/split/accept" "$b"; }
 [ "$(sapi $SPE/split/accept '{"tasks":[]}')" = 400 ] && [ "$(sapi $SPE/split/accept '{"tasks":[{"title":"x","due_at":"soon"}]}')" = 400 ] || fail "accept validation"
-[ "$(sapi $SWE/split/accept "$ACC0")" = 409 ] || fail "work accept without a project"
+[ "$(acc $SWE null false)" = 409 ] || fail "work accept without a project"
 [ "$(SE)" = "$SE0" ] || fail "a refused accept made tasks"
-[ "$(sapi $SPE/split/accept "$ACC0")" = 201 ] && [ "$(js 'd.tasks.length+","+d.tasks[0].source_app+","+d.item.state' < $AV/s)" = "2,email,added" ] || fail "personal accept: $(cat $AV/s)"
+[ "$(acc $SPE null false)" = 201 ] && [ "$(js 'd.tasks.length+","+d.tasks[0].source_app+","+d.item.state' < $AV/s)" = "2,email,added" ] || fail "personal accept: $(cat $AV/s)"
 SPT=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); SPT1=${SPT%% *}
 [ "$(task $SPT1 due_at)" = 2033-01-14 ] && [ "$(task $SPT1 kind)" = personal ] || fail "split task fields"
 [ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').state")" = added ] || fail "the email was not marked added"
 [ "$(D1X "SELECT count(*) AS n FROM task_events WHERE type='created' AND task_id IN ('$(echo $SPT | sed "s/ /','/")')" | js 'd[0].results[0].n')" = 2 ] || fail "split tasks have no created events"
 [ "$(curl "${H[@]}" "$B/api/inbox?state=all" | js "d.items.find(i=>i.id==='$SPE').task_id")" = "$SPT1" ] || fail "the added email does not point at the first new task"
 [ "$(sapi $SPE/split '{}')" = 200 ] || fail "an added email could not be split again: $(cat $AV/s)"
-[ "$(sapi $SPE/split/accept "$ACCT")" = 201 ] && [ "$(js d.trashed < $AV/s)" = "$SPT1" ] || fail "a second accept (an added email may be split again, trashing its first task): $(cat $AV/s)"
+[ "$(acc $SPE null true)" = 201 ] && [ "$(js d.trashed < $AV/s)" = "$SPT1" ] || fail "a second accept (an added email may be split again, trashing its first task): $(cat $AV/s)"
 SPT="$SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s)"
-[ "$(sapi $SWE/split/accept "$ACCW")" = 201 ] || fail "work accept: $(cat $AV/s)"
+[ "$(acc $SWE "\"$SWP2\"" false)" = 201 ] || fail "work accept: $(cat $AV/s)"
 SWT=$(js 'd.tasks[0].id' < $AV/s)
 [ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$SWT' AND enc_v=2 AND title NOT LIKE '%budget%'" | js 'd[0].results[0].n')" = 1 ] || fail "a split work task is not ciphertext"
 for x in $SPT $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s); do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
@@ -683,7 +685,7 @@ dmail() { post "$KELLY" "{\"app\":\"kelly\",\"kind\":\"email\",\"title\":\"Smoke
 DM1=$(dmail one); DI1=$(printf '%s' "$DM1" | js d.id); DO1=$(printf '%s' "$DM1" | js d.task_id)
 [ "$(printf '%s' "$DM1" | js d.state)" = added ] && [ -n "$DO1" ] && [ "$DO1" != null ] || fail "the default rule did not make a task from the email: $DM1"
 [ "$(sapi $DI1/split '{}')" = 200 ] && [ "$(js d.proposals.length < $AV/s)" = 3 ] || fail "split of an email already made a task: $(cat $AV/s)"
-[ "$(sapi $DI1/split/accept "$ACCT")" = 201 ] || fail "accept with the original to Trash: $(cat $AV/s)"
+[ "$(acc $DI1 null true)" = 201 ] || fail "accept with the original to Trash: $(cat $AV/s)"
 DN1=$(js 'd.tasks[0].id' < $AV/s); DN2=$(js 'd.tasks[1].id' < $AV/s)
 [ "$(js 'd.tasks.length+","+d.item.state+","+(d.item.task_id===d.tasks[0].id)+","+(d.trashed==="'$DO1'")' < $AV/s)" = "2,added,true,true" ] || fail "accept answer: $(cat $AV/s)"
 [ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$DO1' AND deleted_at IS NOT NULL" | js 'd[0].results[0].n')" = 1 ] || fail "the original task is not in Trash"
@@ -691,13 +693,22 @@ DN1=$(js 'd.tasks[0].id' < $AV/s); DN2=$(js 'd.tasks[1].id' < $AV/s)
 [ "$(curl "${H[@]}" $B/api/inbox/by-task/$DN1 | js d.item.id)" = "$DI1" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' -b $J -H "Origin: $B" $B/api/inbox/by-task/$DO1)" = 404 ] || fail "by-task lookup"
 curl "${H[@]}" -X POST $B/api/trash/tasks/$DO1/restore | grep -q '"ok":true' || fail "the trashed original could not be restored"
 DM2=$(dmail two); DI2=$(printf '%s' "$DM2" | js d.id); DO2=$(printf '%s' "$DM2" | js d.task_id)
-[ "$(sapi $DI2/split/accept "$ACC0")" = 201 ] && DT2=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s) && [ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$DO2' AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 1 ] || fail "accept without the checkbox touched the original"
+[ "$(acc $DI2 null false)" = 201 ] && DT2=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s) && [ "$(D1X "SELECT count(*) AS n FROM tasks WHERE id='$DO2' AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 1 ] || fail "accept without the checkbox touched the original"
+DM4=$(dmail four); DI4=$(printf '%s' "$DM4" | js d.id); DO4=$(printf '%s' "$DM4" | js d.task_id)
+[ "$(sapi $DI4/split '{}')" = 200 ] && [ "$(js d.token < $AV/s)" = "$(tok $DI4)" ] || fail "the split did not return the item's token: $(cat $AV/s)"
+T4=$(js d.token < $AV/s)
+NOTOK="{\"project_id\":null,\"tasks\":$TASKS}"
+[ "$(sapi $DI4/split/accept "$NOTOK")" = 400 ] || fail "accept without a token"
+[ "$(acc $DI4 null false "$T4")" = 201 ] && DT4=$(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s) || fail "first accept with the token: $(cat $AV/s)"
+[ "$(acc $DI4 null false "$T4")" = 409 ] && grep -q '"error":"already_split"' $AV/s || fail "a second accept with the same token was not refused: $(cat $AV/s)"
+[ "$(D1X "SELECT count(*) AS n FROM task_events WHERE data LIKE '%$DI4%split%' AND type='created'" | js 'd[0].results[0].n')" = 2 ] || fail "two accepts with one token made more than one task set"
+[ "$(acc $DI4 null false "$(tok $DI4)")" = 201 ] && DT4="$DT4 $(js 'd.tasks.map(t=>t.id).join(" ")' < $AV/s)" || fail "a fresh token did not allow a deliberate new split: $(cat $AV/s)"
 DM3=$(dmail three); DI3=$(printf '%s' "$DM3" | js d.id); DO3=$(printf '%s' "$DM3" | js d.task_id)
 curl "${H[@]}" -X POST $B/api/tasks/$DO3/done | grep -q '"status":"done"' || fail "done"
 [ "$(sapi $DI3/split '{}')" = 409 ] && grep -q '"error":"original_done"' $AV/s || fail "split of an email whose task is done: $(cat $AV/s)"
-[ "$(sapi $DI3/split/accept "$ACCT")" = 409 ] || fail "accept for an email whose task is done"
-for x in $DO1 $DO2 $DO3 $DN1 $DN2 $DT2; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+[ "$(acc $DI3 null true)" = 409 ] || fail "accept for an email whose task is done"
+for x in $DO1 $DO2 $DO3 $DO4 $DN1 $DN2 $DT2 $DT4; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 rm -rf $AV
-echo "smoke: (a6) split an email already made a task: original to Trash (restorable), item added and pointing at the first new task, by-task lookup; without the checkbox the original stays; a done original is refused (split and accept)"
+echo "smoke: (a6) split an email already made a task: original to Trash (restorable), item added and pointing at the first new task, by-task lookup; without the checkbox the original stays; a second accept with the same token -> 409 already_split, one task set, a fresh token splits again; a done original is refused (split and accept)"
 curl -s -o /dev/null -w '%{http_code}' $B/api/tasks | grep -q 401 || fail "guard (no cookie)"
 echo "smoke: ok"
