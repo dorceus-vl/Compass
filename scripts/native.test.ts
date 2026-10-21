@@ -269,19 +269,29 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
     for (const m of src.matchAll(/PendingIntent\.get(?:Activity|Broadcast)\([^;]*;/g)) assert.ok(m[0].includes('FLAG_IMMUTABLE'), `immutable: ${m[0]}`);
   }
   assert.ok(tick.includes('WidgetUrls.doneUrl(') && !/new URL\("http/.test(tick), 'ticks go only to the URL WidgetUrls builds');
-  assert.ok(tick.includes('setInstanceFollowRedirects(false)'), 'a tick never follows a redirect');
+  // The tick goes over WidgetUrls.post (a plain socket: no HttpURLConnection, so Capacitor's process-wide CookieHandler can't add the session).
+  const urls = readFileSync(wdir + 'WidgetUrls.java', 'utf8');
+  const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/HttpsURLConnection\.getDefaultHostnameVerifier/g, '');
+  for (const src of [tick, urls, providers]) assert.ok(!/HttpURLConnection|openConnection\(|CookieHandler|CookieManager/.test(code(src)), 'no HttpURLConnection or cookie store on the tick path');
+  assert.ok(tick.includes('WidgetUrls.post(') && tick.includes('HttpsURLConnection.getDefaultHostnameVerifier()'), 'the tick verifies the host name');
+  assert.ok(/f\.get\(8, TimeUnit\.SECONDS\)/.test(tick) && tick.includes('IN_FLIGHT'), 'one deadline per tick; the same task is never ticked twice at once');
+  assert.ok(providers.includes('am.setWindow(AlarmManager.RTC,') && !/setExact|setAlarmClock|RTC_WAKEUP/.test(providers), 'midnight: one inexact alarm, no wake-up');
   const token = readFileSync(wdir + 'WidgetToken.java', 'utf8');
   assert.ok(token.includes('"AndroidKeyStore"') && token.includes('BLOCK_MODE_GCM') && token.includes('"compass_widget_token"'), 'token sealed under a Keystore AES-GCM key');
+  assert.ok(token.includes('.setKeySize(256)') && !token.includes('setUserAuthenticationRequired') && !token.includes('setRandomizedEncryptionRequired'), 'AES-256, no user auth, a fresh IV every time');
+  assert.ok(token.indexOf('.remove(KEY).commit()') < token.indexOf('keystore()', token.indexOf('public static synchronized void set')), 'the sealed token is removed before the Keystore is touched');
   const manifest = readFileSync('mobile/android/app/src/main/AndroidManifest.xml', 'utf8');
   for (const k of ['TodaySmall', 'TodayMedium', 'TodayLarge', 'QuickAdd', 'AskAthena', 'ProjectPulse', 'Week']) {
     assert.ok(new RegExp(`<receiver android:name="\\.widgets\\.WidgetProviders\\$${k}"[^>]*android:exported="false"`).test(manifest), `${k} provider declared, not exported`);
   }
   assert.ok(/<receiver android:name="\.widgets\.TickReceiver" android:exported="false"/.test(manifest), 'tick receiver not exported');
+  assert.ok(/<receiver android:name="\.widgets\.WidgetProviders\$Midnight" android:exported="false"/.test(manifest), 'midnight receiver not exported');
+  assert.ok(!/SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM/.test(manifest), 'no exact-alarm permission');
   const { readdirSync } = await import('node:fs');
   const infos = readdirSync('mobile/android/app/src/main/res/xml').filter((f) => /^widget_.*_info\.xml$/.test(f));
   assert.equal(infos.length, 7, 'seven widgets');
   for (const f of infos) assert.ok(readFileSync(`mobile/android/app/src/main/res/xml/${f}`, 'utf8').includes('android:widgetCategory="home_screen"'), `${f}: Home Screen only (no lock screen)`);
-  assert.equal([...providers.matchAll(/PendingIntent\.getActivity\(/g)].length + [...tick.matchAll(/PendingIntent\.getBroadcast\(/g)].length, 2, 'the two PendingIntent builders were checked');
+  assert.equal([...providers.matchAll(/PendingIntent\.get(?:Activity|Broadcast)\(/g)].length + [...tick.matchAll(/PendingIntent\.getBroadcast\(/g)].length, 3, 'the three PendingIntent builders (open, tick, midnight) were checked');
   assert.ok(!/glance|androidx\.security/i.test(readFileSync('mobile/android/app/build.gradle', 'utf8')), 'no new Gradle dependency');
   assert.ok(readFileSync('mobile/ios/App/App/App.entitlements', 'utf8').includes('$(AppIdentifierPrefix)com.knocturnlabs.compass.shared'), 'keychain group in the app entitlements');
   assert.ok(readFileSync('mobile/ios/App/App/Info.plist', 'utf8').includes('<key>WidgetKeychainGroup</key>'), 'the app reads its Keychain group from Info.plist');

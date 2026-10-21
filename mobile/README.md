@@ -35,10 +35,11 @@ Android widgets (v2.3 Task 2b, `android/app/src/main/java/com/knocturnlabs/compa
 Project pulse (4x2; touch and hold the widget to pick its project) and This week (5x3 and up, resizable, for tablets). They read
 `widget-snapshot.json` in the app's private files, written by `CompassNative.updateWidgets`; Home Screen only (no lock screen widget).
 A tick marks the task done in that file, queues it in `pending-ticks.json` and posts it with the tick token (`setWidgetToken`, sealed under
-an Android Keystore key) to `https://compass.knocturnlabs.com` only; anything but a 200 leaves it queued for the app. A tap opens the app on
-a Compass link (`CompassLink.open`). Widgets redraw when the app writes a snapshot, after a tick, and every 30 minutes (Android's
-shortest period), so "Today" can show yesterday's date for up to 30 minutes after midnight until the app or the period redraws it. Their
-pure Java (snapshot, URLs, files, token sealing) is checked by `npm test` with the SDK's own `org.json` sources (`sources/android-*`).
+an Android Keystore key) to `https://compass.knocturnlabs.com` only, over a plain TLS socket so the web view's cookies never go with it;
+anything but a 200 leaves it queued for the app. A tap opens the app on a Compass link (`CompassLink.open`). Widgets redraw when the app
+writes a snapshot, after a tick, every 30 minutes, and at local midnight (one inexact alarm, no alarm permission), where a snapshot from
+yesterday says "open Compass to update". Their pure Java (snapshot, URLs, the tick request, files, token sealing) is checked by `npm test`
+with the SDK's own `org.json` sources: install "Android SDK Platform Sources" (`sources/android-*`) in the SDK Manager, or the check stops.
 
 ## Android
 

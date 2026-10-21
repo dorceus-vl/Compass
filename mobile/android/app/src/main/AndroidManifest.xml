@@ -97,6 +97,8 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_week_info" />
         </receiver>
+        <!-- Local midnight: the widgets redraw so "Today" rolls over (one inexact alarm, re-armed at each draw; no alarm permission). -->
+        <receiver android:name=".widgets.WidgetProviders$Midnight" android:exported="false" />
         <!-- A widget's tick circle: reached only through the app's own PendingIntents (explicit, immutable). -->
         <receiver android:name=".widgets.TickReceiver" android:exported="false" />
         <!-- Project pulse's picker: the launcher starts it with the widget's id; it only sets a Project pulse widget of this app. -->

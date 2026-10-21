@@ -119,10 +119,52 @@ import java.util.List;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import org.json.JSONObject;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.net.CookieHandler;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.URI;
+import java.security.KeyStore;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
 
 public class Check {
     static void check(boolean ok, String what) { if (!ok) { System.out.println("FAIL: " + what); System.exit(1); } }
     static boolean eq(Object a, Object b) { return a == null ? b == null : a.equals(b); }
+
+    /** A one-request server on 127.0.0.1 (TLS with `tls`): records what it read (up to the blank line), answers `answer` (null: never answers). */
+    static int stub(String answer, AtomicReference<String> got, SSLContext tls) throws Exception {
+        ServerSocket ss = tls == null ? new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()) : tls.getServerSocketFactory().createServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress());
+        Thread t = new Thread(() -> {
+            try (ServerSocket server = ss; Socket s = server.accept()) {
+                s.setSoTimeout(3000);
+                ByteArrayOutputStream b = new ByteArrayOutputStream();
+                InputStream in = s.getInputStream();
+                try { for (int c; (c = in.read()) != -1; ) { b.write(c); if (b.toString().endsWith("\r\n\r\n")) break; } } catch (Exception e) { /* closed or failed handshake */ }
+                got.set(b.toString(StandardCharsets.ISO_8859_1));
+                if (answer == null) { Thread.sleep(2500); return; }
+                s.getOutputStream().write((answer + (answer.isEmpty() ? "" : "\r\n\r\n")).getBytes(StandardCharsets.ISO_8859_1));
+                s.getOutputStream().flush();
+            } catch (Exception e) {
+                if (got.get() == null) got.set("");
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return ss.getLocalPort();
+    }
+
+    static String waitFor(AtomicReference<String> r) throws InterruptedException {
+        for (int i = 0; i < 100 && r.get() == null; i++) Thread.sleep(30);
+        return r.get() == null ? "" : r.get();
+    }
 
     public static void main(String[] args) throws Exception {
         // URLs: taps are Compass links with the ids encoded; a tick goes to Compass only.
@@ -244,10 +286,62 @@ public class Check {
         check(WidgetStore.open(k1, blob) == null && WidgetStore.open(k1, new byte[20]) == null && WidgetStore.open(k1, null) == null && WidgetStore.open(null, blob) == null, "tampered or short");
         check(WidgetStore.open(k1, WidgetStore.seal(k1, "bad token!")) == null, "only a valid token comes out");
 
+        // Midnight: the next local midnight in the snapshot's zone, across the end of daylight time (Toronto, Nov 1 2026).
+        check(WidgetSnapshot.nextMidnight(java.time.Instant.parse("2026-10-21T22:00:00Z").toEpochMilli(), "America/Toronto") == java.time.Instant.parse("2026-10-22T04:00:00Z").toEpochMilli(), "next midnight");
+        check(WidgetSnapshot.nextMidnight(java.time.Instant.parse("2026-10-31T12:00:00Z").toEpochMilli(), "America/Toronto") == java.time.Instant.parse("2026-11-01T04:00:00Z").toEpochMilli(), "midnight before the change");
+        check(WidgetSnapshot.nextMidnight(java.time.Instant.parse("2026-11-01T12:00:00Z").toEpochMilli(), "America/Toronto") == java.time.Instant.parse("2026-11-02T05:00:00Z").toEpochMilli(), "midnight after the change");
+        check(WidgetSnapshot.nextMidnight(java.time.Instant.parse("2026-10-22T04:00:00Z").toEpochMilli(), "America/Toronto") == java.time.Instant.parse("2026-10-23T04:00:00Z").toEpochMilli(), "at midnight: the next one");
+
+        // The tick's request: the token is its only credential. A process-wide CookieHandler (as Capacitor installs) adds nothing to it.
+        CookieHandler.setDefault(new CookieHandler() {
+            public Map<String, List<String>> get(URI u, Map<String, List<String>> h) { return Map.of("Cookie", List.of("compass_session=SECRET")); }
+            public void put(URI u, Map<String, List<String>> h) {}
+        });
+        String req = new String(WidgetUrls.request(new URI("https://compass.knocturnlabs.com/api/widget/tasks/t-1/done"), tok), StandardCharsets.US_ASCII);
+        check(req.equals("POST /api/widget/tasks/t-1/done HTTP/1.1\r\nHost: compass.knocturnlabs.com\r\nAuthorization: Bearer " + tok + "\r\nContent-Length: 0\r\nUser-Agent: CompassWidget\r\nConnection: close\r\n\r\n"), "request bytes");
+        for (String answer : new String[] { "HTTP/1.1 200 OK", "HTTP/1.1 302 Found\r\nLocation: https://evil.com/", "HTTP/1.1 401 Unauthorized", "garbage", "" }) {
+            AtomicReference<String> got = new AtomicReference<>();
+            int port = stub(answer, got, null);
+            int st = WidgetUrls.post("http://127.0.0.1:" + port + "/api/widget/tasks/t-1/done", tok, null, null, 2000);
+            int want = answer.startsWith("HTTP/1.1 ") ? Integer.parseInt(answer.substring(9, 12)) : -1;
+            check(st == want, "status for " + answer.split("\r")[0] + ": " + st);
+            String r = waitFor(got);
+            check(r.startsWith("POST /api/widget/tasks/t-1/done HTTP/1.1\r\n") && r.contains("\r\nAuthorization: Bearer " + tok + "\r\n"), "stub got the tick");
+            check(!r.toLowerCase().contains("cookie") && !r.contains("SECRET"), "no cookie on the tick");
+        }
+        check(!WidgetUrls.settles(302), "a redirect is not followed and doesn't settle");
+        long t0 = System.currentTimeMillis();
+        int silent = stub(null, new AtomicReference<>(), null);
+        check(WidgetUrls.post("http://127.0.0.1:" + silent + "/api/widget/tasks/t-1/done", tok, null, null, 500) == -1 && System.currentTimeMillis() - t0 < 3000, "no answer: -1 within the timeout");
+        AtomicReference<String> none = new AtomicReference<>();
+        int p2 = stub("HTTP/1.1 200 OK", none, null);
+        check(WidgetUrls.post("http://127.0.0.1:" + p2 + "/x", "bad token\r\nCookie: x", null, null, 500) == -1 && WidgetUrls.post("ftp://127.0.0.1:" + p2 + "/x", tok, null, null, 500) == -1, "a bad token or scheme sends nothing");
+
+        // https: TLS to a stub with a self-signed certificate for localhost; the host check decides whether the token is sent at all.
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        try (InputStream in = new FileInputStream(args[0])) { ks.load(in, "changeit".toCharArray()); }
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()); kmf.init(ks, "changeit".toCharArray());
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()); tmf.init(ks);
+        SSLContext server = SSLContext.getInstance("TLS"); server.init(kmf.getKeyManagers(), null, null);
+        SSLContext client = SSLContext.getInstance("TLS"); client.init(null, tmf.getTrustManagers(), null);
+        AtomicReference<String> tlsGot = new AtomicReference<>();
+        int tp = stub("HTTP/1.1 200 OK", tlsGot, server);
+        check(WidgetUrls.post("https://localhost:" + tp + "/api/widget/tasks/t-1/done", tok, client.getSocketFactory(), (h, sess) -> h.equals("localhost"), 3000) == 200, "https 200");
+        String tr = waitFor(tlsGot);
+        check(tr.contains("Authorization: Bearer " + tok) && !tr.toLowerCase().contains("cookie"), "https carries the token, no cookie");
+        AtomicReference<String> refused = new AtomicReference<>();
+        int tp2 = stub("HTTP/1.1 200 OK", refused, server);
+        check(WidgetUrls.post("https://localhost:" + tp2 + "/api/widget/tasks/t-1/done", tok, client.getSocketFactory(), (h, sess) -> false, 3000) == -1, "host check fails: -1");
+        check(!waitFor(refused).contains("Bearer"), "host check fails: the token never leaves");
+        check(WidgetUrls.post("https://localhost:" + tp2 + "/x", tok, (SSLSocketFactory) SSLSocketFactory.getDefault(), (h, sess) -> true, 3000) == -1, "an untrusted certificate: -1");
+        CookieHandler.setDefault(null);
+
         System.out.println("Widgets (Android): all checks passed");
     }
 }
 JAVA
 javac -nowarn -d "$out/wclasses" $(find "$w" -name '*.java') 2>&1 | grep -v '^Note:' || true
 test -f "$out/wclasses/com/knocturnlabs/compass/widgets/Check.class" || { echo "FAIL: widget checks didn't compile"; exit 1; }
-java -cp "$out/wclasses" com.knocturnlabs.compass.widgets.Check
+keytool -genkeypair -alias stub -keyalg EC -groupname secp256r1 -dname CN=localhost -ext SAN=dns:localhost -validity 2 \
+  -keystore "$w/stub.p12" -storetype PKCS12 -storepass changeit -keypass changeit >/dev/null 2>&1
+java -cp "$out/wclasses" com.knocturnlabs.compass.widgets.Check "$w/stub.p12"

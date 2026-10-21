@@ -189,6 +189,15 @@ public final class WidgetSnapshot {
 
     // ---- dates (the snapshot's zone, plain yyyy-MM-dd) ----
 
+    /** The next local midnight after `now` in `tz` (an unknown zone: the device's), when the widgets redraw so "Today" rolls over. */
+    public static long nextMidnight(long now, String tz) {
+        Calendar c = Calendar.getInstance(zone(tz), Locale.US);
+        c.setTimeInMillis(now);
+        c.add(Calendar.DAY_OF_MONTH, 1);
+        c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0); c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
     static TimeZone zone(String tz) {
         TimeZone z = TimeZone.getTimeZone(tz == null ? "" : tz);
         return z.getID().equals(tz) ? z : TimeZone.getDefault(); // an unknown id would otherwise be GMT

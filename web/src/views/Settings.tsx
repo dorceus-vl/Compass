@@ -194,7 +194,7 @@ function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
   const row = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 } as const;
   return (
     <div className="card">
-      <CardHead icon="today" title="Widgets" desc="What the Home Screen and Lock Screen widgets show. Widgets are filled each time the app syncs." />
+      <CardHead icon="today" title="Widgets" desc={shell() === 'android' ? 'What the Home Screen widgets show. Widgets are filled each time the app syncs.' : 'What the Home Screen and Lock Screen widgets show. Widgets are filled each time the app syncs.'} />
       <label style={row}>
         <span>Hide work titles on the Lock Screen{shell() === 'android' && <span style={{ display: 'block', fontSize: 12, color: 'var(--text-faint)' }}>iPhone and iPad</span>}</span>
         <input type="checkbox" checked={s.widgets.hide_work_on_lock} onChange={(e) => save({ widgets: { hide_work_on_lock: e.target.checked } })} style={{ width: 20, height: 20, accentColor: 'var(--accent)' }} />

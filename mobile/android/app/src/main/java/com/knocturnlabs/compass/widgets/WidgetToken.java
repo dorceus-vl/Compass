@@ -33,15 +33,16 @@ public final class WidgetToken {
     /** Stores the token under a fresh key, or with null deletes both. A token that isn't the server's shape is refused before anything is deleted. */
     public static synchronized void set(Context c, String token) throws Exception {
         if (token != null && !WidgetStore.validToken(token)) throw new IllegalArgumentException("invalid token");
+        // The sealed token goes first, before the Keystore is touched: if the Keystore fails, nothing readable is left behind.
+        if (!prefs(c).edit().remove(KEY).commit()) throw new IOException("not removed");
         KeyStore ks = keystore();
-        prefs(c).edit().remove(KEY).commit();
         if (ks.containsAlias(ALIAS)) ks.deleteEntry(ALIAS);
         if (token == null) return;
         KeyGenerator g = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
         g.init(new KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setKeySize(256).build());
-        SecretKey key = g.generateKey();
-        if (!prefs(c).edit().putString(KEY, Base64.encodeToString(WidgetStore.seal(key, token), Base64.NO_WRAP)).commit()) throw new IOException("not saved");
+        String sealed = Base64.encodeToString(WidgetStore.seal(g.generateKey(), token), Base64.NO_WRAP); // written only once sealing worked
+        if (!prefs(c).edit().putString(KEY, sealed).commit()) throw new IOException("not saved");
     }
 
     /** The stored token, or null when there is none or it can't be opened (the key is gone, the bytes changed). */

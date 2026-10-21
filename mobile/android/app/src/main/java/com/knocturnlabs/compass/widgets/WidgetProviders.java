@@ -1,8 +1,10 @@
 package com.knocturnlabs.compass.widgets;
 
+import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -77,6 +79,20 @@ public final class WidgetProviders {
         RemoteViews view(Context c, WidgetSnapshot s, int id, int h) { return week(c, s, h); }
     }
 
+    /** Local midnight: every Compass widget redraws, so "Today" rolls over (or says to open Compass), then the next midnight is armed. */
+    public static final class Midnight extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context c, Intent intent) { refreshAll(c); }
+    }
+
+    /** One inexact alarm in a 15-minute window after midnight (setWindow needs no exact-alarm permission; never early, no wake-up), replaced each time a widget draws. */
+    static void armMidnight(Context c, WidgetSnapshot s) {
+        AlarmManager am = c.getSystemService(AlarmManager.class);
+        if (am == null) return;
+        PendingIntent pi = PendingIntent.getBroadcast(c, 0, new Intent(c, Midnight.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        am.setWindow(AlarmManager.RTC, WidgetSnapshot.nextMidnight(System.currentTimeMillis(), s == null ? null : s.tz) + 60_000, 15 * 60_000, pi);
+    }
+
     private static Base[] all() { return new Base[] { new TodaySmall(), new TodayMedium(), new TodayLarge(), new QuickAdd(), new AskAthena(), new ProjectPulse(), new Week() }; }
 
     /** Redraws every Compass widget on the screen (after the page writes a snapshot, after a tick, after a project is picked). */
@@ -97,6 +113,7 @@ public final class WidgetProviders {
             int h = o == null ? 0 : o.getInt(landscape ? AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT : AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT);
             m.updateAppWidget(id, kind.view(c, s, id, h));
         }
+        armMidnight(c, s);
     }
 
     // ---- Project pulse: which project each widget shows (picked in ProjectPulseConfigActivity; the first one until then) ----
@@ -215,7 +232,7 @@ public final class WidgetProviders {
         v.setTextViewText(R.id.head, todayHead(s, null));
         v.removeAllViews(R.id.rows);
         if (s.items.isEmpty()) v.addView(R.id.rows, line(c, "Nothing due. The day is yours.", null));
-        int n = Math.min(3, fits(h, 50, 3));
+        int n = Math.min(5, fits(h, 50, 3)); // three at the compact size, up to five when the widget is taller
         for (int i = 0; i < Math.min(n, s.items.size()); i++) v.addView(R.id.rows, row(c, s.items.get(i)));
         ring(v, s.done, s.total, s.done + "/" + s.total, s.done + " of " + s.total + " done today");
         return v;
@@ -297,7 +314,9 @@ public final class WidgetProviders {
         }
         v.setTextViewText(R.id.milestone, m);
         v.setTextViewText(R.id.slip, slip(p.slipDays));
-        v.setTextViewText(R.id.risks, (p.highRisks == null ? "" : p.highRisks + " high risk" + (p.highRisks == 1 ? "" : "s") + " · ") + p.overdue + " overdue");
+
+        if (s.isStale(System.currentTimeMillis())) v.setTextViewText(R.id.risks, "Open Compass to update"); // yesterday's overdue count would mislead
+        else v.setTextViewText(R.id.risks, (p.highRisks == null ? "" : p.highRisks + " high risk" + (p.highRisks == 1 ? "" : "s") + " · ") + p.overdue + " overdue");
         ring(v, p.pct, 100, p.pct + "%", p.pct + "% done");
         v.setContentDescription(R.id.root, p.shownName() + ", " + ("none".equals(p.rag) ? "no RAG" : p.rag) + ", " + p.pct + "% done");
         return v;
@@ -312,7 +331,7 @@ public final class WidgetProviders {
     static RemoteViews week(Context c, WidgetSnapshot s, int h) {
         if (s == null) return placeholder(c);
         RemoteViews v = tap(c, new RemoteViews(c.getPackageName(), R.layout.widget_week), WidgetUrls.TODAY);
-        v.setTextViewText(R.id.head, "This week · " + s.weekOpen() + " open");
+        v.setTextViewText(R.id.head, s.isStale(System.currentTimeMillis()) ? "This week · open Compass to update" : "This week · " + s.weekOpen() + " open");
         String today = WidgetSnapshot.ymd(System.currentTimeMillis(), s.tz);
         v.removeAllViews(R.id.days);
         for (WidgetSnapshot.Day d : s.week) {
