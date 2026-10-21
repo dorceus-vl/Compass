@@ -58,13 +58,13 @@ export interface Week { start: string; end: string }
 const weeks = (today: string, n: number): Week[] => Array.from({ length: n }, (_, i) => { const s = addDaysYmd(weekStart(today), -7 * (n - 1 - i)); return { start: s, end: addDaysYmd(s, 6) }; });
 
 /** Tasks finished in each of the last `n` weeks (oldest first, the last holds today). */
-export function donePerWeek(tasks: DTask[], today: string, n = 8, tz = 'America/Toronto'): (Week & { done: number })[] {
+export function donePerWeek(tasks: DTask[], today: string, n: number, tz: string): (Week & { done: number })[] {
   const ds = prep(tasks, tz).filter((t) => t.doneAt).map((t) => t.done!);
   return weeks(today, n).map((w) => ({ ...w, done: ds.filter((d) => d >= w.start && d <= w.end).length }));
 }
 
 /** At each week's end (today, for the current week): tasks due before that day, created by then and not done by then. */
-export function overdueTrend(tasks: DTask[], today: string, n = 8, tz = 'America/Toronto'): (Week & { as_of: string; overdue: number })[] {
+export function overdueTrend(tasks: DTask[], today: string, n: number, tz: string): (Week & { as_of: string; overdue: number })[] {
   const ps = prep(tasks, tz);
   return weeks(today, n).map((w) => {
     const as_of = w.end < today ? w.end : today;

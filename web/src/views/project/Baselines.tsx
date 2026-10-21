@@ -8,6 +8,8 @@ import { confirmAction, toast } from '../../ui/dialogs.tsx';
 import { accent } from '../../ui/colors.ts';
 import { SectionHead } from '../../ui/SectionHead.tsx';
 import { today } from '../../dates.ts';
+import { localDay } from '../../../../shared/dashboard.ts';
+import { useTz } from './Report.tsx';
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
@@ -93,6 +95,7 @@ function SlipView({ baseline, project }: { baseline: BaselineInfo; project: Proj
 /** Overview → Baselines: save, list, rename, delete, and the slip view of one. Saving and editing need a connection; opening works from the copy on the device. */
 export function Baselines({ project }: { project: Project }) {
   const { items, offline, loaded, reload } = useBaselines(project.id);
+  const tz = useTz();
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [on, setOn] = useState(online());
@@ -119,8 +122,8 @@ export function Baselines({ project }: { project: Project }) {
         {items.map((b) => (
           <div key={b.id} className="acard bl-row" style={accent('var(--swatch-1)')}>
             <div className="bl-head">
-              <input className="field bl-name" key={b.name} defaultValue={b.name} maxLength={200} aria-label={`Baseline name, saved ${b.taken_at.slice(0, 10)}`} disabled={needNet} onBlur={(e) => void rename(b, e.target.value)} />
-              <span className="chip">{b.taken_at.slice(0, 10)}</span>
+              <input className="field bl-name" key={b.name} defaultValue={b.name} maxLength={200} aria-label={`Baseline name, saved ${localDay(b.taken_at, tz)}`} disabled={needNet} onBlur={(e) => void rename(b, e.target.value)} />
+              <span className="chip">{localDay(b.taken_at, tz)}</span>
               <span className="chip">{plural(b.task_count, 'task')} · {plural(b.milestone_count, 'milestone')}</span>
             </div>
             <div className="row">

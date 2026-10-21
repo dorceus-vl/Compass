@@ -38,6 +38,7 @@ async function loadInput(env: Env, projectId: string): Promise<ReportInput | nul
     openAll(env, 'baselines', bl.results as { id: string; name: string; snapshot: string; taken_at: string; enc_v: number }[]),
   ]);
   const snapshot = baselines[0] ? parseSnapshot(baselines[0].snapshot) : null;
+  if (baselines[0] && !snapshot) console.error('[report] the latest baseline could not be read'); // shows as "No baseline saved"; never the content
   return { project, milestones, tasks, raid: raidRows, changes, decisions, lessons, meetings: meetings.map((m) => ({ id: m.id, title: m.title, received_at: m.received_at, summary: m.summary })),
     baseline: baselines[0] && snapshot ? { name: baselines[0].name, taken_at: baselines[0].taken_at, snapshot } : null };
 }

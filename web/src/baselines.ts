@@ -22,7 +22,7 @@ export function useBaselines(projectId: string): { items: BaselineInfo[]; offlin
       if (mine === seq.current) set({ items: c?.items ?? [], offline: true, loaded: true });
     }
   }, [projectId]);
-  useEffect(() => { set((x) => ({ ...x, loaded: false })); void reload(); return () => { seq.current++; }; }, [reload]);
+  useEffect(() => { set({ items: [], offline: false, loaded: false }); void reload(); return () => { seq.current++; }; }, [reload]);
   return { ...s, reload };
 }
 

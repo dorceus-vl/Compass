@@ -51,7 +51,7 @@ export function Dashboard({ project }: { project: Project }) {
     ['Done this week', String(metrics.done_this_week), ''], ['Open tasks', String(metrics.open), ''],
     ['Overdue now', String(metrics.overdue_now), metrics.overdue_now ? 'over' : ''],
     ['Against ideal', metrics.behind_ideal === null ? '—' : metrics.behind_ideal > 0 ? `+${metrics.behind_ideal}` : String(metrics.behind_ideal), metrics.behind_ideal !== null && metrics.behind_ideal > 0 ? 'over' : '',
-      metrics.behind_ideal === null ? (latest ? 'Needs an end date' : loaded ? 'Save a baseline' : undefined) : undefined],
+      metrics.behind_ideal === null ? (latest ? 'Needs an end date after the baseline' : loaded ? 'Save a baseline' : undefined) : undefined],
     ['High risks', risksKnown ? String(metrics.high_risks) : '—', risksKnown && metrics.high_risks ? 'over' : ''],
   ];
   const risksSummary = !raidLoaded ? 'Loading risks…' : !risksKnown ? "Risks aren't available offline yet. Open the RAID tab once while online." : null;
@@ -96,7 +96,7 @@ export function Dashboard({ project }: { project: Project }) {
           {latest && snap === undefined && <p className="chart-sum">Opening the baseline…</p>}
           {latest && snap === null && <p className="chart-sum" role="status">This baseline can't be opened offline. Connect once to load it.</p>}
           {latest && snap && <>
-            <p className="chart-sum" id="dash-slip-sum">{slipRows.length ? `${plural(slipRows.length, 'milestone')} moved since "${latest.name}" (${latest.taken_at.slice(0, 10)}), biggest move first.` : `No milestone has moved since "${latest.name}" (${latest.taken_at.slice(0, 10)}).`}</p>
+            <p className="chart-sum" id="dash-slip-sum">{slipRows.length ? `${plural(slipRows.length, 'milestone')} moved since "${latest.name}" (${localDay(latest.taken_at, tz)}), biggest move first.` : `No milestone has moved since "${latest.name}" (${localDay(latest.taken_at, tz)}).`}</p>
             {slipRows.length > 0 && <ol className="slip-list" aria-describedby="dash-slip-sum">
               {slipRows.slice(0, 6).map((r) => (
                 <li key={r.id}><span className="sl-name">{r.name || 'Milestone'}</span>

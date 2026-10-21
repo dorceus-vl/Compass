@@ -35,13 +35,16 @@ byProject.post('/:id/baselines', async (c) => {
   if (!kind) return c.json({ error: 'Not found' }, 404);
   const nm = nameOf(await readBody(c));
   if ('error' in nm) return c.json({ error: nm.error }, 400);
-  const live = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM baselines WHERE project_id = ?1 AND deleted_at IS NULL').bind(project_id).first<{ n: number }>();
-  if ((live?.n ?? 0) >= MAX_BASELINES) return c.json({ error: 'baseline_limit', message: `A project keeps ${MAX_BASELINES} baselines at most; delete one first` }, 409);
-  const p = await c.env.DB.prepare('SELECT start_at, end_at FROM projects WHERE id = ?1').bind(project_id).first<{ start_at: string | null; end_at: string | null }>();
-  const ts = await c.env.DB.prepare('SELECT id, start_at, due_at FROM tasks WHERE project_id = ?1 AND deleted_at IS NULL LIMIT ?2').bind(project_id, MAX_BASELINE_TASKS + 1).all<{ id: string; start_at: string | null; due_at: string | null }>();
-  const ms = await c.env.DB.prepare('SELECT id, due_at FROM milestones WHERE project_id = ?1 AND deleted_at IS NULL LIMIT ?2').bind(project_id, MAX_BASELINE_MILESTONES + 1).all<{ id: string; due_at: string | null }>();
+  // One batch, so the count, the project, the tasks and the milestones are read at the same moment.
+  const [liveR, pR, ts, ms] = await c.env.DB.batch([
+    c.env.DB.prepare('SELECT COUNT(*) AS n FROM baselines WHERE project_id = ?1 AND deleted_at IS NULL').bind(project_id),
+    c.env.DB.prepare('SELECT start_at, end_at FROM projects WHERE id = ?1').bind(project_id),
+    c.env.DB.prepare('SELECT id, start_at, due_at FROM tasks WHERE project_id = ?1 AND deleted_at IS NULL LIMIT ?2').bind(project_id, MAX_BASELINE_TASKS + 1),
+    c.env.DB.prepare('SELECT id, due_at FROM milestones WHERE project_id = ?1 AND deleted_at IS NULL LIMIT ?2').bind(project_id, MAX_BASELINE_MILESTONES + 1),
+  ]) as [D1Result<{ n: number }>, D1Result<{ start_at: string | null; end_at: string | null }>, D1Result<{ id: string; start_at: string | null; due_at: string | null }>, D1Result<{ id: string; due_at: string | null }>];
+  if ((liveR.results[0]?.n ?? 0) >= MAX_BASELINES) return c.json({ error: 'baseline_limit', message: `A project keeps ${MAX_BASELINES} baselines at most; delete one first` }, 409);
   if (ts.results.length > MAX_BASELINE_TASKS || ms.results.length > MAX_BASELINE_MILESTONES) return c.json({ error: 'baseline_too_big', message: `A baseline holds ${MAX_BASELINE_TASKS} tasks and ${MAX_BASELINE_MILESTONES} milestones at most` }, 409);
-  const snapshot = buildSnapshot(p ?? { start_at: null, end_at: null }, ts.results, ms.results);
+  const snapshot = buildSnapshot(pR.results[0] ?? { start_at: null, end_at: null }, ts.results, ms.results);
   const t = now();
   const row: Row = { id: crypto.randomUUID(), project_id, name: nm.value, snapshot: JSON.stringify(snapshot), task_count: snapshot.tasks.length, milestone_count: snapshot.milestones.length, taken_at: t, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
   const s = await seal(c.env, 'baselines', { ...row }, kind);

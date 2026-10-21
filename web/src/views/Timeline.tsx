@@ -7,6 +7,8 @@ import { taskColor, projectColor } from '../ui/colors.ts';
 import { parseBlockedBy } from '../../../shared/deps.ts';
 import type { Snapshot } from '../../../shared/baseline.ts';
 import { useBaselines, fetchSnapshot } from '../baselines.ts';
+import { localDay } from '../../../shared/dashboard.ts';
+import { useTz } from './project/Report.tsx';
 
 const ZOOM = { day: 48, week: 18, month: 6 } as const;
 const LEFT = 220;
@@ -21,6 +23,7 @@ export function Timeline() {
   const stopDrag = useRef<(() => void) | null>(null);
   // C3: with a project picked, the latest baseline's dates are drawn behind the bars. `pick` null = the latest, '' = none; it belongs to the project it was made for.
   const { items: bls } = useBaselines(project);
+  const tz = useTz();
   const [pick, setPick] = useState<{ p: string; id: string } | null>(null);
   const bid = pick && pick.p === project ? pick.id : bls[0]?.id ?? '';
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -89,7 +92,7 @@ export function Timeline() {
         <div><div className="eyebrow">Timeline</div><h1 style={{ marginTop: 6 }}>What's <b>ahead</b></h1><div className="sub">{rows.length} scheduled · drag a bar to move it, its edge to change the due date{arrows.length > 0 ? ' · arrows run from a blocker to the task it blocks' : ''}</div></div>
         <div className="row">
           <div className="seg">{(['day', 'week', 'month'] as const).map((z) => <button type="button" key={z} className={zoom === z ? 'on' : ''} aria-pressed={zoom === z} onClick={() => setZoom(z)}>{z[0].toUpperCase() + z.slice(1)}</button>)}</div>
-          {project && <select className="field" style={{ width: 'auto' }} aria-label="Baseline" value={bid} onChange={(e) => setPick({ p: project, id: e.target.value })}><option value="">No baseline</option>{bls.map((b) => <option key={b.id} value={b.id}>{b.name} · {b.taken_at.slice(0, 10)}</option>)}</select>}
+          {project && <select className="field" style={{ width: 'auto' }} aria-label="Baseline" value={bid} onChange={(e) => setPick({ p: project, id: e.target.value })}><option value="">No baseline</option>{bls.map((b) => <option key={b.id} value={b.id}>{b.name} · {localDay(b.taken_at, tz)}</option>)}</select>}
           <select className="field" style={{ width: 'auto' }} aria-label="Project" value={project} onChange={(e) => setProject(e.target.value)}><option value="">All projects</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
         </div>
       </div>
