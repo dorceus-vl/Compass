@@ -6,8 +6,9 @@ import { toast } from './ui/dialogs.tsx';
 export type GovPath = 'raid' | 'changes' | 'decisions' | 'lessons';
 
 /** Network first; the answer is cached in IndexedDB `meta` (`gov:<project>:<path>`) and shown, marked offline, when the network fails (ruling R3). */
-export function useGov<T>(projectId: string, path: GovPath): { items: T[]; offline: boolean; reload: () => Promise<void> } {
-  const [s, set] = useState<{ items: T[]; offline: boolean }>({ items: [], offline: false });
+/** `loaded`: the first answer (network or cached copy) has come; `copy`: offline with a copy on the device (false when there is none to show). */
+export function useGov<T>(projectId: string, path: GovPath): { items: T[]; offline: boolean; loaded: boolean; copy: boolean; reload: () => Promise<void> } {
+  const [s, set] = useState<{ items: T[]; offline: boolean; loaded: boolean; copy: boolean }>({ items: [], offline: false, loaded: false, copy: false });
   const seq = useRef(0);
   const reload = useCallback(async () => {
     const mine = ++seq.current, id = `gov:${projectId}:${path}`;
@@ -15,15 +16,15 @@ export function useGov<T>(projectId: string, path: GovPath): { items: T[]; offli
     try {
       const { items } = await api<{ items: T[] }>(`/projects/${projectId}/${path}`);
       await idb.put('meta', { id, items, at: new Date().toISOString() }).catch(() => {});
-      if (mine === seq.current) set({ items, offline: false });
+      if (mine === seq.current) set({ items, offline: false, loaded: true, copy: true });
     } catch (e) {
       if (e instanceof SignedOut) return;
       const c = await idb.get<{ items: T[] }>('meta', id).catch(() => undefined);
-      if (mine === seq.current) set({ items: c?.items ?? [], offline: true });
+      if (mine === seq.current) set({ items: c?.items ?? [], offline: true, loaded: true, copy: !!c });
     }
   }, [projectId, path]);
   useEffect(() => { void reload(); return () => { seq.current++; }; }, [reload]);
-  return { items: s.items, offline: s.offline, reload };
+  return { items: s.items, offline: s.offline, loaded: s.loaded, copy: s.copy, reload };
 }
 
 /** Writes act online only: offline they say so and return null; a server refusal is toasted and returns null. */

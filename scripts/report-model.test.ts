@@ -59,16 +59,17 @@ import { reportText } from '../shared/report-model.ts';
 const m0 = buildReportModel(fixture, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ);
 assert.deepEqual([m0.metrics.done_this_week, m0.metrics.open, m0.metrics.overdue_now, m0.metrics.high_risks, m0.metrics.unrated_risks], [0, 3, 1, 1, 0], 'week of Mon 19 Oct: nothing done yet; 3 open; Chase customs overdue; the 4x5 risk is high');
 assert.equal(m0.metrics.remaining, 3);
-assert.equal(typeof m0.metrics.ideal_remaining, 'number', 'the fixture project has an end date, so there is an ideal line');
-assert.match(m0.metrics.line, /^0 done this week; 3 open; 1 overdue; 3 open against [\d.]+ ideal \(.+\); 1 high risk\.$/);
+assert.equal(m0.metrics.ideal_remaining, null, 'no baseline, so no ideal line (C11)'); assert.equal(m0.metrics.as_of, '2026-10-19');
+assert.match(m0.metrics.line, /^0 done this week; 3 open; 1 overdue; no ideal line \(it needs a baseline and an end date\); 1 high risk\.$/);
 assert.equal(m0.schedule.has_baseline, false); assert.equal(m0.schedule.summary, null); assert.equal(m0.schedule.line, 'No baseline saved.'); assert.equal(m0.schedule.late_milestones.count, 0);
 const noEnd = buildReportModel({ ...fixture, project: { ...project, end_at: null } }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ);
-assert.equal(noEnd.metrics.ideal_remaining, null); assert.equal(noEnd.metrics.behind_ideal, null); assert.match(noEnd.metrics.line, /no end date, so no ideal line/);
+assert.equal(noEnd.metrics.ideal_remaining, null); assert.equal(noEnd.metrics.behind_ideal, null);
 
 const baseline = { name: 'Plan v1', taken_at: '2026-09-10T15:00:00Z', snapshot: {
   tasks: [{ id: 't4', start_at: null, due_at: '2026-10-10' }, { id: 't5', start_at: null, due_at: '2026-10-24' }, { id: 'gone', start_at: null, due_at: '2026-10-01' }],
   milestones: [{ id: 'm2', due_at: '2026-10-05' }, { id: 'm3', due_at: '2026-10-22' }, { id: 'm4', due_at: '2026-11-20' }], project: { start_at: '2026-09-01', end_at: '2026-11-25' } } };
 const sm = buildReportModel({ ...fixture, baseline }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ);
+assert.equal(typeof sm.metrics.ideal_remaining, 'number', 'with a baseline and an end date there is an ideal line'); assert.match(sm.metrics.line, /3 open against [\d.]+ ideal \(\d[\d.]* (ahead|behind)\)/);
 assert.equal(sm.schedule.has_baseline, true); assert.equal(sm.schedule.baseline_name, 'Plan v1'); assert.equal(sm.schedule.taken_at, '2026-09-10');
 assert.deepEqual([sm.schedule.summary!.late, sm.schedule.summary!.early, sm.schedule.summary!.dropped, sm.schedule.summary!.milestones_late, sm.schedule.summary!.project_end_delta], [3, 0, 1, 2, 6]);
 assert.deepEqual(sm.schedule.late_milestones.rows.map((x) => [x.name, x.days_late]), [['Wave 3', 10], ['Pilot', 5]], 'late milestones, biggest first: Pilot 5 Oct to 10 Oct, Wave 3 20 Nov to 30 Nov');
@@ -81,7 +82,7 @@ assert.equal(sub.schedule.summary!.late, 4); assert.ok(!sub.tasks.open.rows.some
 
 // The summary request's text carries the numbers, never a baseline name or a milestone name from the schedule.
 const text = reportText(sm);
-assert.match(text, /Key numbers: done this week 0, open 3, overdue now 1/);
+assert.match(text, /Key numbers as of 2026-10-19: done this week 0, open 3, overdue now 1/);
 assert.match(text, /Schedule against the baseline: compared \d+, later 3, earlier 0, unchanged \d+, added \d+, removed 1, average days late [\d.]+, most days late 10, milestones late 2, project end moved 6 days/);
 assert.ok(!text.includes('Plan v1'));
 assert.match(reportText(m0), /Schedule against the baseline: no baseline saved/);

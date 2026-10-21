@@ -32,7 +32,7 @@ assert.deepEqual(w.slice(-3).map((x) => x.done), [1, 2, 1]);
 assert.equal(w[0].start, '2026-09-14');
 assert.equal(w[7].end, '2026-11-08');
 
-// burndown: open count per day from the start, ideal from the count at the start down to 0 at end_at.
+// burndown: open count per day from the start; the ideal line (C11) starts at the latest baseline's day and falls to 0 on end_at. No baseline, no ideal.
 const bd = [
   t('1', { created_at: '2026-10-01T15:00:00Z', due_at: '2026-10-10' }),
   t('2', { created_at: '2026-10-01T15:00:00Z', status: 'done', done_at: '2026-10-03T15:00:00Z', due_at: '2026-10-09' }),  // done before it was due
@@ -40,25 +40,39 @@ const bd = [
   t('4', { created_at: '2026-10-02T15:00:00Z', deleted_at: '2026-10-04T00:00:00Z' }),                                      // trashed: never counted
   t('5', { created_at: '2026-10-02T15:00:00Z', parent_id: '1' }),                                                          // subtask
 ];
-const b = burndown(bd, '2026-10-01', '2026-10-09', '2026-10-05', TZ);
+const b = burndown(bd, '2026-10-01', '2026-10-09', '2026-10-05', TZ, '2026-10-01');
 assert.deepEqual(b.days.map((d) => d.date), ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09']);
 assert.deepEqual(b.days.map((d) => d.open), [2, 2, 2, 2, 2, null, null, null, null], 'open: t1,t2 on the 1st; t2 done on the 3rd (UTC 15:00 = 11:00 Toronto) while t3 arrives');
-assert.equal(b.ideal?.[0], 2); assert.equal(b.ideal?.at(-1), 0);
-assert.equal(b.days[4].ideal, 1, 'halfway along the line the ideal is half of the start count');
+assert.equal(b.ideal, true); assert.equal(b.days[0].ideal, 2); assert.equal(b.days.at(-1)!.ideal, 0);
+assert.equal(b.days[4].ideal, 1, 'halfway along the line the ideal is half of the count at the baseline');
 assert.equal(b.remaining, 2); assert.equal(b.ideal_now, 1);
-// No end date: no ideal line, the series still runs to today.
-const noEnd = burndown(bd, '2026-10-01', null, '2026-10-03', TZ);
-assert.equal(noEnd.ideal, null); assert.equal(noEnd.days.length, 3); assert.equal(noEnd.ideal_now, null); assert.ok(noEnd.days.every((d) => d.ideal === null));
-// No start date: it starts at the first task's creation day; no tasks at all: today alone.
+// A baseline taken later: the line starts there (nothing before it), from the open count that day, and ends at 0 on end_at. A baseline instant is read as the day it names.
+const late = burndown(bd, '2026-10-01', '2026-10-09', '2026-10-05', TZ, '2026-10-03');
+assert.deepEqual(late.days.map((d) => d.ideal), [null, null, 2, 1.67, 1.33, 1, 0.67, 0.33, 0], 'from 2 open on the 3rd (t1, t3) down to 0 on the 9th');
+assert.equal(late.ideal_now, 1.33);
+// No baseline: no ideal line, even with an end date. No end date, or a baseline on or after it: none either.
+const noBl = burndown(bd, '2026-10-01', '2026-10-09', '2026-10-05', TZ);
+assert.equal(noBl.ideal, false); assert.equal(noBl.ideal_now, null); assert.ok(noBl.days.every((d) => d.ideal === null)); assert.equal(noBl.days.length, 5, "without an ideal line the series stops at today");
+assert.equal(burndown(bd, '2026-10-01', null, '2026-10-03', TZ, '2026-10-01').ideal, false);
+assert.equal(burndown(bd, '2026-10-01', '2026-10-09', '2026-10-10', TZ, '2026-10-09').ideal, false);
+const noEnd = burndown(bd, '2026-10-01', null, '2026-10-03', TZ, '2026-10-01');
+assert.equal(noEnd.ideal_now, null); assert.equal(noEnd.days.length, 3); assert.ok(noEnd.days.every((d) => d.ideal === null));
+// A start that carries a time is read as its day; no start date: the first task's creation day; no tasks at all: today alone.
+assert.equal(burndown(bd, '2026-10-02T00:00:00Z', null, '2026-10-05', TZ).days[0].date, '2026-10-02');
 assert.equal(burndown(bd, null, null, '2026-10-05', TZ).days[0].date, '2026-10-01');
 const empty = burndown([], null, null, '2026-10-05', TZ);
 assert.deepEqual(empty.days.map((d) => [d.date, d.open]), [['2026-10-05', 0]]);
-// End date before the start: no ideal. A project that has not started yet: the ideal runs, the actual line has no points.
-assert.equal(burndown(bd, '2026-10-05', '2026-10-01', '2026-10-06', TZ).ideal, null);
-const future = burndown(bd, '2026-10-20', '2026-10-24', '2026-10-05', TZ);
+// End date before the baseline: no ideal. A project that has not started yet: the actual line has no points.
+assert.equal(burndown(bd, '2026-10-05', '2026-10-01', '2026-10-06', TZ, '2026-10-05').ideal, false);
+const future = burndown(bd, '2026-10-20', '2026-10-24', '2026-10-05', TZ, '2026-10-01');
 assert.ok(future.days.every((d) => d.open === null)); assert.equal(future.remaining, 2);
-// The series is capped at 400 days so a very old start doesn't draw thousands of points.
-assert.ok(burndown(bd, '2020-01-01', null, '2026-10-05', TZ).days.length <= 400);
+// The series is capped at exactly 400 days, ending today, so a very old start doesn't draw thousands of points.
+const old = burndown(bd, '2020-01-01', null, '2026-10-05', TZ);
+assert.equal(old.days.length, 400); assert.equal(old.days.at(-1)!.date, '2026-10-05'); assert.equal(old.days[0].date, '2025-09-01');
+assert.equal(burndown(bd, '2026-10-01', '2030-01-01', '2026-10-05', TZ, '2026-10-01').days.length, 400, 'a far end date is cut at 400 days as well');
+// The clocks go back on Sunday 1 Nov 2026: a task created at 23:59 EST that Sunday is open on the 1st; one done at 00:00 Monday is open through the 1st.
+const dst = [t('c', { created_at: '2026-11-02T04:59:00Z', status: 'done', done_at: '2026-11-02T05:00:00Z' }), t('e', { created_at: '2026-10-30T15:00:00Z' })];
+assert.deepEqual(burndown(dst, '2026-10-30', null, '2026-11-03', TZ).days.map((d) => [d.date, d.open]), [['2026-10-30', 1], ['2026-10-31', 1], ['2026-11-01', 2], ['2026-11-02', 1], ['2026-11-03', 1]]);
 
 // overdueTrend: at each week's end (today for the current week) due < that day, created by then, not done by then.
 const od = [
@@ -77,6 +91,11 @@ assert.equal(at('2026-11-01'), 2, 'q is done on the 28th, but v (created the 30t
 assert.equal(tr.at(-1)!.as_of, '2026-11-03', 'the current week reads as of today, not its Sunday');
 assert.equal(tr.at(-1)!.overdue, 2);
 assert.equal(at('2026-10-11'), 0);
+// The DST week: due 31 Oct, created 23:59 EST on Sunday 1 Nov and done 00:00 Monday: overdue at the week's end (the 1st), not any more on the 3rd.
+const dstOd = [t('c', { due_at: '2026-10-31', created_at: '2026-11-02T04:59:00Z', status: 'done', done_at: '2026-11-02T05:00:00Z' })];
+const dtr = overdueTrend(dstOd, '2026-11-03', 8, TZ);
+assert.deepEqual([dtr.at(-2)!.as_of, dtr.at(-2)!.overdue, dtr.at(-1)!.as_of, dtr.at(-1)!.overdue], ['2026-11-01', 1, '2026-11-03', 0]);
+assert.equal(dtr.at(-3)!.overdue, 0, 'not yet created the week before');
 
 // riskMatrix: open risks only, the 5×5 grid, severity = P × I; unrated counted apart.
 const r = (id: string, o: Partial<{ type: string; status: string; probability: number | null; impact: number | null; deleted_at: string | null }>) => ({ id, type: 'risk', status: 'open', probability: null, impact: null, deleted_at: null, ...o });
@@ -101,9 +120,11 @@ assert.deepEqual(milestoneSlip(snap, []), []);
 
 // Metrics: the numbers the report and the summary carry.
 const tasks = [t('1', { due_at: '2026-10-01' }), t('2', { status: 'done', done_at: '2026-11-03T15:00:00Z' }), t('3', { due_at: '2026-12-01' }), t('4', { status: 'done', done_at: '2026-10-01T15:00:00Z' })];
-const met = dashboardMetrics({ tasks, raid: [r('1', { probability: 4, impact: 4 }), r('2', { probability: 1, impact: 1 }), r('3', {})], project: { start_at: '2026-10-01', end_at: '2026-12-01' }, today: '2026-11-03', tz: TZ });
+const met = dashboardMetrics({ tasks, raid: [r('1', { probability: 4, impact: 4 }), r('2', { probability: 1, impact: 1 }), r('3', {})], project: { start_at: '2026-10-01', end_at: '2026-12-01' }, today: '2026-11-03', tz: TZ, baselineDay: '2026-10-01' });
 assert.deepEqual([met.done_this_week, met.open, met.overdue_now, met.high_risks, met.unrated_risks], [1, 2, 1, 1, 1]);
 assert.equal(met.remaining, 2); assert.equal(typeof met.ideal_remaining, 'number');
+const noBase = dashboardMetrics({ tasks, raid: [], project: { start_at: '2026-10-01', end_at: '2026-12-01' }, today: '2026-11-03', tz: TZ });
+assert.deepEqual([noBase.ideal_remaining, noBase.behind_ideal, noBase.remaining], [null, null, 2], 'no baseline, no ideal (C11)');
 assert.equal(met.behind_ideal, Math.round(10 * (met.remaining - met.ideal_remaining!)) / 10);
 const bare = dashboardMetrics({ tasks: [], raid: [], project: { start_at: null, end_at: null }, today: '2026-11-03', tz: TZ });
 assert.deepEqual([bare.done_this_week, bare.open, bare.overdue_now, bare.high_risks, bare.ideal_remaining, bare.behind_ideal], [0, 0, 0, 0, null, null]);

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { RiskMatrix, Severity } from '../../../shared/dashboard.ts';
+import { SEVERITY_LABEL, type RiskMatrix, type Severity } from '../../../shared/dashboard.ts';
 
 // Hand-drawn SVG charts for the project dashboard (v2.2). No library, tokens only, static (complete at rest).
 // Each chart has a text summary that the drawing points to with aria-describedby, a "Show as table" toggle, and never relies on colour alone:
 // lines differ by dash and marker, bars carry their value, the risk grid carries a letter and a pattern.
 
-export interface ChartTable { head: string[]; rows: (string | number)[][] }
+export interface ChartTable { head: string[]; rows: (string | number)[][]; note?: string }
 
 /** The width of an element in pixels, kept up to date (a fallback until it is measured). */
 function useWidth(fallback = 320) {
@@ -33,7 +33,7 @@ export function ChartFrame({ id, title, summary, table, children }: { id: string
     <figure className="chart" aria-labelledby={`${id}-t`}>
       <figcaption className="chart-head">
         <h3 id={`${id}-t`}>{title}</h3>
-        <button type="button" className="btn chart-tog" aria-pressed={asTable} onClick={() => setAsTable(!asTable)}>{asTable ? 'Show the chart' : 'Show as table'}</button>
+        <button type="button" className="btn chart-tog" onClick={() => setAsTable(!asTable)}>{asTable ? 'Show the chart' : 'Show as table'}</button>
       </figcaption>
       <p className="chart-sum" id={sum}>{summary}</p>
       <div ref={ref} className="chart-body">
@@ -41,7 +41,7 @@ export function ChartFrame({ id, title, summary, table, children }: { id: string
           ? <div className="scroll-x"><table className="chart-table" aria-describedby={sum}>
               <thead><tr>{table.head.map((h) => <th key={h} scope="col">{h}</th>)}</tr></thead>
               <tbody>{table.rows.map((r, i) => <tr key={i}>{r.map((c, j) => (j === 0 ? <th key={j} scope="row">{c}</th> : <td key={j} className="num">{c}</td>))}</tr>)}</tbody>
-            </table></div>
+            </table>{table.note && <p className="hint">{table.note}</p>}</div>
           : children(w, sum)}
       </div>
     </figure>
@@ -117,7 +117,8 @@ export function BarChart({ w, h = 190, labels, values, partialLast, describedBy,
   );
 }
 
-const SEV: Record<Severity, { letter: string; name: string; range: string }> = { high: { letter: 'H', name: 'High', range: '15 and up' }, medium: { letter: 'M', name: 'Medium', range: '8 to 14' }, low: { letter: 'L', name: 'Low', range: 'up to 7' } };
+const RANGE: Record<Severity, string> = { high: '15 and up', medium: '8 to 14', low: 'up to 7' };
+const SEV = (s: Severity) => ({ letter: SEVERITY_LABEL[s][0], name: SEVERITY_LABEL[s], range: RANGE[s] });
 
 /** The 5×5 probability by impact grid: the count in each cell, the severity as a letter and a pattern (never colour alone). */
 export function RiskGrid({ matrix, describedBy, label }: { matrix: RiskMatrix; describedBy: string; label: string }) {
@@ -128,16 +129,15 @@ export function RiskGrid({ matrix, describedBy, label }: { matrix: RiskMatrix; d
         {[5, 4, 3, 2, 1].map((p) => [
           <span key={`t${p}`} className="rg-tick" aria-hidden="true">{p}</span>,
           ...matrix.cells.filter((c) => c.p === p).map((c) => (
-            <span key={`${c.p}${c.i}`} className={`rg-cell sev-${c.severity} ${c.count ? 'has' : ''}`} aria-hidden="true"><i>{SEV[c.severity].letter}</i><b>{c.count || ''}</b></span>)),
+            <span key={`${c.p}${c.i}`} className={`rg-cell sev-${c.severity} ${c.count ? 'has' : ''}`} aria-hidden="true"><i>{SEV(c.severity).letter}</i><b>{c.count || ''}</b></span>)),
         ])}
         <span className="rg-corner" aria-hidden="true" />
         {[1, 2, 3, 4, 5].map((i) => <span key={`i${i}`} className="rg-tick rg-xt" aria-hidden="true">{i}</span>)}
         <span className="rg-ax rg-x" aria-hidden="true">Impact, 1 to 5</span>
       </div>
       <ul className="chart-legend" aria-hidden="true">
-        {(['high', 'medium', 'low'] as const).map((s) => <li key={s}><span className={`rg-sw sev-${s}`}><i>{SEV[s].letter}</i></span>{SEV[s].name} ({SEV[s].range})</li>)}
+        {(['high', 'medium', 'low'] as const).map((s) => <li key={s}><span className={`rg-sw sev-${s}`}><i>{SEV(s).letter}</i></span>{SEV(s).name} ({SEV(s).range})</li>)}
       </ul>
     </div>
   );
 }
-export { SEV };

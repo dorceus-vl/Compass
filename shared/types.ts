@@ -158,8 +158,8 @@ export interface ReportModel {
     has_baseline: boolean; baseline_name: string; taken_at: string; summary: SlipSummary | null; line: string;
     late_milestones: Section<{ name: string; baseline_due: string; due_at: string; days_late: number }>;
   };
-  /** v2.2 (C5): numbers only. `line` is the one-sentence form used in the report; the numbers are what Athena's summary request carries. */
-  metrics: DashboardMetrics & { line: string };
+  /** v2.2 (C5): numbers only, as of `as_of` (today, not the report period). `line` is the one-sentence form used in the report; the numbers are what Athena's summary request carries. */
+  metrics: DashboardMetrics & { as_of: string; line: string };
   ai: { summary: string };
 }
 

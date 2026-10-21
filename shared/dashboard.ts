@@ -7,7 +7,7 @@ export const MAX_DAYS = 400; // the burndown never draws more than this many poi
 const DAY_MS = 86_400_000;
 const ms = (ymd: string) => Date.parse(ymd + 'T00:00:00Z');
 export const addDaysYmd = (ymd: string, n: number) => new Date(ms(ymd) + n * DAY_MS).toISOString().slice(0, 10);
-const between = (a: string, b: string) => Math.round((ms(b) - ms(a)) / DAY_MS);
+export const daysBetweenYmd = (a: string, b: string) => Math.round((ms(b) - ms(a)) / DAY_MS);
 /** The Monday on or before a day. */
 export const weekStart = (ymd: string) => addDaysYmd(ymd, -((new Date(ms(ymd)).getUTCDay() + 6) % 7));
 /** A stored timestamp as a day in the user's zone; a plain date passes through. */
@@ -31,23 +31,27 @@ type P = ReturnType<typeof prep>[number];
 const openOn = (ps: P[], day: string) => ps.filter((t) => t.created <= day && !(t.done !== null && t.done <= day)).length;
 
 export interface BurnDay { date: string; open: number | null; ideal: number | null }
-export interface Burndown { days: BurnDay[]; ideal: number[] | null; remaining: number; ideal_now: number | null }
+export interface Burndown { days: BurnDay[]; ideal: boolean; remaining: number; ideal_now: number | null }
 
 /**
- * Open tasks per day from `from` (the project start, else the first task's creation day) to today, with the ideal line from the count at `from` down to 0 on `to` (end_at).
- * No usable `to` (none, or not after `from`) means no ideal. The series runs on to `to` when that is later than today; days after today have no actual value.
+ * Open tasks per day from `from` (the project start, else the first task's creation day) to today.
+ * The ideal line (ruling C11) starts at the latest baseline: the open count on `baselineDay` falling in a straight line to 0 on `to` (end_at).
+ * No baseline, no usable `to` (none, or not after the baseline day) means no ideal line at all; the line is empty before the baseline day.
+ * The series runs on to `to` when that is later than today; days after today have no actual value.
  */
-export function burndown(tasks: DTask[], from: string | null, to: string | null, today: string, tz: string): Burndown {
+export function burndown(tasks: DTask[], from: string | null, to: string | null, today: string, tz: string, baselineDay: string | null = null): Burndown {
   const ps = prep(tasks, tz);
-  const f = from && VALID.test(from) ? from : ps.length ? ps.map((t) => t.created).sort()[0] : today;
-  const end = to && VALID.test(to) && to > f ? to : null;
-  const startCount = openOn(ps, f);
-  const idealAt = (d: string) => (end ? Math.round(startCount * (1 - Math.min(1, Math.max(0, between(f, d) / between(f, end)))) * 100) / 100 : null);
-  let a = f; if (between(a, today) > MAX_DAYS - 1) a = addDaysYmd(today, -(MAX_DAYS - 1)); // ponytail: very old projects show their last 400 days; add zoom if that matters
-  let z = end && end > today ? end : today; if (z < a) z = a; if (between(a, z) > MAX_DAYS - 1) z = addDaysYmd(a, MAX_DAYS - 1);
+  const f0 = from?.slice(0, 10) ?? null, t0 = to?.slice(0, 10) ?? null, b0 = baselineDay?.slice(0, 10) ?? null;
+  const f = f0 && VALID.test(f0) ? f0 : ps.length ? ps.map((t) => t.created).sort()[0] : today;
+  const base = b0 && VALID.test(b0) ? b0 : null;
+  const end = base && t0 && VALID.test(t0) && t0 > base ? t0 : null;
+  const startCount = base ? openOn(ps, base) : 0;
+  const idealAt = (d: string) => (end && base && d >= base ? Math.round(startCount * (1 - Math.min(1, daysBetweenYmd(base, d) / daysBetweenYmd(base, end))) * 100) / 100 : null);
+  let a = f; if (daysBetweenYmd(a, today) > MAX_DAYS - 1) a = addDaysYmd(today, -(MAX_DAYS - 1)); // ponytail: very old projects show their last 400 days; add zoom if that matters
+  let z = end && end > today ? end : today; if (z < a) z = a; if (daysBetweenYmd(a, z) > MAX_DAYS - 1) z = addDaysYmd(a, MAX_DAYS - 1);
   const days: BurnDay[] = [];
   for (let d = a; d <= z; d = addDaysYmd(d, 1)) days.push({ date: d, open: d <= today ? openOn(ps, d) : null, ideal: idealAt(d) });
-  return { days, ideal: end ? days.map((d) => d.ideal!) : null, remaining: openOn(ps, today), ideal_now: idealAt(today) };
+  return { days, ideal: !!end, remaining: openOn(ps, today), ideal_now: idealAt(today) };
 }
 
 export interface Week { start: string; end: string }
@@ -96,15 +100,15 @@ export function milestoneSlip(snapshot: Snapshot, milestones: { id: string; name
 
 export interface DashboardMetrics {
   done_this_week: number; open: number; overdue_now: number;
-  /** Open tasks now, the ideal count for today (null without an end date), and how far above it we are (negative: ahead). */
+  /** Open tasks now, the ideal count for today (null without a baseline and an end date: C11), and how far above it we are (negative: ahead). */
   remaining: number; ideal_remaining: number | null; behind_ideal: number | null;
   high_risks: number; unrated_risks: number;
 }
 /** The key numbers of the status report: this week is the Monday-to-Sunday week that holds today. */
-export function dashboardMetrics(i: { tasks: DTask[]; raid: DRaid[]; project: { start_at: string | null; end_at: string | null }; today: string; tz: string }): DashboardMetrics {
+export function dashboardMetrics(i: { tasks: DTask[]; raid: DRaid[]; project: { start_at: string | null; end_at: string | null }; today: string; tz: string; baselineDay?: string | null }): DashboardMetrics {
   const { tasks, today, tz } = i;
   const ps = prep(tasks, tz);
-  const b = burndown(tasks, i.project.start_at?.slice(0, 10) ?? null, i.project.end_at?.slice(0, 10) ?? null, today, tz);
+  const b = burndown(tasks, i.project.start_at, i.project.end_at, today, tz, i.baselineDay ?? null);
   const ideal = b.ideal_now === null ? null : round1(b.ideal_now);
   const mx = riskMatrix(i.raid), mon = weekStart(today);
   return {

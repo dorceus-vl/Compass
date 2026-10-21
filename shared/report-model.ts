@@ -1,13 +1,13 @@
 import type { ReportInput, ReportModel, Section } from './types.ts';
 import { slip } from './baseline.ts';
-import { dashboardMetrics } from './dashboard.ts';
+import { dashboardMetrics, localDay as toLocalDay, addDaysYmd, daysBetweenYmd } from './dashboard.ts';
 
 const day = (s: string | null | undefined) => (s ? s.slice(0, 10) : '');
 const txt = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 const num = (n: number | null | undefined) => (n === null || n === undefined ? '' : String(n));
 const cell = (s: string | number) => String(s).replace(/\s+/g, ' ').replaceAll('|', '/').trim();
-const addDays = (ymd: string, n: number) => new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10) + n)).toISOString().slice(0, 10);
-const daysBetween = (a: string, b: string) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86_400_000);
+const addDays = addDaysYmd;
+const daysBetween = daysBetweenYmd;
 const byDate = <T>(key: (r: T) => string) => (a: T, b: T) => (key(a) || '9999').localeCompare(key(b) || '9999');
 
 /** One section: the table is "A | B" lines under a header line, the list is "• …" lines; both '' when there are no rows. */
@@ -22,8 +22,7 @@ function sec<R>(rows: R[], headers: string[], cells: (r: R) => (string | number)
 const RAG: Record<string, string> = { green: 'Green', amber: 'Amber', red: 'Red' };
 
 /** A stored timestamp as a date in the user's zone; a plain date passes through. A task done at 21:00 Toronto is stored as the next UTC day. */
-const localDay = (tz: string) => (s: string | null | undefined) =>
-  !s ? '' : s.length <= 10 ? s : new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(s));
+const localDay = (tz: string) => (s: string | null | undefined) => (!s ? '' : toLocalDay(s, tz));
 
 /** tz is settings.tz; today and the range are already local dates. */
 export function buildReportModel(input: ReportInput, range: { from: string; to: string }, today: string, now: string, tz: string): ReportModel {
@@ -64,8 +63,8 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
   const meetings = input.meetings.filter((m) => inRange(local(m.received_at))).sort(byDate((m) => m.received_at)).map((m) => ({ title: txt(m.title), date: local(m.received_at), summary: txt(m.summary) }));
 
   // v2.2 (C5): the dashboard's key numbers, and the latest baseline against the plan now (subtasks included, as the baseline holds them).
-  const dm = dashboardMetrics({ tasks: input.tasks, raid: input.raid, project: p, today, tz });
   const bl = input.baseline ?? null;
+  const dm = dashboardMetrics({ tasks: input.tasks, raid: input.raid, project: p, today, tz, baselineDay: bl ? toLocalDay(bl.taken_at, tz) : null });
   const sl = bl ? slip(bl.snapshot, input.tasks, input.milestones, p) : null;
   const msName = new Map(input.milestones.map((m) => [m.id, txt(m.name)]));
   const lateMs = (sl?.rows ?? []).filter((r) => r.kind === 'milestone' && (r.due_delta ?? 0) > 0).map((r) => ({ name: msName.get(r.id) ?? '', baseline_due: r.baseline_due ?? '', due_at: r.current_due ?? '', days_late: r.due_delta! }));
@@ -77,7 +76,7 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
     ...(sum.project_end_delta ? [`project end ${sum.project_end_delta > 0 ? '+' : ''}${sum.project_end_delta} days`] : []),
   ].join('; ') + '.';
   const metricsLine = `${dm.done_this_week} done this week; ${dm.open} open; ${dm.overdue_now} overdue; ` +
-    (dm.behind_ideal === null ? 'no end date, so no ideal line; ' : `${dm.remaining} open against ${dm.ideal_remaining} ideal (${dm.behind_ideal > 0 ? `${dm.behind_ideal} behind` : dm.behind_ideal < 0 ? `${-dm.behind_ideal} ahead` : 'on the line'}); `) +
+    (dm.behind_ideal === null ? 'no ideal line (it needs a baseline and an end date); ' : `${dm.remaining} open against ${dm.ideal_remaining} ideal (${dm.behind_ideal > 0 ? `${dm.behind_ideal} behind` : dm.behind_ideal < 0 ? `${-dm.behind_ideal} ahead` : 'on the line'}); `) +
     `${dm.high_risks} high risk${dm.high_risks === 1 ? '' : 's'}.`;
 
   const rag_label = RAG[p.rag] ?? 'Not set';
@@ -116,7 +115,7 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
       has_baseline: !!bl, baseline_name: bl ? txt(bl.name) : '', taken_at: bl ? local(bl.taken_at) : '', summary: sum, line: scheduleLine,
       late_milestones: sec(lateMs, ['Milestone', 'Baseline', 'Now', 'Days late'], (m) => [m.name, m.baseline_due, m.due_at, m.days_late], (m) => `${m.name} (${m.days_late} days late)`),
     },
-    metrics: { ...dm, line: metricsLine },
+    metrics: { ...dm, as_of: today, line: metricsLine },
     ai: { summary: '' },
   };
 }
@@ -127,7 +126,7 @@ export function reportText(m: ReportModel): string {
   const x = m.metrics, s = m.schedule.summary;
   return [
     `Project: ${m.project.name} (${m.project.phase || 'phase not set'})`, `Period: ${m.range.label}`, `Status: ${m.status.headline}`, `Progress: ${m.status.progress}`,
-    `Key numbers: done this week ${x.done_this_week}, open ${x.open}, overdue now ${x.overdue_now}, open tasks ${x.remaining}, ideal ${x.ideal_remaining ?? 'n/a'}, behind the ideal ${x.behind_ideal ?? 'n/a'}, high risks ${x.high_risks}, unrated risks ${x.unrated_risks}`,
+    `Key numbers as of ${m.metrics.as_of}: done this week ${x.done_this_week}, open ${x.open}, overdue now ${x.overdue_now}, open tasks ${x.remaining}, ideal ${x.ideal_remaining ?? 'n/a'}, behind the ideal ${x.behind_ideal ?? 'n/a'}, high risks ${x.high_risks}, unrated risks ${x.unrated_risks}`,
     s ? `Schedule against the baseline: compared ${s.compared}, later ${s.late}, earlier ${s.early}, unchanged ${s.unchanged}, added ${s.added}, removed ${s.dropped}, average days late ${s.avg_late}, most days late ${s.max_late}, milestones late ${s.milestones_late}, project end moved ${s.project_end_delta ?? 'n/a'} days` : 'Schedule against the baseline: no baseline saved',
     part('Done this period', m.tasks.done.list), part('Overdue', m.tasks.overdue.list), part('Due in the next two weeks', m.tasks.next.list), part('Milestones', m.milestones.list),
     part('Open risks', m.risks.list), part('Open issues', m.issues.list), part('Decisions needed', m.decisions_needed.list), part('Decisions made', m.decisions.list),

@@ -13,9 +13,9 @@ const msTable = (m: ReportModel) => table(['Milestone', 'Due', 'State'], m.miles
 
 const num = (n: number | null) => (n === null ? 'n/a' : String(n));
 /** v2.2 (C5): the dashboard's numbers as label/value lines. */
-const keyNumbers = (m: ReportModel) => sec('Key numbers', fields(
+const keyNumbers = (m: ReportModel) => sec(`Key numbers as of ${m.metrics.as_of}`, fields(
   ['Done this week', String(m.metrics.done_this_week)], ['Open tasks', String(m.metrics.open)], ['Overdue now', String(m.metrics.overdue_now)],
-  ['Burndown', m.metrics.ideal_remaining === null ? 'No end date, so no ideal line' : `${m.metrics.remaining} open against ${m.metrics.ideal_remaining} ideal`],
+  ['Burndown', m.metrics.ideal_remaining === null ? `${m.metrics.remaining} open; no ideal line (it needs a baseline and an end date)` : `${m.metrics.remaining} open against ${m.metrics.ideal_remaining} ideal`],
   ['High risks', String(m.metrics.high_risks)], ['Unrated risks', num(m.metrics.unrated_risks)]));
 const scheduleVsBaseline = (m: ReportModel) => sec('Schedule vs baseline',
   p(m.schedule.has_baseline ? `Against "${m.schedule.baseline_name}", saved ${m.schedule.taken_at}. ${m.schedule.line}` : 'No baseline saved.'),

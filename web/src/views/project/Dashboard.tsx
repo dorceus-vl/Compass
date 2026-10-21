@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Project, RaidItem } from '../../../../shared/types.ts';
 import type { Snapshot } from '../../../../shared/baseline.ts';
-import { burndown, donePerWeek, overdueTrend, riskMatrix, milestoneSlip, dashboardMetrics, SEVERITY_LABEL } from '../../../../shared/dashboard.ts';
+import { burndown, donePerWeek, overdueTrend, riskMatrix, milestoneSlip, dashboardMetrics, localDay, SEVERITY_LABEL } from '../../../../shared/dashboard.ts';
 import { useStore } from '../../store/useStore.ts';
 import { useGov } from '../../gov.ts';
 import { useBaselines, fetchSnapshot } from '../../baselines.ts';
@@ -11,7 +11,7 @@ import { SectionHead } from '../../ui/SectionHead.tsx';
 import { useTz } from './Report.tsx';
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const days = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} ${Math.abs(n) === 1 ? 'day' : 'days'}`;
+const days = (n: number) => `${Math.abs(n)} ${Math.abs(n) === 1 ? 'day' : 'days'}`; // the word that follows (later, earlier) carries the direction
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const short = (ymd: string) => `${MONTHS[+ymd.slice(5, 7) - 1]} ${+ymd.slice(8, 10)}`;
 
@@ -20,7 +20,8 @@ export function Dashboard({ project }: { project: Project }) {
   const tz = useTz();
   const today = todayIn(tz);
   const { tasks, milestones } = useStore();
-  const { items: raid, offline: raidOffline } = useGov<RaidItem>(project.id, 'raid');
+  const { items: raid, offline: raidOffline, loaded: raidLoaded, copy: raidCopy } = useGov<RaidItem>(project.id, 'raid');
+  const risksKnown = raidLoaded && (!raidOffline || raidCopy); // before the first answer, or offline with no copy, there is nothing to count
   const { items: baselines, loaded } = useBaselines(project.id);
   const latest = useMemo(() => [...baselines].sort((a, b) => b.taken_at.localeCompare(a.taken_at))[0] ?? null, [baselines]);
   const [snap, setSnap] = useState<Snapshot | null | undefined>(undefined);
@@ -33,11 +34,12 @@ export function Dashboard({ project }: { project: Project }) {
   }, [latest?.id, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mine = useMemo(() => tasks.filter((t) => t.project_id === project.id), [tasks, project.id]);
-  const burn = useMemo(() => burndown(mine, project.start_at, project.end_at, today, tz), [mine, project.start_at, project.end_at, today, tz]);
+  const baselineDay = latest ? localDay(latest.taken_at, tz) : null; // C11: the ideal line starts at the latest baseline
+  const burn = useMemo(() => burndown(mine, project.start_at, project.end_at, today, tz, baselineDay), [mine, project.start_at, project.end_at, today, tz, baselineDay]);
   const weekly = useMemo(() => donePerWeek(mine, today, 8, tz), [mine, today, tz]);
   const trend = useMemo(() => overdueTrend(mine, today, 8, tz), [mine, today, tz]);
   const matrix = useMemo(() => riskMatrix(raid), [raid]);
-  const metrics = useMemo(() => dashboardMetrics({ tasks: mine, raid, project, today, tz }), [mine, raid, project, today, tz]);
+  const metrics = useMemo(() => dashboardMetrics({ tasks: mine, raid, project, today, tz, baselineDay }), [mine, raid, project, today, tz, baselineDay]);
   const slipRows = useMemo(() => (snap ? milestoneSlip(snap, milestones.filter((m) => m.project_id === project.id)).filter((r) => r.delta !== 0) : []), [snap, milestones, project.id]);
 
   const idealWord = metrics.behind_ideal === null ? null : metrics.behind_ideal > 0 ? `${metrics.behind_ideal} behind the ideal line` : metrics.behind_ideal < 0 ? `${-metrics.behind_ideal} ahead of the ideal line` : 'on the ideal line';
@@ -45,23 +47,25 @@ export function Dashboard({ project }: { project: Project }) {
   const sampled = burn.days.filter((_, i, a) => i % 7 === 0 || i === a.length - 1 || a[i].date === today);
   const best = weekly.reduce((a, w) => (w.done > a.done ? w : a), weekly[0]);
 
-  const tiles: [string, string, string][] = [
+  const tiles: [string, string, string, string?][] = [
     ['Done this week', String(metrics.done_this_week), ''], ['Open tasks', String(metrics.open), ''],
     ['Overdue now', String(metrics.overdue_now), metrics.overdue_now ? 'over' : ''],
-    ['Against ideal', metrics.behind_ideal === null ? 'n/a' : metrics.behind_ideal > 0 ? `+${metrics.behind_ideal}` : String(metrics.behind_ideal), metrics.behind_ideal !== null && metrics.behind_ideal > 0 ? 'over' : ''],
-    ['High risks', String(metrics.high_risks), metrics.high_risks ? 'over' : ''],
+    ['Against ideal', metrics.behind_ideal === null ? '—' : metrics.behind_ideal > 0 ? `+${metrics.behind_ideal}` : String(metrics.behind_ideal), metrics.behind_ideal !== null && metrics.behind_ideal > 0 ? 'over' : '',
+      metrics.behind_ideal === null ? (latest ? 'Needs an end date' : loaded ? 'Save a baseline' : undefined) : undefined],
+    ['High risks', risksKnown ? String(metrics.high_risks) : '—', risksKnown && metrics.high_risks ? 'over' : ''],
   ];
+  const risksSummary = !raidLoaded ? 'Loading risks…' : !risksKnown ? "Risks aren't available offline yet. Open the RAID tab once while online." : null;
   return (
     <div className="dash">
       <SectionHead eyebrow="Numbers" title="Where the project stands" />
-      {raidOffline && <p className="hint" role="status">Offline: the risk chart shows the last copy of the RAID log.</p>}
+      {raidOffline && raidCopy && <p className="hint" role="status">Offline: the risk chart shows the last copy of the RAID log.</p>}
       <dl className="dash-tiles">
-        {tiles.map(([k, v, tone]) => <div key={k} className={`dash-tile ${tone}`}><dt>{k}</dt><dd className="mono">{v}</dd></div>)}
+        {tiles.map(([k, v, tone, note]) => <div key={k} className={`dash-tile ${tone}`}><dt>{k}</dt><dd className="mono">{v}</dd>{note && <small>{note}</small>}</div>)}
       </dl>
       <div className="dash-grid">
         <div className="card dash-wide"><ChartFrame id="dash-burn" title="Burndown"
-          summary={`${plural(burn.remaining, 'task')} open today${burn.ideal ? `, against an ideal of ${metrics.ideal_remaining}: ${idealWord}.` : '. This project has no end date, so there is no ideal line.'} From ${short(burn.days[0].date)} to ${short(burn.days.at(-1)!.date)}.`}
-          table={{ head: ['Date', 'Open tasks', 'Ideal'], rows: sampled.map((d) => [d.date, d.open ?? '', d.ideal ?? '']) }}>
+          summary={`${plural(burn.remaining, 'task')} open today. ${burn.ideal ? `The ideal line starts at the baseline "${latest!.name}" (${baselineDay}) and runs to the end date, so the ideal for today is ${metrics.ideal_remaining}: ${idealWord}.` : latest ? 'This project has no usable end date after the baseline, so there is no ideal line.' : loaded ? 'Save a baseline to compare against an ideal line.' : ''} From ${short(burn.days[0].date)} to ${short(burn.days.at(-1)!.date)}.`}
+          table={{ head: ['Date', 'Open tasks', 'Ideal'], rows: sampled.map((d) => [d.date, d.open ?? '', d.ideal ?? '']), note: 'One row a week, and today.' }}>
           {(w, by) => <LineChart w={w} label="Open tasks per day against the ideal line" describedBy={by} labels={burn.days.map((d) => short(d.date))}
             marker={burn.ideal && todayIdx >= 0 && todayIdx < burn.days.length - 1 ? { index: todayIdx, label: 'Today' } : undefined}
             series={[{ name: 'Open tasks', values: burn.days.map((d) => d.open), tone: 'accent' }, ...(burn.ideal ? [{ name: 'Ideal', values: burn.days.map((d) => d.ideal), dashed: true, tone: 'dim' as const }] : [])]} />}
@@ -80,11 +84,11 @@ export function Dashboard({ project }: { project: Project }) {
         </ChartFrame></div>
 
         <div className="card"><ChartFrame id="dash-risk" title="Risk matrix"
-          summary={matrix.total ? `${plural(matrix.total, 'open risk')}: ${matrix.high} high, ${matrix.medium} medium, ${matrix.low} low${matrix.unrated ? `; ${matrix.unrated} not rated yet` : ''}. Severity is probability times impact.` : 'No open risks.'}
+          summary={risksSummary ?? (matrix.total ? `${plural(matrix.total, 'open risk')}: ${matrix.high} high, ${matrix.medium} medium, ${matrix.low} low${matrix.unrated ? `; ${matrix.unrated} not rated yet` : ''}. Severity is probability times impact.` : 'No open risks.')}
           table={{ head: ['Probability', 'Impact', 'Open risks', 'Severity'], rows: [...matrix.cells.filter((c) => c.count).map((c) => [`P${c.p}`, `I${c.i}`, c.count, SEVERITY_LABEL[c.severity]]), ...(matrix.unrated ? [['Not rated', '', matrix.unrated, '']] : [])] }}>
-          {(w, by) => <RiskGrid matrix={matrix} label="Open risks by probability and impact" describedBy={by} />}
+          {(w, by) => risksKnown ? <RiskGrid matrix={matrix} label="Open risks by probability and impact" describedBy={by} /> : <p className="hint" aria-describedby={by}>{risksSummary}</p>}
         </ChartFrame>
-          {matrix.unrated > 0 && <p className="hint">{plural(matrix.unrated, 'risk')} not rated: add a probability and an impact on the RAID tab to place {matrix.unrated === 1 ? 'it' : 'them'}.</p>}</div>
+          {risksKnown && matrix.unrated > 0 && <p className="hint">{plural(matrix.unrated, 'risk')} not rated: add a probability and an impact on the RAID tab to place {matrix.unrated === 1 ? 'it' : 'them'}.</p>}</div>
 
         <div className="card"><figure className="chart" aria-labelledby="dash-slip-t">
           <figcaption className="chart-head"><h3 id="dash-slip-t">Milestone slip</h3></figcaption>
@@ -103,6 +107,7 @@ export function Dashboard({ project }: { project: Project }) {
           </>}
         </figure></div>
       </div>
+      <p className="hint">A task you reopened counts as open from the day it was created. The ideal line starts at your latest baseline, so work added later shows as behind it.</p>
     </div>
   );
 }
