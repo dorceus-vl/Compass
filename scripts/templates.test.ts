@@ -60,7 +60,7 @@ assert.ok(!('blocked_by' in (parseBody('task', { task: t('x', { blocked_by: ['q'
 const proj = (o: object) => ({ ...body, ...o });
 const many = (n: number) => Array.from({ length: n }, (_, i) => t('t' + i));
 assert.ok(parseBody('project', proj({ tasks: many(MAX_TEMPLATE_TASKS) })), '100 tasks ok');
-assert.equal(parseBody('project', proj({ tasks: many(MAX_TEMPLATE_TASKS + 1) })), null, '201 tasks');
+assert.equal(parseBody('project', proj({ tasks: many(MAX_TEMPLATE_TASKS + 1) })), null, '101 tasks');
 const ms = (n: number) => Array.from({ length: n }, (_, i) => ({ name: 'm' + i, gate: 0, offset_days: i }));
 assert.ok(parseBody('project', proj({ milestones: ms(MAX_TEMPLATE_MILESTONES) })), '50 milestones ok');
 assert.equal(parseBody('project', proj({ milestones: ms(MAX_TEMPLATE_MILESTONES + 1) })), null, '51 milestones');

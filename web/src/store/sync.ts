@@ -114,9 +114,13 @@ export function replay(onSignedOut?: () => void): Promise<void> {
           if (e instanceof TypeError || (e instanceof ApiError && e.status >= 500)) return; // offline or server down: keep the op, try later
           await idb.del('queue', op.seq!); // 4xx: the server refused it; drop it rather than block the queue
           console.error('dropped queued write', op, e);
-          if (path.startsWith('/tasks/')) { // the device can't foresee every refusal (a link, a loop): say so, in plain text
-            const t = await idb.get<Task>('tasks', path.split('/')[2]);
-            toast(`Compass couldn't save a change to ${t?.title ?? 'a task'}: ${(e as Error).message}`);
+          if (path.startsWith('/tasks')) { // the device can't foresee every refusal (a link, a loop): say so, in plain text
+            const msg = (e as Error).message; // the server's code or sentence
+            const why = msg === 'dependency_cycle' ? 'That would make a loop of blocked tasks.' : msg === 'bad_dependency' ? "That link isn't allowed." : msg;
+            const j = json as { title?: string } | undefined;
+            const id = path.split('/')[2];
+            const t = id ? await idb.get<Task>('tasks', id) : undefined;
+            toast(`Compass couldn't save a change to ${t?.title ?? j?.title ?? 'a task'}: ${why}`);
           }
           try { if (op.tempId && op.store) await idb.del(op.store, op.tempId); else await refetch(path); }
           catch (e2) { if (e2 instanceof SignedOut) { onSignedOut?.(); return; } console.error('resync failed', e2); }

@@ -15,7 +15,7 @@ import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
 import { ASK_KEY, WORK_SEED } from './Athena.tsx';
 
 interface Detail {
-  series: { id: string; name: string; project_id: string | null; kind: 'personal' | 'work' };
+  series: { id: string; name: string; project_id: string | null; kind: 'personal' | 'work'; athena?: boolean };
   meetings: MeetingReview[]; decisions: SeriesDecision[]; actions: SeriesAction[]; questions: SeriesQuestion[];
 }
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -118,7 +118,7 @@ export function MeetingSeriesView({ id }: { id: string }) {
 
 /** V9: the agenda, built here from what the page already has. Copy, Markdown and Word are the minutes' own builders; Athena gets it through sessionStorage, never the URL. */
 function AgendaDialog({ d, onClose }: { d: Detail; onClose: () => void }) {
-  const { projects } = useStore();
+  const offered = d.series.athena !== false;
   const dlg = useRef<HTMLDialogElement>(null);
   useEffect(() => { dlg.current?.showModal(); }, []);
   const doc = buildAgenda(d.series, d.meetings, d.actions, d.decisions, d.questions);
@@ -134,9 +134,8 @@ function AgendaDialog({ d, onClose }: { d: Detail; onClose: () => void }) {
   const ask = () => {
     try { sessionStorage.setItem(ASK_KEY, `Write the agenda for the next session of "${d.series.name}" from these notes. Keep it short, and put what needs a decision first.\n\n${md}`); } catch { /* storage off: Athena opens with an empty box */ }
     dlg.current?.close();
-    // A live project is preselected; a work series whose project is gone or in Trash goes to "No project (work)", a personal one to personal.
-    const live = projects.some((p) => p.id === d.series.project_id && !p.deleted_at);
-    navigate(`/athena?agenda=${encodeURIComponent(live ? d.series.project_id! : d.series.kind === 'work' ? WORK_SEED : '')}`);
+    // V17: only offered for an unfiled series or one whose project is live and Cloud (the server says so), so the project is preselected, or "No project (work)" / personal when unfiled.
+    navigate(`/athena?agenda=${encodeURIComponent(d.series.project_id ?? (d.series.kind === 'work' ? WORK_SEED : ''))}`);
   };
   return (
     <dialog ref={dlg} className="kn-dlg sr-dlg" onClose={onClose} aria-labelledby="sr-agenda-h">
@@ -147,7 +146,7 @@ function AgendaDialog({ d, onClose }: { d: Detail; onClose: () => void }) {
         <button type="button" className="btn" onClick={() => void copy()}>Copy</button>
         <button type="button" className="btn" onClick={() => saveText(md, `${name}.md`)}>Markdown</button>
         <button type="button" className="btn" onClick={() => void word()}>Word</button>
-        <button type="button" className="btn primary" onClick={ask}>Ask Athena to write it</button>
+        {offered ? <button type="button" className="btn primary" onClick={ask}>Ask Athena to write it</button> : <span className="sub">Offline only: copy the agenda instead</span>}
         <button type="button" className="btn" onClick={() => dlg.current?.close()}>Close</button>
       </div>
     </dialog>

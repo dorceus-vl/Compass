@@ -74,7 +74,10 @@ meetings.get('/series/:id', async (c) => {
   const s = await loadSeries(c.env, c.req.param('id'));
   if (!s) return c.json({ error: 'Not found' }, 404);
   const d = await seriesDetail(c.env, s);
-  return c.json({ series: { id: s.id, name: s.name, project_id: s.project_id, kind: s.kind }, meetings: d.reviews, decisions: d.decisions, actions: d.actions, questions: d.questions });
+  // V17: Athena may write the agenda only for an unfiled series or one whose project is live and Cloud (not Offline only, missing or in Trash).
+  const pr = s.project_id ? await c.env.DB.prepare('SELECT data_boundary FROM projects WHERE id = ?1 AND deleted_at IS NULL').bind(s.project_id).first<{ data_boundary: string }>() : null;
+  const athena = !s.project_id || pr?.data_boundary === 'cloud';
+  return c.json({ series: { id: s.id, name: s.name, project_id: s.project_id, kind: s.kind, athena }, meetings: d.reviews, decisions: d.decisions, actions: d.actions, questions: d.questions });
 });
 
 meetings.patch('/series/:id', async (c) => {

@@ -1382,6 +1382,7 @@ curl "${H[@]}" -X POST $B/api/meetings/$V2/accept -d "{\"project_id\":\"$VP\",\"
 VS2=$(mser $V1); [ -n "$VS2" ] && [ "$VS2" != "$VS" ] && [ "$VS2" = "$(curl "${H[@]}" $B/api/meetings/$V2 | js d.meeting.series_id)" ] || fail "v4: accepting into a project did not move both meetings to the project's series"
 sget() { curl "${H[@]}" $B/api/meetings/series/$1; }
 sget $VS2 | js "d.series.project_id==='$VP'&&d.meetings.length===2&&d.actions.length===3&&d.decisions.length===2&&d.questions.length===1&&!d.questions[0].answered&&d.actions.every(a=>a.status!=='done')" | grep -q true || fail "v4: series page counts (2 meetings, 3 actions, 2 decisions, 1 open question)"
+sget $VS2 | js "d.series.athena===false" | grep -q true || fail "v4: V17 a series in an Offline-only project must not offer Athena"
 sget $VS2 | js "d.actions.some(a=>a.title==='Draft SOW'&&a.owner==='Alex')&&d.actions.some(a=>a.title==='Send the plan'&&a.owner==='Sam')" | grep -q true || fail "v4: action titles and owners opened"
 curl "${H[@]}" $B/api/meetings/series | js "!d.series.some(x=>x.id==='$VS')&&d.series.find(x=>x.id==='$VS2').open_actions===3" | grep -q true || fail "v4: the emptied unfiled series should leave the list, the project's show 3 open actions"
 # finishing one task ticks it on the series page and drops the open count
@@ -1413,6 +1414,7 @@ V3=$(mid 3); V4=$(mid 4)
 MV=$(curl "${H[@]}" -X POST $B/api/meetings/$V3/series -d "{\"new_name\":\"Smoke$RL moved\"}"); VN=$(echo "$MV" | js d.series.id)
 echo "$MV" | js "d.series.name==='Smoke$RL moved'&&d.meeting.series_id==='$VN'" | grep -q true || fail "v4: move to a new series"
 sget $VN | js "d.meetings.length===1&&d.meetings[0].id==='$V3'" | grep -q true || fail "v4: the moved meeting is not in its new series"
+sget $VN | js "d.series.athena===true" | grep -q true || fail "v4: V17 an unfiled series offers Athena"
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/meetings/$V3/series -d "{\"series_id\":\"$VS2\"}")" = 400 ] || fail "v4: a meeting joined another project's series"
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/meetings/$V3/series -d '{"new_name":""}')" = 400 ] && [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/meetings/$V3/series -d '{"series_id":"nope"}')" = 404 ] || fail "v4: move validation"
 curl "${H[@]}" -X POST $B/api/meetings/$V4/series -d "{\"series_id\":\"$VN\"}" | grep -q "\"id\":\"$VN\"" || fail "v4: move into an existing series"
