@@ -1,0 +1,268 @@
+<title>Compass Widgets</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: device frames (iPhone home, iPhone lock, iPad) holding Compass widgets at their real proportions, with a short legend per widget. Single dark look, Compass tokens. */
+:root{
+  --bg:#050507; --panel:#0B0B10; --field:#131319; --border:rgba(255,255,255,.08);
+  --text:#F2F1F7; --dim:#A9A7B8; --faint:#8A8899;
+  --accent:#EDE3C9; --accent-rgb:237,227,201; --on-accent:#1A1608;
+  --short:#DDB46E; --medium:#7DB4AC; --long:#9D95C6; --ok:#5CC98B; --warn:#E39A62; --danger:#E0606C;
+  --wall1:#1b2233; --wall2:#3a2b3f; --wall3:#0e1a1f;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.45}
+.wrap{max-width:1240px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:40px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:2.4px;text-transform:uppercase;color:var(--faint)}
+h1{margin:6px 0 0;font-size:34px;font-weight:800;letter-spacing:-.6px;text-wrap:balance}
+h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.4px}
+.lead{color:var(--dim);max-width:70ch;margin:8px 0 0}
+section{display:flex;flex-direction:column;gap:18px}
+.row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.notes{flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.note{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+.note b{display:block;font-size:14px}
+.note span{color:var(--dim);font-size:13px}
+.note .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent);border:1px solid rgba(var(--accent-rgb),.3);border-radius:999px;padding:1px 8px;margin-bottom:6px}
+
+/* Device frames */
+.phone{width:340px;max-width:100%;border-radius:46px;padding:14px;background:#000;border:1px solid #2a2a33;box-shadow:0 30px 60px rgba(0,0,0,.5)}
+.screen{border-radius:34px;overflow:hidden;padding:52px 18px 26px;display:grid;grid-template-columns:repeat(4,1fr);gap:18px 14px;position:relative}
+.home{background:radial-gradient(120% 80% at 20% 0%,var(--wall2),transparent 60%),radial-gradient(100% 70% at 100% 100%,var(--wall3),transparent 60%),var(--wall1)}
+.lock{background:radial-gradient(120% 90% at 50% 0%,var(--wall2),transparent 60%),var(--wall1);display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 18px 60px;min-height:560px}
+.status{position:absolute;top:16px;left:26px;right:26px;display:flex;justify-content:space-between;font-size:12px;font-weight:600}
+.app{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;color:var(--text)}
+.app i{width:52px;height:52px;border-radius:13px;background:#2b2b35;display:block}
+.app i.compass{background:radial-gradient(circle at 50% 50%,#1a1a22 40%,#0b0b10 41%);border:2px solid var(--accent)}
+
+/* Widget base */
+.w{background:rgba(11,11,16,.92);border:1px solid var(--border);border-radius:22px;padding:13px;display:flex;flex-direction:column;gap:6px;overflow:hidden;min-width:0}
+.w.small{grid-column:span 2;aspect-ratio:1/1}
+.w.medium{grid-column:span 4;aspect-ratio:2.1/1}
+.w.large{grid-column:span 4;aspect-ratio:1/1.05}
+.w .head{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--faint)}
+.w .head .logo{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--accent)}
+.big{font-size:38px;font-weight:800;letter-spacing:-1px;line-height:1}
+.sub{font-size:11px;color:var(--dim)}
+.next{margin-top:auto;font-size:11.5px;line-height:1.3}
+.next em{font-style:normal;color:var(--faint);font-family:var(--mono);font-size:10px;display:block}
+.ring{--p:.43;width:46px;height:46px;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--p)*360deg),rgba(255,255,255,.1) 0);display:grid;place-items:center;flex:none}
+.ring::after{content:attr(data-l);width:36px;height:36px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--text)}
+.task{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
+.task .bar{width:3px;align-self:stretch;border-radius:2px;flex:none}
+.task .chk{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--dim);flex:none}
+.task .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task .d{font-family:var(--mono);font-size:10px;color:var(--faint);flex:none}
+.task .d.late{color:var(--danger)}
+.chip{font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;border-radius:999px;padding:1px 7px;border:1px solid var(--border);color:var(--dim)}
+.chip.amber{color:var(--warn);border-color:rgba(227,154,98,.4)}
+.chip.red{color:var(--danger);border-color:rgba(224,96,108,.4)}
+.split{display:grid;grid-template-columns:1fr auto;gap:10px;flex:1;min-height:0}
+.list{display:flex;flex-direction:column;gap:7px;min-width:0}
+.grp{font-family:var(--mono);font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:var(--faint);margin-top:4px}
+.add{flex:1;display:grid;place-items:center;border-radius:14px;background:var(--accent);color:var(--on-accent);font-weight:800;font-size:13px}
+.add big{font-size:30px;font-weight:600;line-height:1}
+.ask{border-radius:12px;border:1px solid var(--border);padding:7px 9px;font-size:11px;color:var(--dim)}
+
+/* Lock screen */
+.clock{font-size:66px;font-weight:700;letter-spacing:-2px;line-height:1}
+.date{font-size:14px;font-weight:600;color:var(--dim)}
+.inline{font-size:12px;color:var(--text);opacity:.9}
+.acc{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;justify-content:center}
+.circ{width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.12);display:grid;place-items:center;position:relative}
+.circ .g{width:52px;height:52px;border-radius:50%;background:conic-gradient(var(--text) 154deg,rgba(255,255,255,.18) 0);display:grid;place-items:center}
+.circ .g span{width:42px;height:42px;border-radius:50%;background:#20202b;display:grid;place-items:center;font-size:13px;font-weight:700}
+.rect{width:170px;height:62px;border-radius:14px;background:rgba(255,255,255,.12);padding:8px 10px;font-size:11px;line-height:1.3;display:flex;flex-direction:column;justify-content:center}
+.rect b{font-size:12px}
+.rect em{font-style:normal;opacity:.75}
+
+/* iPad */
+.ipad{width:100%;max-width:880px;border-radius:30px;padding:16px;background:#000;border:1px solid #2a2a33}
+.ipad .screen{border-radius:18px;padding:40px 26px 30px;grid-template-columns:repeat(8,1fr);gap:20px}
+.ipad .w.small{grid-column:span 2}
+.ipad .w.medium{grid-column:span 4}
+.ipad .w.xl{grid-column:span 6;aspect-ratio:2.1/1}
+.ipad .w.small2{grid-column:span 2;aspect-ratio:1/1}
+.xl-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;flex:1;min-height:0}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.day{background:var(--field);border-radius:8px;padding:5px;font-size:9.5px;min-height:62px;display:flex;flex-direction:column;gap:3px}
+.day.today{outline:1px solid var(--accent)}
+.day b{font-family:var(--mono);font-size:9px;color:var(--faint);font-weight:500}
+.day i{display:block;height:4px;border-radius:2px}
+.proj{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.proj .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.proj .pct{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.privacy{display:flex;gap:10px;align-items:center;font-size:12.5px;color:var(--dim)}
+.sw{width:38px;height:22px;border-radius:999px;background:var(--accent);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:18px;width:18px;height:18px;border-radius:50%;background:var(--on-accent)}
+@media (max-width:420px){.phone{width:100%}.big{font-size:32px}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Compass for iPhone and iPad</div>
+    <h1>Widgets</h1>
+    <p class="lead">Seven widgets for the Home Screen, the Lock Screen and the iPad, drawn in Compass's look. Each card on the right says what it shows and what a tap does. Sample tasks, not your real ones.</p>
+  </header>
+
+  <section>
+    <h2>iPhone Home Screen</h2>
+    <div class="row">
+      <div class="phone"><div class="screen home">
+        <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+        <!-- A: Today small -->
+        <div class="w small" aria-label="Today, small">
+          <div class="head"><span>Today</span><span class="logo"></span></div>
+          <div class="big">4</div>
+          <div class="sub">due · <span style="color:var(--danger)">1 late</span></div>
+          <div class="next"><em>NEXT</em>Call the vendor</div>
+        </div>
+        <!-- E: Quick add small -->
+        <div class="w small" aria-label="Quick add, small">
+          <div class="add"><div style="text-align:center"><big>+</big><div>Add a task</div></div></div>
+          <div class="ask">Ask Athena…</div>
+        </div>
+        <!-- B: Today medium with tick -->
+        <div class="w medium" aria-label="Today, medium">
+          <div class="head"><span>Today · Tue Oct 21</span><span class="logo"></span></div>
+          <div class="split">
+            <div class="list">
+              <div class="task"><i class="bar" style="background:var(--short)"></i><i class="chk"></i><span class="t">Call the vendor about the test env</span><span class="d">2:00</span></div>
+              <div class="task"><i class="bar" style="background:var(--short)"></i><i class="chk"></i><span class="t">Send the status report</span><span class="d late">late</span></div>
+              <div class="task"><i class="bar" style="background:var(--medium)"></i><i class="chk"></i><span class="t">Review the SOW</span><span class="d">Fri</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div class="ring" data-l="3/7" style="--p:.43"></div><span class="sub">done</span></div>
+          </div>
+        </div>
+        <div class="app"><i class="compass"></i>Compass</div><div class="app"><i></i>Mail</div><div class="app"><i></i>Calendar</div><div class="app"><i></i>Kelly</div>
+      </div></div>
+      <div class="notes">
+        <div class="note"><span class="tag">Small</span><b>Today</b><span>How many tasks are due, how many are late, and the next one. Tap: opens Today.</span></div>
+        <div class="note"><span class="tag">Small</span><b>Quick add</b><span>"Add a task" opens the quick-add box; "Ask Athena…" opens Athena. No data shown, so it's safe anywhere.</span></div>
+        <div class="note"><span class="tag">Medium</span><b>Today, with ticks</b><span>The next three tasks with their horizon colour and a ring of what's done. Tap a circle to mark a task done right from the Home Screen (iOS 17 and later). Tap a title: opens that task.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="row">
+      <div class="phone"><div class="screen home">
+        <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+        <!-- C: Today large -->
+        <div class="w large" aria-label="Today, large">
+          <div class="head"><span>Today · 4 due</span><span class="logo"></span></div>
+          <div class="grp">Short</div>
+          <div class="task"><i class="bar" style="background:var(--short)"></i><i class="chk"></i><span class="t">Call the vendor about the test env</span><span class="d">2:00</span></div>
+          <div class="task"><i class="bar" style="background:var(--short)"></i><i class="chk"></i><span class="t">Send the status report</span><span class="d late">late</span></div>
+          <div class="grp">Medium</div>
+          <div class="task"><i class="bar" style="background:var(--medium)"></i><i class="chk"></i><span class="t">Review the SOW</span><span class="d">Fri</span></div>
+          <div class="task"><i class="bar" style="background:var(--medium)"></i><i class="chk"></i><span class="t">Book the CAB slot</span><span class="d">Mon</span></div>
+          <div class="grp">Blocked (1)</div>
+          <div class="task" style="opacity:.6"><i class="bar" style="background:var(--long)"></i><span class="t">Wave 1 cutover · waits on 1 task</span></div>
+          <div class="next" style="border-top:1px solid var(--border);padding-top:6px"><em>NEXT MILESTONE</em>Pilot site live · <span style="color:var(--warn)">5 days late</span></div>
+        </div>
+        <!-- D: Project pulse medium -->
+        <div class="w medium" aria-label="Project pulse, medium">
+          <div class="head"><span>Branch network refresh</span><span class="chip amber">AMBER</span></div>
+          <div class="split">
+            <div class="list" style="gap:5px">
+              <div class="sub">Next: <b style="color:var(--text)">Pilot site live</b></div>
+              <div class="sub">7 days later than the baseline</div>
+              <div class="sub">4 high risks · 4 overdue</div>
+            </div>
+            <div class="ring" data-l="59%" style="--p:.59;width:56px;height:56px"></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="notes">
+        <div class="note"><span class="tag">Large</span><b>Today by horizon</b><span>Short, medium and long, with a "Blocked" line for tasks waiting on another task, and the next milestone at the bottom. Same tick circles.</span></div>
+        <div class="note"><span class="tag">Medium</span><b>Project pulse</b><span>Pick a project when you add the widget: its RAG, % done, next milestone, slip against the baseline, high risks and overdue count. Tap: opens the project's Dashboard.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>iPhone Lock Screen</h2>
+    <div class="row">
+      <div class="phone"><div class="screen lock">
+        <div class="inline">4 due · 1 late · next 2:00</div>
+        <div class="clock">9:41</div>
+        <div class="date">Tuesday, October 21</div>
+        <div class="acc">
+          <div class="circ" aria-label="Done today ring"><div class="g"><span>3/7</span></div></div>
+          <div class="rect"><b>Next · 2:00 PM</b><span>Call the vendor</span><em>+1 late</em></div>
+        </div>
+        <div class="acc" style="margin-top:22px">
+          <div class="rect"><b>Next · 2:00 PM</b><span>Work task</span><em>titles hidden</em></div>
+        </div>
+      </div></div>
+      <div class="notes">
+        <div class="note"><span class="tag">Inline</span><b>One line above the clock</b><span>"4 due · 1 late · next 2:00". Counts only.</span></div>
+        <div class="note"><span class="tag">Circular</span><b>Done today</b><span>A ring of tasks done out of today's total. Counts only.</span></div>
+        <div class="note"><span class="tag">Rectangular</span><b>Next task</b><span>The next task's time and title, plus how many are late.</span></div>
+        <div class="note"><span class="tag">Privacy</span><b>Hide work titles on the Lock Screen</b><span>On by default: a work task shows as "Work task" on the Lock Screen (anyone can glance at it), its real title only on the Home Screen once the phone is unlocked. Offline-only projects never show a title in any widget.</span>
+          <div class="privacy" style="margin-top:8px"><span class="sw" aria-hidden="true"></span>Hide work titles on the Lock Screen</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>iPad</h2>
+    <div class="ipad"><div class="screen home">
+      <div class="status"><span>9:41  Tue Oct 21</span><span>▮</span></div>
+      <!-- G: iPad extra large -->
+      <div class="w xl" aria-label="Week, extra large">
+        <div class="head"><span>This week · 12 open</span><span class="logo"></span></div>
+        <div class="xl-grid">
+          <div class="list">
+            <div class="task"><i class="bar" style="background:var(--short)"></i><i class="chk"></i><span class="t">Call the vendor about the test env</span><span class="d">2:00</span></div>
+            <div class="task"><i class="bar" style="background:var(--short)"></i><i class="chk"></i><span class="t">Send the status report</span><span class="d late">late</span></div>
+            <div class="task"><i class="bar" style="background:var(--medium)"></i><i class="chk"></i><span class="t">Review the SOW</span><span class="d">Fri</span></div>
+            <div class="task"><i class="bar" style="background:var(--medium)"></i><i class="chk"></i><span class="t">Book the CAB slot</span><span class="d">Mon</span></div>
+            <div class="grp">Projects</div>
+            <div class="proj"><i class="dot" style="background:var(--warn)"></i>Branch network refresh<span class="pct">59%</span></div>
+            <div class="proj"><i class="dot" style="background:var(--ok)"></i>Vendor onboarding · Acme<span class="pct">82%</span></div>
+            <div class="proj"><i class="dot" style="background:var(--danger)"></i>Wave 1 cutover<span class="pct">31%</span></div>
+          </div>
+          <div class="week">
+            <div class="day"><b>MON</b><i style="background:var(--short)"></i></div>
+            <div class="day today"><b>TUE</b><i style="background:var(--short)"></i><i style="background:var(--short)"></i><i style="background:var(--medium);opacity:.5"></i></div>
+            <div class="day"><b>WED</b><i style="background:var(--medium)"></i></div>
+            <div class="day"><b>THU</b></div>
+            <div class="day"><b>FRI</b><i style="background:var(--medium)"></i><i style="background:var(--long)"></i></div>
+            <div class="day"><b>SAT</b></div>
+            <div class="day"><b>SUN</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="w small2" aria-label="Today, small">
+        <div class="head"><span>Today</span><span class="logo"></span></div>
+        <div class="big">4</div>
+        <div class="sub">due · <span style="color:var(--danger)">1 late</span></div>
+        <div class="next"><em>NEXT</em>Call the vendor</div>
+      </div>
+      <div class="w medium" aria-label="Project pulse, medium">
+        <div class="head"><span>Branch network refresh</span><span class="chip amber">AMBER</span></div>
+        <div class="split">
+          <div class="list" style="gap:5px">
+            <div class="sub">Next: <b style="color:var(--text)">Pilot site live</b></div>
+            <div class="sub">7 days later than the baseline</div>
+            <div class="sub">4 high risks · 4 overdue</div>
+          </div>
+          <div class="ring" data-l="59%" style="--p:.59;width:56px;height:56px"></div>
+        </div>
+      </div>
+      <div class="w small" aria-label="Quick add, small">
+        <div class="add"><div style="text-align:center"><big>+</big><div>Add a task</div></div></div>
+        <div class="ask">Ask Athena…</div>
+      </div>
+    </div></div>
+    <div class="notes" style="flex-direction:row;flex-wrap:wrap">
+      <div class="note" style="flex:1 1 280px"><span class="tag">Extra large · iPad only</span><b>This week</b><span>Open tasks with tick circles, the week as a strip of days (dots by horizon), and your active projects with their RAG and % done.</span></div>
+      <div class="note" style="flex:1 1 280px"><span class="tag">How it works</span><b>Fresh, private, offline</b><span>The app writes a small summary for the widgets each time it syncs, and the widgets refresh about every 15 minutes and right after you tick something. Nothing extra goes to the internet, and Kelly isn't involved.</span></div>
+    </div>
+  </section>
+</div>
