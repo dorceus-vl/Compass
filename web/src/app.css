@@ -945,7 +945,7 @@ dialog.kn-dlg{max-width:520px}
 .chip.blocked svg path{fill:none}
 .blocked-group{border:1px solid var(--border-soft);border-radius:14px;background:var(--card);padding:0 14px}
 .blocked-group[open]{padding-bottom:14px}
-.blocked-group summary{display:flex;align-items:baseline;gap:10px;min-height:44px;align-items:center;cursor:pointer;font-weight:650;font-size:14px;list-style:none}
+.blocked-group summary{display:flex;gap:10px;min-height:44px;align-items:center;cursor:pointer;font-weight:650;font-size:14px;list-style:none}
 .blocked-group summary::-webkit-details-marker{display:none}
 .blocked-group summary::before{content:"";width:7px;height:7px;border-right:1.5px solid var(--text-dim);border-bottom:1.5px solid var(--text-dim);transform:rotate(-45deg);flex:none;transition:transform var(--dur-quick) var(--ease-out)}
 .blocked-group[open] summary::before{transform:rotate(45deg)}
@@ -953,7 +953,6 @@ dialog.kn-dlg{max-width:520px}
 .blocked-group summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
 .tl-arrows path{fill:none;stroke:var(--text-dim);stroke-width:1;opacity:.75}
 .tl-arrowhead{fill:var(--text-dim)}
-@media (prefers-reduced-motion: reduce){.tl-arrows{display:none}} /* v2.1 brief: no arrows under reduced motion */
 .deps{display:grid;gap:8px;margin-top:12px}
 .deps .dl{display:flex;flex-wrap:wrap;gap:6px}
 .dep{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--field-border);background:var(--field);border-radius:999px;font-size:13px}

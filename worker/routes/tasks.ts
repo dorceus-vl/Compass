@@ -104,14 +104,14 @@ export async function checkDependencies(env: Env, taskId: string | null, kind: K
   const { results } = await env.DB.prepare(`SELECT id, kind FROM tasks WHERE deleted_at IS NULL AND id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`).bind(...ids).all<{ id: string; kind: Kind }>();
   if (results.length !== ids.length || results.some((r) => r.kind !== kind)) return { error: 'bad_dependency', status: 400 };
   if (!taskId) return null; // a new task is not anyone's blocker yet, so it cannot close a loop
-  const g = await env.DB.prepare('SELECT id, blocked_by FROM tasks WHERE deleted_at IS NULL AND blocked_by IS NOT NULL').all<{ id: string; blocked_by: string }>();
+  // Trashed tasks keep their links (Restore brings them back), so their edges count: a loop can't be closed behind a trashed task.
+  const g = await env.DB.prepare('SELECT id, blocked_by FROM tasks WHERE blocked_by IS NOT NULL').all<{ id: string; blocked_by: string }>();
   const graph = new Map(g.results.map((r) => [r.id, parseBlockedBy(r.blocked_by) ?? []]));
   graph.delete(taskId); // its old links are being replaced by `ids`
   return ids.some((to) => wouldCycle(graph, taskId, to)) ? { error: 'dependency_cycle', status: 409 } : null;
 }
 /** A task that changes kind (its project moved it) may not keep links to, or from, tasks of the other kind. */
-async function crossKindLinks(env: Env, task: Task, kind: Kind): Promise<boolean> {
-  const own = parseBlockedBy(task.blocked_by) ?? [];
+async function crossKindLinks(env: Env, task: Task, own: string[], kind: Kind): Promise<boolean> {
   if (own.length) {
     const r = await env.DB.prepare(`SELECT 1 AS x FROM tasks WHERE deleted_at IS NULL AND kind != ?1 AND id IN (${own.map((_, i) => `?${i + 2}`).join(',')})`).bind(kind, ...own).first();
     if (r) return true;
@@ -237,7 +237,8 @@ tasks.patch('/:id', async (c) => {
   fields.push('kind');
   // V2: links are re-checked when they change, and a task may not change kind while it is linked to the other kind.
   if ('blocked_by' in r.values || next.kind !== task.kind) {
-    if (next.kind !== task.kind && await crossKindLinks(c.env, task, next.kind)) return c.json({ error: 'bad_dependency' }, 400);
+    // The links that will hold after this PATCH: the new list when the body carries one, else the stored one.
+    if (next.kind !== task.kind && await crossKindLinks(c.env, task, parseBlockedBy(next.blocked_by) ?? [], next.kind)) return c.json({ error: 'bad_dependency' }, 400);
     if ('blocked_by' in r.values) { const dep = await checkDependencies(c.env, task.id, next.kind, parseBlockedBy(next.blocked_by) ?? []); if (dep) return c.json({ error: dep.error }, dep.status); }
   }
   if (next.status === 'waiting' && task.status !== 'waiting') { next.waiting_since = next.updated_at; fields.push('waiting_since'); }

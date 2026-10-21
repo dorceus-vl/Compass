@@ -5,7 +5,7 @@ B=${BASE:-http://localhost:8790}; J=/tmp/compass-smoke.jar; rm -f $J
 H=(-s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json")
 T0=$(date -u +%Y-%m-%dT%H:%M:%S.000Z) # rows made before this are not the smoke's: its cleanup (end of file) only touches rows created at or after it
 unpark() { [ -z "${PARK:-}" ] || D1X "UPDATE tasks SET deleted_at = NULL WHERE deleted_at = '$PARK'" >/dev/null; PARK=; }
-fail() { unpark; echo "smoke: FAIL $1"; exit 1; }
+fail() { unpark; declare -F restore_quiet >/dev/null && restore_quiet; echo "smoke: FAIL $1"; exit 1; }
 # The hourly AI limits count the local ai_usage rows, so a run starts from none. Local only: --local touches the dev D1 file, never a remote database, and a non-local BASE is refused.
 case "$B" in http://localhost:*|http://127.0.0.1:*) ;; *) fail "BASE must be a local wrangler dev (got $B)";; esac
 npx wrangler d1 execute compass-db --local --command "DELETE FROM ai_usage" >/dev/null 2>&1 || fail "could not clear the local ai_usage"
@@ -1144,6 +1144,7 @@ for x in $K5W $K5L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x 
 # (v1) v2.1 Task 0: dependencies. Link; a loop is 409; another kind is 400; a bad list is 400; completing the last blocker pushes once ("A task is unblocked" for
 # work, the title for personal, the deep link opens the task); Kelly completing a blocker does the same; the agent task shape did not grow. Local D1 only.
 Q0=$(curl "${H[@]}" $B/api/settings | js '[d.quiet_from,d.quiet_to].join()'); curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null # never quiet while this runs
+restore_quiet() { [ -z "${Q0:-}" ] || curl -s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${Q0%,*}\",\"quiet_to\":\"${Q0#*,}\"}" >/dev/null || true; Q0=; } # also called by fail()
 dwp=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke deps work","kind":"work"}' | js d.project.id)
 dt() { curl "${H[@]}" -X POST $B/api/tasks -d "$1" | js d.task.id; }
 DW1=$(dt "{\"title\":\"Smoke dep work A $R\",\"project_id\":\"$dwp\"}"); DW2=$(dt "{\"title\":\"Smoke dep work B $R\",\"project_id\":\"$dwp\"}")
@@ -1169,6 +1170,15 @@ D=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/tasks -d "{\"title\":\"Smo
 [ "$(kst "$(dpatch $DP2 '{"kind":"work"}')")" = 200 ] && [ "$(kst "$(dpatch $DP2 '{"kind":"personal"}')")" = 200 ] || fail "v1: setup for the kind-change check"
 [ "$(kst "$(dpatch $DP2 "{\"blocked_by\":\"[\\\"$DP1\\\"]\"}")")" = 200 ] || fail "v1: linking personal B to personal A"
 curl "${H[@]}" -X PATCH $B/api/tasks/$DP2 -d '{"project_id":"'$dwp'"}' | grep -q '"error":"bad_dependency"' || fail "v1: a linked task moved to a work project (kind change) was not refused"
+# ... but one PATCH that moves it AND clears its links is fine (the new list is what counts)
+DP4=$(dt "{\"title\":\"Smoke dep own D $R\"}"); [ "$(kst "$(dpatch $DP4 "$(bb $DP1)")")" = 200 ] || fail "v1: linking D"
+[ "$(kst "$(dpatch $DP4 '{"project_id":"'$dwp'","blocked_by":null}')")" = 200 ] && [ "$(task $DP4 kind)" = work ] || fail "v1: moving a task to a work project while clearing its links was refused"
+# a loop cannot be closed behind a trashed task: X waits on A, A waits on B, A is trashed; B waiting on X is still a loop
+LX=$(dt "{\"title\":\"Smoke dep loop X $R\"}"); LA=$(dt "{\"title\":\"Smoke dep loop A $R\"}"); LB=$(dt "{\"title\":\"Smoke dep loop B $R\"}")
+[ "$(kst "$(dpatch $LA "$(bb $LB)")")" = 200 ] && [ "$(kst "$(dpatch $LX "$(bb $LA)")")" = 200 ] || fail "v1: loop setup"
+curl "${H[@]}" -X DELETE $B/api/tasks/$LA >/dev/null
+D=$(dpatch $LB "$(bb $LX)"); [ "$(kst "$D")" = 409 ] || fail "v1: a loop through a trashed task was accepted: $D"
+for x in $LX $LA $LB $DP4; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 # work: completing A (the last blocker of B) pushes once and generically; the deep link opens B
 SINCE=$(node -pe 'new Date(Date.now()-1000).toISOString()')
 curl "${H[@]}" -X POST $B/api/tasks/$DW1/done | grep -q '"status":"done"' || fail "v1: completing the blocker"
@@ -1192,12 +1202,16 @@ SINCE=$(node -pe 'new Date(Date.now()-1000).toISOString()')
 [ "$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.filter(i=>i.url==='/?task=$DP3').length")" = 0 ] || fail "v1: pushed while another blocker was still open"
 [ "$(agc POST "/tasks/$DP2/done")" = 200 ] || fail "v1: Kelly could not complete the second blocker"
 [ "$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.filter(i=>i.url==='/?task=$DP3'&&i.title==='Smoke dep own C $R is unblocked').length")" = 1 ] || fail "v1: Kelly completing the last blocker did not push '<title> is unblocked' once"
-# the agent task shape did not grow
-[ "$(agb GET "/tasks/$DP3" | js 'Object.keys(d.task).sort().join()')" = "due_at,horizon,id,priority,project,status,title" ] || fail "v1: the agent task shape changed"
+restore_quiet # the push checks are done
+# the agent task shape did not grow: the real responses of the read, list and create routes carry exactly these keys (no blocked_by, no checklist)
+AK="due_at,horizon,id,priority,project,status,title"
+[ "$(agb GET "/tasks/$DP3" | js 'Object.keys(d.task).sort().join()')" = "$AK" ] || fail "v1: the agent task shape changed (get)"
+AN=$(agb POST "/tasks" "{\"title\":\"Smoke agent shape $R\",\"due_at\":\"$(date +%F)\"}"); [ "$(echo "$AN" | js 'Object.keys(d.task).sort().join()')" = "$AK" ] || fail "v1: the agent task shape changed (create)"
+[ "$(agb GET "/tasks?view=today&limit=50" | js 'd.tasks.length>0&&d.tasks.every(t=>Object.keys(t).sort().join()==="'$AK'")')" = true ] || fail "v1: the agent task shape changed (list)"
+curl "${H[@]}" -X DELETE $B/api/tasks/$(echo "$AN" | js d.task.id) >/dev/null
 D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null; kset '{"enabled":false,"scopes":[]}'
 # a checklist column exists and a work task's is not plain (sealed by the shared seal path; Task 1 writes it)
 [ "$(D1X "SELECT count(*) AS n FROM pragma_table_info('tasks') WHERE name IN ('blocked_by','checklist')" | js 'd[0].results[0].n')" = 2 ] || fail "v1: migration 0014 task columns"
-curl "${H[@]}" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${Q0%,*}\",\"quiet_to\":\"${Q0#*,}\"}" >/dev/null
 for x in $DW1 $DW2 $DW3 $DP1 $DP2 $DP3; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$dwp >/dev/null
 echo "smoke: (v1) dependencies: link ok; loops 409 (direct and of three); self, other kind, missing, trashed, malformed, duplicate and a kind change while linked 400; completing the last blocker pushed once ('A task is unblocked' for work, '<title> is unblocked' for personal via Kelly), the switch silences it, the deep link is /?task=<id>; the agent task keys are unchanged"
 # clean up (local D1 only): the system rows, the test tasks and project

@@ -113,15 +113,23 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
         </div>
         {linked.length > 0 && <div className="dl">{linked.map((id, i) => { const b = blockers[i]; const resolved = !b || b.deleted_at || b.status === 'done'; return (
           <span key={id} className={`dep${resolved ? ' done' : ''}`}>
-            <button type="button" disabled={!b} onClick={() => goto(id)}>{b ? b.title : 'A task that is gone'}{resolved ? ' (done)' : ''}</button>
+            <button type="button" disabled={!b} onClick={() => goto(id)}>{b ? b.title : 'A task that is gone'}{!b || b.deleted_at ? ' (trashed)' : b.status === 'done' ? ' (done)' : ''}</button>
             <button type="button" className="x" aria-label={`Remove blocker: ${b?.title ?? 'a task that is gone'}`} onClick={() => setLinks(linked.filter((x) => x !== id))}>×</button>
           </span>); })}</div>}
         <div className="dep-find">
-          <input className="field" value={depQ} placeholder={linked.length >= 20 ? 'Twenty blockers at most' : `Find a ${v.kind} task this waits on`} disabled={linked.length >= 20} aria-label="Find a blocking task"
+          <input className="field" role="combobox" aria-expanded={hits.length > 0} aria-controls="dep-hits" aria-autocomplete="list" value={depQ} placeholder={linked.length >= 20 ? 'Twenty blockers at most' : `Find a ${v.kind} task this waits on`} disabled={linked.length >= 20} aria-label="Find a blocking task"
             onChange={(e) => setDepQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && hits[0]) { e.preventDefault(); setLinks([...linked, hits[0].id]); setDepQ(''); } }} />
-          {hits.length > 0 && <div className="dep-hits">{hits.map((h) => (
-            <button type="button" key={h.id} onClick={() => { setLinks([...linked, h.id]); setDepQ(''); }}>{h.title}<small>{h.status}</small></button>))}</div>}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && hits[0]) { e.preventDefault(); setLinks([...linked, hits[0].id]); setDepQ(''); }
+              if (e.key === 'ArrowDown' && hits[0]) { e.preventDefault(); e.currentTarget.parentElement?.querySelector<HTMLElement>('[role=option]')?.focus(); }
+            }} />
+          {hits.length > 0 && <div className="dep-hits" id="dep-hits" role="listbox" aria-label="Open tasks this could wait on">{hits.map((h) => (
+            <button type="button" role="option" aria-selected={false} key={h.id} onClick={() => { setLinks([...linked, h.id]); setDepQ(''); }}
+              onKeyDown={(e) => {
+                const sib = e.key === 'ArrowDown' ? e.currentTarget.nextElementSibling : e.key === 'ArrowUp' ? e.currentTarget.previousElementSibling : null;
+                if (e.key === 'ArrowUp' && !sib) { e.preventDefault(); e.currentTarget.parentElement?.parentElement?.querySelector('input')?.focus(); }
+                else if (sib) { e.preventDefault(); (sib as HTMLElement).focus(); }
+              }}>{h.title}<small>{h.status}</small></button>))}</div>}
           {depQ.trim() && hits.length === 0 && <p className="hint" style={{ margin: '6px 0 0' }}>No open {v.kind} task matches.</p>}
         </div>
         {blocks.length > 0 && <>
