@@ -17,6 +17,7 @@ import { ProjectMeetings } from './project/ProjectMeetings.tsx';
 import { Documents } from './project/Documents.tsx';
 import { Report } from './project/Report.tsx';
 import { Baselines } from './project/Baselines.tsx';
+import { Dashboard } from './project/Dashboard.tsx';
 import { fmtDue, today } from '../dates.ts';
 import { MilestonePath } from '../ui/MilestonePath.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
@@ -25,9 +26,9 @@ import { useSlider } from '../ui/Shell.tsx';
 import { projectColor, PROJECT_SWATCHES } from '../ui/colors.ts';
 import { SaveAsTemplate } from '../ui/Templates.tsx';
 
-const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
+const TABS = ['overview', 'dashboard', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
-const TAB_LABEL: Record<string, string> = { overview: 'Overview', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Athena' };
+const TAB_LABEL: Record<string, string> = { overview: 'Overview', dashboard: 'Dashboard', raid: 'RAID', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Athena' };
 
 export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string }) {
   const { projects, tasks, milestones, ready } = useStore();
@@ -108,6 +109,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
         <Link to={`/timeline?project=${p.id}`} role="tab" aria-selected={false}>Timeline</Link>
       </nav>
       <div className="pbody" style={{ ['--pc' as string]: color } as CSSProperties}>
+      {current === 'dashboard' && <Dashboard key={p.id} project={p} />}
       {current === 'raid' && <Raid key={p.id} project={p} />}
       {current === 'changes' && <Changes key={p.id} project={p} />}
       {current === 'decisions' && <Decisions key={p.id} project={p} />}

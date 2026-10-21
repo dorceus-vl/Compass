@@ -1,3 +1,5 @@
+import type { Snapshot, SlipSummary } from './baseline.ts';
+import type { DashboardMetrics } from './dashboard.ts';
 export type Kind = 'personal' | 'work';
 export type Horizon = 'short' | 'medium' | 'long';
 export type Status = 'new' | 'progress' | 'hold' | 'waiting' | 'done';
@@ -132,6 +134,8 @@ export interface AiMessage {
 export interface ReportInput {
   project: Project; milestones: Milestone[]; tasks: Task[]; raid: RaidItem[]; changes: ChangeRequest[]; decisions: Decision[]; lessons: Lesson[];
   meetings: { id: string; title: string; received_at: string; summary: string | null }[];
+  /** v2.2: the project's latest live baseline, opened (name and snapshot); null or absent when there is none. Tasks include subtasks, so slip can compare them. */
+  baseline?: { name: string; taken_at: string; snapshot: Snapshot } | null;
 }
 /** table: "A | B" lines with a header line; list: "• …" lines; both '' when empty. */
 export interface Section<R> { rows: R[]; count: number; table: string; list: string }
@@ -149,6 +153,13 @@ export interface ReportModel {
   decisions: Section<{ decided_at: string; text: string }>; decisions_needed: Section<{ title: string }>;
   lessons: Section<{ text: string; category: string }>; meetings: Section<{ title: string; date: string; summary: string }>;
   status: { headline: string; progress: string; next_steps: string };
+  /** v2.2 (C5): the latest baseline against the plan now. `has_baseline` false means there is none and the rest is empty. */
+  schedule: {
+    has_baseline: boolean; baseline_name: string; taken_at: string; summary: SlipSummary | null; line: string;
+    late_milestones: Section<{ name: string; baseline_due: string; due_at: string; days_late: number }>;
+  };
+  /** v2.2 (C5): numbers only. `line` is the one-sentence form used in the report; the numbers are what Athena's summary request carries. */
+  metrics: DashboardMetrics & { line: string };
   ai: { summary: string };
 }
 

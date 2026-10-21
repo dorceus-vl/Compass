@@ -11,6 +11,16 @@ const issueTable = (m: ReportModel) => table(['Issue', 'Impact', 'Owner', 'Respo
 const riskAndIssues = (m: ReportModel) => sec('Risks and issues', p('Risks'), riskTable(m), p('Issues'), issueTable(m));
 const msTable = (m: ReportModel) => table(['Milestone', 'Due', 'State'], m.milestones.rows.map((x) => [x.name, x.due_at, x.state]), 'No milestones.');
 
+const num = (n: number | null) => (n === null ? 'n/a' : String(n));
+/** v2.2 (C5): the dashboard's numbers as label/value lines. */
+const keyNumbers = (m: ReportModel) => sec('Key numbers', fields(
+  ['Done this week', String(m.metrics.done_this_week)], ['Open tasks', String(m.metrics.open)], ['Overdue now', String(m.metrics.overdue_now)],
+  ['Burndown', m.metrics.ideal_remaining === null ? 'No end date, so no ideal line' : `${m.metrics.remaining} open against ${m.metrics.ideal_remaining} ideal`],
+  ['High risks', String(m.metrics.high_risks)], ['Unrated risks', num(m.metrics.unrated_risks)]));
+const scheduleVsBaseline = (m: ReportModel) => sec('Schedule vs baseline',
+  p(m.schedule.has_baseline ? `Against "${m.schedule.baseline_name}", saved ${m.schedule.taken_at}. ${m.schedule.line}` : 'No baseline saved.'),
+  ...(m.schedule.late_milestones.count ? [table(['Milestone', 'Baseline', 'Now', 'Days late'], m.schedule.late_milestones.rows.map((x) => [x.name, x.baseline_due, x.due_at, x.days_late]))] : []));
+
 /** Open tasks go under the first dated milestone whose date is on or after the task's due date; the rest are "Other work". */
 function wbs(m: ReportModel): TemplateDoc {
   const ms = m.milestones.rows, tasks = [...m.tasks.open.rows];
@@ -77,9 +87,11 @@ export const BUILTINS: { id: BuiltinId; name: string; guide: string; make: (m: R
     sections: [
       sec('Overall status', fields(['RAG', m.project.rag_label], ['Reason', m.project.rag_reason], ['Period', m.range.label])),
       sec('Executive summary', p(m.ai.summary || m.status.progress)),
+      keyNumbers(m),
       sec('Progress', list(m.tasks.done.rows.map((t) => t.title), 'No tasks were completed this period.')),
       sec('Next steps', list(m.tasks.next.rows.map((t) => `${t.title} (${t.due_at})`), m.status.next_steps)),
       sec('Milestones', msTable(m)),
+      scheduleVsBaseline(m),
       riskAndIssues(m),
       sec('Decisions needed', list(m.decisions_needed.rows.map((d) => d.title))),
       sec('Decisions made', table(['Date', 'Decision'], m.decisions.rows.map((d) => [d.decided_at, d.text]), 'No decisions this period.')),

@@ -1039,3 +1039,54 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .slip .num{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
 .slip .slip-d.late{color:var(--danger)}.slip .slip-d.early{color:var(--ok)}
 .tl-ghost{fill:none;stroke:var(--text-dim);stroke-width:1.5;stroke-dasharray:4 3}
+/* v2.2 dashboard: tiles, hand-drawn SVG charts (static, tokens only), the risk grid with patterns, the milestone slip list */
+.dash{display:grid;gap:14px;min-width:0}
+.dash .bhead{margin-bottom:0}
+.dash-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:10px;margin:0}
+.dash-tile{background:var(--card);border:1px solid var(--border-soft);border-radius:14px;padding:12px 14px;min-width:0}
+.dash-tile dt{font:500 11px var(--mono);letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint)}
+.dash-tile dd{margin:6px 0 0;font-size:26px;font-weight:600;letter-spacing:-.6px}
+.dash-tile.over dd{color:var(--danger)}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px;align-items:start}
+.dash-grid>.card{min-width:0}
+.dash-wide{grid-column:1/-1}
+.chart{margin:0;min-width:0}
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.chart-head h3{margin:0;font-size:18px;letter-spacing:-.4px;font-weight:800}
+.chart-tog{font-size:12.5px}
+.card .chart-sum{margin:8px 0 10px;font-size:13.5px;line-height:1.55;color:var(--text-dim)}
+.chart-body{min-width:0}
+.chart-svg{display:block;max-width:100%;overflow:visible}
+.ch-grid{stroke:var(--border-soft);stroke-width:1}
+.ch-mark{stroke:var(--text-faint);stroke-width:1.25;stroke-dasharray:2 3}
+.ch-t{font:400 10.5px var(--mono);fill:var(--text-faint)}
+.ch-v{font:500 11px var(--mono);fill:var(--text)}
+.chart-legend{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;margin:8px 0 0;padding:0;font-size:12px;color:var(--text-dim)}
+.chart-legend li{display:inline-flex;align-items:center;gap:6px}
+.chart-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.chart-table th,.chart-table td{padding:7px 10px;text-align:left;border-top:1px solid var(--border-soft)}
+.chart-table thead th{border-top:0;font:500 11px var(--mono);letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint)}
+.chart-table tbody th{font-weight:500}
+.chart-table .num{font-family:var(--mono);font-size:12.5px}
+.rgrid-wrap{max-width:380px}
+.rgrid{display:grid;grid-template-columns:16px 16px repeat(5,minmax(0,1fr));gap:4px;align-items:stretch}
+.rg-ax{font:500 10px var(--mono);letter-spacing:1.6px;text-transform:uppercase;color:var(--text-faint)}
+.rg-y{grid-column:1;grid-row:1/6;writing-mode:vertical-rl;transform:rotate(180deg);text-align:center}
+.rg-x{grid-column:3/-1;text-align:center;padding-top:2px}
+.rg-tick{font:400 11px var(--mono);color:var(--text-faint);display:grid;place-items:center}
+.rg-xt{padding-top:2px}
+.rg-cell,.rg-sw{position:relative;display:grid;place-items:center;border-radius:8px;border:1px solid var(--border-soft);aspect-ratio:1;min-width:0;overflow:hidden}
+.rg-cell i,.rg-sw i{position:absolute;top:2px;left:4px;font:500 9.5px var(--mono);font-style:normal;color:var(--text-faint)}
+.rg-cell b{font:600 16px var(--mono);color:var(--text)}
+.rg-sw{width:22px;height:22px;aspect-ratio:auto;border-radius:5px}
+.rg-sw i{top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;color:var(--text)}
+.sev-high{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--danger) 34%,transparent) 0 4px,color-mix(in srgb,var(--danger) 10%,transparent) 4px 8px)}
+.sev-medium{background:radial-gradient(color-mix(in srgb,var(--warn) 55%,transparent) 1.3px,transparent 1.7px) 0 0/7px 7px,color-mix(in srgb,var(--warn) 9%,transparent)}
+.sev-low{background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.rg-cell.has{border-color:var(--text-dim)}
+.slip-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.slip-list li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:10px 0;border-top:1px solid var(--border-soft)}
+.slip-list .sl-name{flex:1 1 140px;min-width:0;font-weight:500;overflow-wrap:anywhere}
+.slip-list .sl-dates{font-size:12px;color:var(--text-faint);white-space:nowrap}
+@media (max-width:760px),(pointer:coarse){.chart-tog{min-height:44px}}
+.rg-corner{grid-column:1/3}

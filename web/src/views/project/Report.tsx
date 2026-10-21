@@ -24,7 +24,7 @@ const REFUSED: Record<string, string> = {
 };
 
 /** settings.tz decides what "today" and "this week" mean; the last copy is kept for offline use. */
-function useTz() {
+export function useTz() {
   const [tz, set] = useState(DEFAULT_SETTINGS.tz);
   useEffect(() => {
     let live = true;

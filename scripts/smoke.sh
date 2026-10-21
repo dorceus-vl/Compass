@@ -1495,6 +1495,32 @@ curl "${H[@]}" -X DELETE $B/api/projects/$BW >/dev/null; curl "${H[@]}" -X DELET
 BE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$BE")" = 200 ] || fail "p0: Empty Trash with baselines and stakeholders: $BE"
 [ "$(D1X "SELECT (SELECT count(*) FROM baselines WHERE project_id IN ('$BW','$BPP'))+(SELECT count(*) FROM stakeholders WHERE project_id='$BW')+(SELECT count(*) FROM projects WHERE id IN ('$BW','$BPP')) AS n" | js 'd[0].results[0].n')" = 0 ] || fail "p0: baselines, stakeholders or the project survived Empty Trash"
 echo "smoke: (p0) baselines: saved (3 tasks, 1 milestone, no titles in the snapshot); two moved dates read +4 and -2 (milestone +5; 2 late, 1 early, max 5); work baseline and its rename are ciphertext in D1, a personal one plain; blank/long name 400, unknown 404; 21st baseline 409, 1,000 tasks fine and 1,001 409; Trash lists and restores it; export opens baselines and stakeholders; Empty Trash removes a project's baselines and stakeholders"
+# (p1) v2.2 Task 1: the report carries the dashboard's numbers. A work project with a baseline, a subtask and two risks (one unrated): the route returns the opened baseline and the subtask, the same shared code
+# builds "Key numbers" and the schedule (task +4, milestone +5), the summary text holds numbers only (no baseline name), the cloud project gets the stub summary, an Offline-only one gets ai_refused and no model call.
+modeljs() { INPUT="$1" node --experimental-strip-types --no-warnings --input-type=module -e 'const { buildReportModel, reportText } = await import(process.cwd() + "/shared/report-model.ts"); const m = buildReportModel(JSON.parse(process.env.INPUT), { from: "2026-03-01", to: "2026-03-31" }, "2026-03-20", "now", "America/Toronto"); const t = reportText(m); console.log([m.schedule.summary.late, m.schedule.late_milestones.rows.map((r) => r.days_late).join(), m.metrics.high_risks, m.metrics.unrated_risks, m.metrics.open, /Key numbers: done this week 0, open 2/.test(t), t.includes(process.env.NAME)].join("|"))'; }
+DW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke dash work","kind":"work","start_at":"2026-03-01","end_at":"2026-06-30"}' | js d.project.id)
+curl "${H[@]}" -X PATCH $B/api/projects/$DW -d '{"data_boundary":"cloud"}' >/dev/null # a new work project starts Offline only
+DT1=$(dt "$(node -pe 'JSON.stringify({title:"Smoke dash one '$R'",project_id:process.argv[1],due_at:"2026-03-10"})' "$DW")")
+DT2=$(dt "$(node -pe 'JSON.stringify({title:"Smoke dash sub '$R'",project_id:process.argv[1],parent_id:process.argv[2],due_at:"2026-03-12"})' "$DW" "$DT1")")
+DT3=$(dt "$(node -pe 'JSON.stringify({title:"Smoke dash two '$R'",project_id:process.argv[1],due_at:"2026-03-25"})' "$DW")")
+DM=$(curl "${H[@]}" -X POST $B/api/projects/$DW/milestones -d '{"name":"Smoke dash milestone","due_at":"2026-04-01"}' | js d.milestone.id)
+curl "${H[@]}" -X POST $B/api/projects/$DW/raid -d '{"type":"risk","text":"Smoke dash risk","probability":4,"impact":4}' >/dev/null
+curl "${H[@]}" -X POST $B/api/projects/$DW/raid -d '{"type":"risk","text":"Smoke dash unrated"}' >/dev/null
+DBO=$(bpost $DW "{\"name\":\"Smoke dash baseline $R\"}"); [ "$(kst "$DBO")" = 201 ] || fail "p1: baseline: $DBO"
+curl "${H[@]}" -X PATCH $B/api/tasks/$DT1 -d '{"due_at":"2026-03-14"}' >/dev/null; curl "${H[@]}" -X PATCH $B/api/milestones/$DM -d '{"due_at":"2026-04-06"}' >/dev/null
+DSR='{"project_id":"'$DW'","from":"2026-03-01","to":"2026-03-31","ai":true}'
+DR=$(curl "${H[@]}" -X POST $B/api/reports/status -d "$DSR")
+echo "$DR" | js "d.input.baseline.name==='Smoke dash baseline $R'&&d.input.baseline.snapshot.tasks.length===3&&d.input.baseline.snapshot.milestones.length===1&&d.input.tasks.length===3&&d.input.tasks.some(t=>t.parent_id)&&/^Stub answer/.test(d.ai_summary)&&d.ai_refused===null" | grep -qx true || fail "p1: report input (baseline opened, subtask, stub summary): $(echo "$DR" | cut -c1-300)"
+[ "$(NAME="Smoke dash baseline $R" modeljs "$(echo "$DR" | js 'JSON.stringify(d.input)')")" = "2|5|1|1|2|true|false" ] || fail "p1: model from the route's data: $(NAME="Smoke dash baseline $R" modeljs "$(echo "$DR" | js 'JSON.stringify(d.input)')")"
+# a project with no baseline: the schedule says so and the summary still works; an Offline-only one is refused with no model call
+DN=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke dash none","kind":"personal"}' | js d.project.id)
+curl "${H[@]}" -X POST $B/api/reports/status -d '{"project_id":"'$DN'","from":"2026-03-01","to":"2026-03-31"}' | js "d.input.baseline===null" | grep -qx true || fail "p1: a project without a baseline"
+curl "${H[@]}" -X PATCH $B/api/projects/$DW -d '{"data_boundary":"offline"}' >/dev/null
+DN1=$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')
+curl "${H[@]}" -X POST $B/api/reports/status -d "$DSR" | js "d.ai_summary===null&&d.ai_refused==='offline_boundary'&&d.input.baseline.snapshot.tasks.length===3" | grep -qx true || fail "p1: offline project not refused"
+[ "$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')" = "$DN1" ] || fail "p1: an offline report made a model call"
+D1X "DELETE FROM baselines WHERE project_id='$DW'; DELETE FROM raid_items WHERE project_id='$DW'; DELETE FROM task_events WHERE task_id IN ('$DT1','$DT2','$DT3'); UPDATE tasks SET parent_id=NULL WHERE project_id='$DW'; DELETE FROM tasks WHERE project_id='$DW'; DELETE FROM milestones WHERE project_id='$DW'; DELETE FROM audit_log WHERE target IN ('$DW','$DN'); DELETE FROM projects WHERE id IN ('$DW','$DN')" >/dev/null
+echo "smoke: (p1) report: the route returns the opened latest baseline and the subtasks; the shared model gives 2 late (task +4, milestone +5), 1 high and 1 unrated risk, 2 open, and the summary text holds numbers only (no baseline name); no baseline -> null; Offline-only -> ai_refused offline_boundary with no model call"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

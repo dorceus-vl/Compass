@@ -41,6 +41,14 @@ const md = toMarkdown(status.make(model));
 assert.ok(md.startsWith('# Status report'));
 assert.ok(md.includes('| Risk | P | I |'));
 assert.ok(md.includes('| Router shortage \\| single source | 4 | 5 | 20 | Bob | Second quote |'), 'risk row present');
+// v2.2: the status report carries the key numbers and the schedule against the baseline, in Markdown and in Word.
+const withBl = buildReportModel({ ...fixture, baseline: { name: 'Plan v1', taken_at: '2026-09-10T15:00:00Z', snapshot: { tasks: [], milestones: [{ id: 'm2', due_at: '2026-10-05' }], project: { start_at: null, end_at: null } } } }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ);
+const mdS = toMarkdown(status.make(withBl));
+assert.ok(mdS.includes('## Key numbers') && mdS.includes('Overdue now') && mdS.includes('## Schedule vs baseline'));
+assert.ok(mdS.includes('Against "Plan v1", saved 2026-09-10.') && mdS.includes('| Milestone | Baseline | Now | Days late |') && mdS.includes('| Pilot | 2026-10-05 | 2026-10-10 | 5 |'));
+assert.ok(toMarkdown(status.make(model)).includes('No baseline saved.'));
+const wordS = text(await toDocx(status.make(withBl)));
+assert.ok(wordS.includes('Key numbers') && wordS.includes('Schedule vs baseline') && wordS.includes('Pilot'));
 assert.ok(toMarkdown(minutesDoc(meeting, null)).includes('- Go with A'));
 
 // Change request: by id, else the newest pending, else blank fields.
