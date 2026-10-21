@@ -5,8 +5,8 @@
 import { api, online } from './api.ts';
 import { idb } from './store/db.ts';
 import { onChange } from './store/sync.ts';
-import { completeTask } from './store/useStore.ts';
-import { inIosShell, setWidgetToken, takeWidgetTicks, updateWidgets } from './native.ts';
+import { completeTask, resolveId } from './store/useStore.ts';
+import { inIosShell, nativeDevice, setWidgetToken, takeWidgetTicks, updateWidgets } from './native.ts';
 import { buildWidgetSnapshot } from '../../shared/widget-snapshot.ts';
 import { parseSnapshot, type Snapshot } from '../../shared/baseline.ts';
 import { DEFAULT_SETTINGS, type Milestone, type Project, type RaidItem, type Settings, type Task } from '../../shared/types.ts';
@@ -58,10 +58,11 @@ export async function writeWidgets(): Promise<void> {
   if (await updateWidgets(JSON.stringify(snap))) lastJson = same;
 }
 
-/** Ticks a widget queued while offline go through the normal offline queue (a task already done is left alone). */
+/** Ticks a widget couldn't deliver (offline, revoked, over the limit, a task the server didn't know yet) go through the normal offline queue, which knows unsynced ids;
+ *  a task already done, or truly gone from the device, is dropped here. */
 async function sendTicks(): Promise<void> {
   for (const t of await takeWidgetTicks()) {
-    const cur = await idb.get<Task>('tasks', t.id).catch(() => undefined);
+    const cur = await idb.get<Task>('tasks', await resolveId('tasks', t.id).catch(() => t.id)).catch(() => undefined);
     if (cur && cur.status !== 'done') await completeTask(t.id).catch(() => {});
   }
 }
@@ -76,6 +77,18 @@ export function startWidgetWriter(): () => void {
   document.addEventListener('visibilitychange', front);
   front();
   return () => { gen++; clearTimeout(timer); off(); document.removeEventListener('visibilitychange', front); };
+}
+
+/** The name this device's tick token carries on the server ("iPhone app", "iPad app"). */
+export const widgetDeviceName = () => `${nativeDevice()?.label ?? 'iPhone'} app`;
+
+/** Explicit sign-out, while the session is still valid: revoke this device's tick token on the server. Best effort: a failure never blocks sign-out. */
+export async function revokeWidgetToken(): Promise<void> {
+  if (!inIosShell() || !online()) return;
+  try {
+    const { tokens } = await api<{ tokens: { id: string; device_name: string }[] }>('/widget/tokens');
+    for (const t of tokens.filter((x) => x.device_name === widgetDeviceName())) await api(`/widget/token/${t.id}`, { method: 'DELETE' }).catch(() => {});
+  } catch { /* offline or already signed out: the token stays listed in Settings -> Widgets and can be revoked there */ }
 }
 
 /** Signed out: the widgets go back to "Open Compass once", and the tick token goes with the session. */

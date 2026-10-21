@@ -7,7 +7,7 @@ import { Link } from '../router.ts';
 import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
 import { shell, nativeDevice, setWidgetToken } from '../native.ts';
-import { clearWidgets } from '../widgets.ts';
+import { clearWidgets, revokeWidgetToken, widgetDeviceName } from '../widgets.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
 import { AthenaCard } from './AthenaCard.tsx';
@@ -53,6 +53,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
     if (online()) await replay().catch(() => {});
     const left = (await idb.all('queue')).length;
     if (left > 0 && !(await confirmAction(`${left === 1 ? '1 change hasn\'t' : `${left} changes haven't`} synced yet. Sign out and discard them?`, { danger: true }))) return;
+    await revokeWidgetToken(); // before the session ends; the Settings switch is derived from the server's list, so it reads off after the next sign-in
     await logout().catch(() => {});
     await clearWidgets();
     await Promise.all((['tasks', 'projects', 'milestones', 'meta', 'queue'] as const).map((st) => idb.clear(st)));
@@ -167,7 +168,7 @@ function Notifications({ s, save }: { s: Settings; save: Save }) {
 /** Settings → Widgets (v2.3, W8): iPhone and iPad app only. */
 type WidgetToken = { id: string; device_name: string; created_at: string; last_used_at: string | null };
 function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
-  const me = `${nativeDevice()?.label ?? 'iPhone'} app`; // the name its token carries; ponytail: two iPhones share one name, so turning it on in one replaces the other's token
+  const me = widgetDeviceName(); // the name its token carries; ponytail: two iPhones share one name, so turning it on in one replaces the other's token
   const [tokens, setTokens] = useState<WidgetToken[] | null>(null);
   const [busy, setBusy] = useState(false);
   const load = () => api<{ tokens: WidgetToken[] }>('/widget/tokens').then((d) => setTokens(d.tokens)).catch(() => setTokens(null));

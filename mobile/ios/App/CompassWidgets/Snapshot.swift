@@ -190,9 +190,9 @@ enum WidgetServer {
         return r
     }
 
-    /// Whether the server's answer settles the tick: 200 (done), or 404 (the task is gone or already done, so there's nothing left to send).
-    /// Anything else (401 revoked, 429, 5xx, no answer) leaves it queued for the app.
-    static func settles(_ status: Int?) -> Bool { status == 200 || status == 404 }
+    /// Whether the server's answer settles the tick: only 200 (done). A 404 stays queued too: a task made offline may not be on the server yet, and the app's
+    /// offline queue knows unsynced ids (it drops the tick only if the task is truly gone). So do 401 revoked, 429, 5xx and no answer.
+    static func settles(_ status: Int?) -> Bool { status == 200 }
 
     /// Sends the tick; true when the server settled it. The token goes only to `url` (built by `doneURL`) and a redirect is never followed.
     static func post(_ url: URL, token: String) async -> Bool {

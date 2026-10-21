@@ -226,8 +226,8 @@ check(WidgetServer.doneURL("", server: prod) == nil && WidgetServer.doneURL(Stri
 check(WidgetServer.configured(nil) == WidgetServer.production && WidgetServer.configured("") == WidgetServer.production && WidgetServer.configured("https://evil.com") == WidgetServer.production, "configured falls back to production")
 let req = WidgetServer.request(prod.appendingPathComponent("x"), token: "tok")
 check(req.httpMethod == "POST" && req.value(forHTTPHeaderField: "Authorization") == "Bearer tok" && req.timeoutInterval == 8 && req.httpBody == nil && !req.httpShouldHandleCookies, "request shape")
-check(WidgetServer.settles(200) && WidgetServer.settles(404), "200 and 404 settle the tick")
-for st: Int? in [nil, 401, 403, 429, 500, 503, 201, 302] { check(!WidgetServer.settles(st), "stays queued: \(String(describing: st))") }
+check(WidgetServer.settles(200), "200 settles the tick")
+for st: Int? in [nil, 401, 403, 404, 429, 500, 503, 201, 302] { check(!WidgetServer.settles(st), "stays queued: \(String(describing: st))") }
 
 // Taps: the Compass host only, ids encoded.
 check(CompassURL.task("t-1").absoluteString == "https://compass.knocturnlabs.com/?task=t-1", "task link")
