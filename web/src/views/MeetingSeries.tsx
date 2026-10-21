@@ -118,6 +118,7 @@ export function MeetingSeriesView({ id }: { id: string }) {
 
 /** V9: the agenda, built here from what the page already has. Copy, Markdown and Word are the minutes' own builders; Athena gets it through sessionStorage, never the URL. */
 function AgendaDialog({ d, onClose }: { d: Detail; onClose: () => void }) {
+  const { projects } = useStore();
   const dlg = useRef<HTMLDialogElement>(null);
   useEffect(() => { dlg.current?.showModal(); }, []);
   const doc = buildAgenda(d.series, d.meetings, d.actions, d.decisions, d.questions);
@@ -133,7 +134,9 @@ function AgendaDialog({ d, onClose }: { d: Detail; onClose: () => void }) {
   const ask = () => {
     try { sessionStorage.setItem(ASK_KEY, `Write the agenda for the next session of "${d.series.name}" from these notes. Keep it short, and put what needs a decision first.\n\n${md}`); } catch { /* storage off: Athena opens with an empty box */ }
     dlg.current?.close();
-    navigate(`/athena?agenda=${encodeURIComponent(d.series.project_id ?? WORK_SEED)}`);
+    // A live project is preselected; a work series whose project is gone or in Trash goes to "No project (work)", a personal one to personal.
+    const live = projects.some((p) => p.id === d.series.project_id && !p.deleted_at);
+    navigate(`/athena?agenda=${encodeURIComponent(live ? d.series.project_id! : d.series.kind === 'work' ? WORK_SEED : '')}`);
   };
   return (
     <dialog ref={dlg} className="kn-dlg sr-dlg" onClose={onClose} aria-labelledby="sr-agenda-h">

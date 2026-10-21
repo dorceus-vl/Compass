@@ -285,7 +285,8 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
   // A series agenda's project (or "No project (work)") is preselected; the store may not be loaded yet, so a project that never turns up is dropped below.
   const [sel, setSel] = useState(() => (seed?.project === WORK_SEED ? WORK : seed?.project ?? ''));
   const unknown = sel !== '' && sel !== WORK && projects.length > 0 && !projects.some((p) => p.id === sel && !p.deleted_at);
-  useEffect(() => { if (unknown) setSel(''); }, [unknown]);
+  // An agenda is work text: a missing project falls back to "No project (work)", never to a personal thread.
+  useEffect(() => { if (unknown) setSel(seed?.project && sel === seed.project ? WORK : ''); }, [unknown]); // eslint-disable-line react-hooks/exhaustive-deps
   const [provider, setProvider] = useState<Provider>('claude');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<{ text: string; docs: Att[] } | null>(null);

@@ -1212,6 +1212,17 @@ curl "${H[@]}" -X DELETE $B/api/tasks/$(echo "$AN" | js d.task.id) >/dev/null
 D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null; kset '{"enabled":false,"scopes":[]}'
 # a checklist column exists and a work task's is not plain (sealed by the shared seal path; Task 1 writes it)
 [ "$(D1X "SELECT count(*) AS n FROM pragma_table_info('tasks') WHERE name IN ('blocked_by','checklist')" | js 'd[0].results[0].n')" = 2 ] || fail "v1: migration 0014 task columns"
+# final review I1: a link kept in the list that points to a trashed (then purged) task stays; only a NEWLY added link is checked, so the other links stay editable
+KA=$(dt "{\"title\":\"Smoke keep A $R\"}"); KB=$(dt "{\"title\":\"Smoke keep B $R\"}"); KC=$(dt "{\"title\":\"Smoke keep C $R\"}"); KX=$(dt "{\"title\":\"Smoke keep X $R\"}")
+[ "$(kst "$(dpatch $KX "$(bb $KA $KB)")")" = 200 ] || fail "v1: keep setup"
+curl "${H[@]}" -X DELETE $B/api/tasks/$KA >/dev/null
+[ "$(kst "$(dpatch $KX "$(bb $KA $KB $KC)")")" = 200 ] || fail "v1: adding a link while another is trashed was refused"
+[ "$(kst "$(dpatch $KX "$(bb $KA $KC)")")" = 200 ] || fail "v1: removing a link while another is trashed was refused"
+D1X "DELETE FROM task_events WHERE task_id='$KA'" >/dev/null; D1X "DELETE FROM tasks WHERE id='$KA'" >/dev/null # purged: the id stays in the list
+[ "$(kst "$(dpatch $KX "$(bb $KA $KB)")")" = 200 ] && [ "$(task $KX blocked_by | js 'd.length')" = 2 ] || fail "v1: editing links next to a purged blocker was refused"
+[ "$(kst "$(dpatch $KX "$(bb $KA $KB $KA)")")" = 400 ] || fail "v1: a duplicate next to a purged blocker was not 400"
+D=$(dpatch $KB "$(bb $KX)"); [ "$(kst "$D")" = 409 ] || fail "v1: a loop was not refused with a purged blocker in the list: $D"
+for x in $KB $KC $KX; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 for x in $DW1 $DW2 $DW3 $DP1 $DP2 $DP3; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$dwp >/dev/null
 echo "smoke: (v1) dependencies: link ok; loops 409 (direct and of three); self, other kind, missing, trashed, malformed, duplicate and a kind change while linked 400; completing the last blocker pushed once ('A task is unblocked' for work, '<title> is unblocked' for personal via Kelly), the switch silences it, the deep link is /?task=<id>; the agent task keys are unchanged"
 # (v2) v2.1 Task 1: checklists. Create with one, tick through PATCH, a work task's raw D1 value is ciphertext (a personal one is plain JSON), a recurring task's next
@@ -1344,6 +1355,13 @@ curl "${H[@]}" -X DELETE $B/api/templates/$PTPL >/dev/null
 want 404 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"name\":\"x\"}" || fail "v3: apply a deleted template"
 D1X "DELETE FROM templates WHERE id IN ('$TPL','$WTPL','$PTPL')" >/dev/null # the rows deleted above would wait for the 30-day purge; local D1 only
 for x in $SP $NP $NP2 $WP $PBP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+# final review I2: a saved template whose subtask comes BEFORE its parent still applies (parents are inserted first)
+FB=$(node -pe 'const t=(title,p)=>({title,notes:null,horizon:"short",priority:1,estimate_minutes:null,checklist:[],start_offset:null,due_offset:null,...(p===undefined?{}:{parent_index:p})}); JSON.stringify({project:{name:null,sponsor:null,phase:null,objectives:null,scope_in:null,scope_out:null,success_criteria:null},milestones:[],tasks:[t("Smoke order child",1),t("Smoke order parent")]})')
+FID="smoke-order-$R"
+D1X "INSERT INTO templates (id,name,kind,scope,body,builtin,created_at,updated_at,enc_v) VALUES ('$FID','Smoke order $R','personal','project','$FB',0,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z',0)" >/dev/null
+A=$(tpost /apply "{\"template_id\":\"$FID\",\"start_date\":\"2026-06-01\",\"name\":\"Smoke order project $R\"}"); [ "$(kst "$A")" = 201 ] || fail "v3: a template with the subtask first did not apply: $A"
+kbody "$A" | js "(()=>{const c=d.tasks.find(t=>t.title==='Smoke order child'),p=d.tasks.find(t=>t.title==='Smoke order parent');return c.parent_id===p.id&&p.parent_id===null})()" | grep -q true || fail "v3: the subtask's parent link is wrong: $A"
+curl "${H[@]}" -X DELETE $B/api/projects/$(kbody "$A" | js d.project.id) >/dev/null; curl "${H[@]}" -X DELETE $B/api/templates/$FID >/dev/null
 echo "smoke: (v3) templates: a project of 3 tasks and 1 milestone saved and applied twice with new starts (dates shifted, no blocked_by, checklist unticked, parent kept, events say template); built-ins listed; a built-in as work is sealed (project, milestones, tasks, events) and Offline only; a work task template is sealed in D1, listed opened, and into a personal project, or told to be personal, is 400 template_kind; bad start, scope, source and name are refused; rename and delete work"
 # (v4) v2.1 Task 3, meeting series: dated titles land in one series; accepting into a project moves the series with the project; actions (source_ref), done ticks,
 # questions answered (sealed list), a move by hand that survives accept, V13 (key is a hash, name sealed), and the project purge clearing the series (FK).

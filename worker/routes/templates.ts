@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
 import type { Task, Kind, Project, Milestone } from '../../shared/types.ts';
-import { BUILTINS, parseBody, snapshotProject, snapshotTask, applyOffsets, isDate, MAX_TEMPLATE_MILESTONES, MAX_TEMPLATE_TASKS, type TemplateScope } from '../../shared/templates.ts';
+import { BUILTINS, parseBody, snapshotProject, snapshotTask, applyOffsets, isDate, MAX_TEMPLATE_MILESTONES, MAX_TEMPLATE_TASKS, MAX_TEMPLATE_BYTES, type TemplateScope } from '../../shared/templates.ts';
 import { text } from '../lib/validate.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
@@ -46,6 +46,7 @@ templates.post('/', async (c) => {
     const { results } = await c.env.DB.prepare('SELECT * FROM tasks WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY sort_in_column, created_at').bind(task.id).all<Task>();
     const subs = await openAll(c.env, 'tasks', results);
     if (subs.length > MAX_TEMPLATE_TASKS - 1) return c.json({ error: 'template_too_big' }, 400);
+    if (subs.some((s) => s.kind !== task.kind)) return c.json({ error: 'template_invalid' }, 400); // never put work text in a personal template
     scope = 'task'; kind = task.kind; body = snapshotTask(task, subs);
   } else {
     const prow = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?1 AND deleted_at IS NULL').bind(fromProject).first<Project>();
@@ -59,6 +60,7 @@ templates.post('/', async (c) => {
   }
   const clean = parseBody(scope, body); // the same check a stored body gets on apply
   if (!clean) return c.json({ error: 'template_invalid' }, 400);
+  if (JSON.stringify(clean).length > MAX_TEMPLATE_BYTES) return c.json({ error: 'template_too_big' }, 400);
   const t = now();
   const row: Row = { id: crypto.randomUUID(), name: nm.value as string, kind, scope, body: JSON.stringify(clean), builtin: 0, created_at: t, updated_at: t, deleted_at: null, enc_v: 0 };
   const plain = { ...row };
@@ -121,7 +123,8 @@ templates.post('/apply', async (c) => {
       sort_in_column: pos, tags: '[]', enc_v: 0, created_at: t, updated_at: t, deleted_at: null };
   });
   dated.tasks.forEach((x, i) => { if (x.parent_index !== null) made[i].parent_id = made[x.parent_index].id; });
-  for (const task of made) {
+  // Parents first: tasks.parent_id is a foreign key checked as each row goes in, whatever order the template was saved in.
+  for (const task of [...made.filter((x) => !x.parent_id), ...made.filter((x) => x.parent_id)]) {
     stmts.push(await insertTaskStmt(c.env, task));
     stmts.push((await eventStmt(c.env, task, 'you', 'created', { from: 'template' })).stmt);
   }

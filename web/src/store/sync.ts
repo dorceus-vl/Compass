@@ -1,5 +1,6 @@
 import { api, ApiError, SignedOut, online } from '../api.ts';
 import { idb } from './db.ts';
+import { toast } from '../ui/dialogs.tsx';
 import { planPull, rewriteTmp, tmpIds } from './merge.ts';
 import type { Task, Project, Milestone } from '../../../shared/types.ts';
 
@@ -113,6 +114,10 @@ export function replay(onSignedOut?: () => void): Promise<void> {
           if (e instanceof TypeError || (e instanceof ApiError && e.status >= 500)) return; // offline or server down: keep the op, try later
           await idb.del('queue', op.seq!); // 4xx: the server refused it; drop it rather than block the queue
           console.error('dropped queued write', op, e);
+          if (path.startsWith('/tasks/')) { // the device can't foresee every refusal (a link, a loop): say so, in plain text
+            const t = await idb.get<Task>('tasks', path.split('/')[2]);
+            toast(`Compass couldn't save a change to ${t?.title ?? 'a task'}: ${(e as Error).message}`);
+          }
           try { if (op.tempId && op.store) await idb.del(op.store, op.tempId); else await refetch(path); }
           catch (e2) { if (e2 instanceof SignedOut) { onSignedOut?.(); return; } console.error('resync failed', e2); }
           continue;

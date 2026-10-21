@@ -92,7 +92,7 @@ export function SaveAsTemplate({ from, defaultName, onClose }: { from: { task_id
     <dialog ref={ref} className="tpl-dlg" aria-label="Save as template" onClose={onClose} onClick={(e) => e.stopPropagation()}>
       <form onSubmit={submit} className="tpl-form">
         <b>Save as template</b>
-        <p className="hint" style={{ margin: 0 }}>Keeps the structure and checklists, and dates as days from the earliest one. Not who it waits on, and nothing marked done. Edits not yet synced are left out.</p>
+        <p className="hint" style={{ margin: 0 }}>Keeps the structure and checklists, and dates as days from the earliest one. Not who it waits on, and nothing marked done. Notes are cut to 2,000 characters. Edits not yet synced are left out.</p>
         {!on && <p className="hint" style={{ margin: 0 }}>Needs a connection.</p>}
         <input className="field" autoFocus required maxLength={200} aria-label="Template name" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="row" style={{ justifyContent: 'flex-end' }}>

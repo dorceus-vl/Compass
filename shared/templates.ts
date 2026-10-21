@@ -5,8 +5,12 @@
 import { parseChecklist, type ChecklistItem } from './deps.ts';
 import type { Horizon } from './types.ts';
 
-export const MAX_TEMPLATE_TASKS = 200;
+export const MAX_TEMPLATE_TASKS = 100;
 export const MAX_TEMPLATE_MILESTONES = 50;
+/** A stored body stays under this many characters (well inside D1's row limit once sealed). Apply is one batch of at most 1 + 50 + 2 x 100 statements. */
+export const MAX_TEMPLATE_BYTES = 500_000;
+/** Notes kept in a snapshot (the full note stays on the task). */
+export const SNAPSHOT_NOTES_MAX = 2000;
 const MAX_OFFSET = 3650;
 const HORIZONS: Horizon[] = ['short', 'medium', 'long'];
 
@@ -56,7 +60,7 @@ function offsetter(dates: (string | null)[]): (d: string | null) => number | nul
   return (d) => (d && ds.length ? daysBetween(ds[0], d) : null);
 }
 const snapTask = (t: SrcTask, off: (d: string | null) => number | null): TTask => ({
-  title: t.title, notes: t.notes ?? null, horizon: t.horizon, priority: t.priority, estimate_minutes: t.estimate_minutes ?? null,
+  title: t.title, notes: t.notes ? t.notes.slice(0, SNAPSHOT_NOTES_MAX) : null, horizon: t.horizon, priority: t.priority, estimate_minutes: t.estimate_minutes ?? null,
   checklist: (parseChecklist(t.checklist) ?? []).map((i) => ({ ...i, done: false })), start_offset: off(t.start_at), due_offset: off(t.due_at),
 });
 export function snapshotTask(task: SrcTask, subtasks: SrcTask[]): TaskBody {
@@ -106,7 +110,7 @@ function tProject(v: unknown): TProject | null {
   const f = { name: str(o.name, 200), sponsor: str(o.sponsor, 200), phase: str(o.phase, 100), objectives: str(o.objectives, 20000), scope_in: str(o.scope_in, 20000), scope_out: str(o.scope_out, 20000), success_criteria: str(o.success_criteria, 20000) };
   return Object.values(f).includes(undefined) ? null : (f as TProject);
 }
-/** A stored or posted body (JSON text or object) checked and cleaned (unknown keys dropped, checklists unticked), or null when it is not a valid task/project template. At most 200 tasks and 50 milestones. */
+/** A stored or posted body (JSON text or object) checked and cleaned (unknown keys dropped, checklists unticked), or null when it is not a valid task/project template. At most 100 tasks and 50 milestones. */
 export function parseBody(scope: TemplateScope, v: unknown): TaskBody | ProjectBody | null {
   let o: unknown = v;
   if (typeof v === 'string') { try { o = JSON.parse(v); } catch { return null; } }

@@ -60,7 +60,8 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
   const blockers = linked.map((id) => byId.get(id) ?? null);
   const blocks = blocksOf(task.id, tasks);
   const stillBlocked = blockedIds(tasks).has(task.id);
-  const graph = new Map(tasks.filter((t) => !t.deleted_at && t.blocked_by).map((t) => [t.id, parseBlockedBy(t.blocked_by) ?? []]));
+  // Trashed tasks keep their links and the server counts them, so the loop check here does too.
+  const graph = new Map(tasks.filter((t) => t.blocked_by).map((t) => [t.id, parseBlockedBy(t.blocked_by) ?? []]));
   graph.delete(task.id);
   const hits = depQ.trim() ? tasks.filter((t) => t.id !== task.id && !t.deleted_at && t.status !== 'done' && t.kind === v.kind && !linked.includes(t.id)
     && t.title.toLowerCase().includes(depQ.trim().toLowerCase()) && !wouldCycle(graph, task.id, t.id)).slice(0, 6) : [];

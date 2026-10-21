@@ -105,14 +105,18 @@ async function resolveKind(env: Env, projectId: string | null, given: unknown): 
 
 type DepError = { error: 'bad_dependency' | 'dependency_cycle'; status: 400 | 409 };
 /**
- * V2: every id in `ids` is a live task of the same kind as `taskId` (null for a task being created), not the task itself, and adding the links makes no loop.
+ * V2: every id in `ids` that is not in `kept` (the stored links) is a live task of the same kind as `taskId` (null for a task being created), not the task itself, and adding the links makes no loop.
  * Null when fine. The whole dependency graph is read in one query (only tasks that have blockers); ponytail: fine for one person's tasks, walk it from the new links if it ever grows past thousands.
  */
-export async function checkDependencies(env: Env, taskId: string | null, kind: Kind, ids: string[]): Promise<DepError | null> {
+export async function checkDependencies(env: Env, taskId: string | null, kind: Kind, ids: string[], kept: string[] = []): Promise<DepError | null> {
   if (!ids.length) return null;
   if (ids.length > 20 || (taskId && ids.includes(taskId))) return { error: 'bad_dependency', status: 400 };
-  const { results } = await env.DB.prepare(`SELECT id, kind FROM tasks WHERE deleted_at IS NULL AND id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`).bind(...ids).all<{ id: string; kind: Kind }>();
-  if (results.length !== ids.length || results.some((r) => r.kind !== kind)) return { error: 'bad_dependency', status: 400 };
+  // Only links added now must be live and same-kind: a kept link may point to a task since trashed or purged (it counts as resolved).
+  const added = ids.filter((x) => !kept.includes(x));
+  if (added.length) {
+    const { results } = await env.DB.prepare(`SELECT id, kind FROM tasks WHERE deleted_at IS NULL AND id IN (${added.map((_, i) => `?${i + 1}`).join(',')})`).bind(...added).all<{ id: string; kind: Kind }>();
+    if (results.length !== added.length || results.some((r) => r.kind !== kind)) return { error: 'bad_dependency', status: 400 };
+  }
   if (!taskId) return null; // a new task is not anyone's blocker yet, so it cannot close a loop
   // Trashed tasks keep their links (Restore brings them back), so their edges count: a loop can't be closed behind a trashed task.
   const g = await env.DB.prepare('SELECT id, blocked_by FROM tasks WHERE blocked_by IS NOT NULL').all<{ id: string; blocked_by: string }>();
@@ -249,7 +253,7 @@ tasks.patch('/:id', async (c) => {
   if ('blocked_by' in r.values || next.kind !== task.kind) {
     // The links that will hold after this PATCH: the new list when the body carries one, else the stored one.
     if (next.kind !== task.kind && await crossKindLinks(c.env, task, parseBlockedBy(next.blocked_by) ?? [], next.kind)) return c.json({ error: 'bad_dependency' }, 400);
-    if ('blocked_by' in r.values) { const dep = await checkDependencies(c.env, task.id, next.kind, parseBlockedBy(next.blocked_by) ?? []); if (dep) return c.json({ error: dep.error }, dep.status); }
+    if ('blocked_by' in r.values) { const dep = await checkDependencies(c.env, task.id, next.kind, parseBlockedBy(next.blocked_by) ?? [], next.kind === task.kind ? parseBlockedBy(task.blocked_by) ?? [] : []); if (dep) return c.json({ error: dep.error }, dep.status); }
   }
   if (next.status === 'waiting' && task.status !== 'waiting') { next.waiting_since = next.updated_at; fields.push('waiting_since'); }
   if (next.status !== 'done' && task.status === 'done') { next.done_at = null; fields.push('done_at'); }
