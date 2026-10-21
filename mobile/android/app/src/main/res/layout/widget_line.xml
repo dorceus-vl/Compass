@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A plain line: "Nothing due. The day is yours.", or the Blocked line (a bar in the long colour, dimmed). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/line"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="22dp" android:orientation="horizontal" android:gravity="center_vertical">
+    <ImageView android:id="@+id/bar" android:layout_width="3dp" android:layout_height="18dp" android:layout_marginEnd="8dp"
+        android:src="@drawable/widget_bar" android:scaleType="fitXY" android:visibility="gone" android:importantForAccessibility="no" />
+    <TextView android:id="@+id/text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:textSize="12sp" android:textColor="@color/w_dim" android:maxLines="2" android:ellipsize="end" />
+</LinearLayout>

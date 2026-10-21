@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The done ring (Today) and % done (Project pulse): a determinate ProgressBar, starting at the top. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="ring" android:innerRadiusRatio="2.8" android:thicknessRatio="10" android:useLevel="false">
+            <solid android:color="@color/w_track" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <rotate android:fromDegrees="270" android:toDegrees="270" android:pivotX="50%" android:pivotY="50%">
+            <shape android:shape="ring" android:innerRadiusRatio="2.8" android:thicknessRatio="10" android:useLevel="true">
+                <solid android:color="@color/w_accent" />
+            </shape>
+        </rotate>
+    </item>
+</layer-list>

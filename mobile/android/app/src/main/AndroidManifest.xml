@@ -66,6 +66,44 @@
         <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="compass" />
         <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_notification" />
         <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/compass_accent" />
+
+        <!-- Widgets (v2.3, Task 2b): one provider per widget (WidgetProviders), drawn from the snapshot the page writes. The system's
+             AppWidgetService delivers their updates, so none is exported. -->
+        <receiver android:name=".widgets.WidgetProviders$TodaySmall" android:label="@string/widget_today_small" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_small_info" />
+        </receiver>
+        <receiver android:name=".widgets.WidgetProviders$TodayMedium" android:label="@string/widget_today_medium" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_medium_info" />
+        </receiver>
+        <receiver android:name=".widgets.WidgetProviders$TodayLarge" android:label="@string/widget_today_large" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_large_info" />
+        </receiver>
+        <receiver android:name=".widgets.WidgetProviders$QuickAdd" android:label="@string/widget_quick_add" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_add_info" />
+        </receiver>
+        <receiver android:name=".widgets.WidgetProviders$AskAthena" android:label="@string/widget_ask_athena" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_ask_athena_info" />
+        </receiver>
+        <receiver android:name=".widgets.WidgetProviders$ProjectPulse" android:label="@string/widget_pulse" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_pulse_info" />
+        </receiver>
+        <receiver android:name=".widgets.WidgetProviders$Week" android:label="@string/widget_week" android:exported="false">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_week_info" />
+        </receiver>
+        <!-- A widget's tick circle: reached only through the app's own PendingIntents (explicit, immutable). -->
+        <receiver android:name=".widgets.TickReceiver" android:exported="false" />
+        <!-- Project pulse's picker: the launcher starts it with the widget's id; it only sets a Project pulse widget of this app. -->
+        <activity android:name=".widgets.ProjectPulseConfigActivity" android:exported="true" android:theme="@android:style/Theme.Material.Dialog"
+            android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+        </activity>
     </application>
 
     <uses-permission android:name="android.permission.INTERNET" />

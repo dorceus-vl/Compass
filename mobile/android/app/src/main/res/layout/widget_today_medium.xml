@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Today, medium (4x2): the next three tasks with tick circles, and the done ring. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+    android:background="@drawable/widget_bg" android:padding="12dp">
+    <include layout="@layout/widget_head" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="horizontal" android:layout_marginTop="4dp">
+        <LinearLayout android:id="@+id/rows" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" />
+        <LinearLayout android:id="@+id/ring_box" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <FrameLayout android:layout_width="46dp" android:layout_height="46dp">
+                <ProgressBar android:id="@+id/ring" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="match_parent"
+                    android:indeterminate="false" android:max="100" android:progressDrawable="@drawable/widget_ring" />
+                <TextView android:id="@+id/ring_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center"
+                    android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/w_text" />
+            </FrameLayout>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/widget_done"
+                android:textSize="11sp" android:textColor="@color/w_dim" android:importantForAccessibility="no" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

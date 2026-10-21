@@ -1,7 +1,7 @@
 // node --experimental-strip-types scripts/native.test.ts
 // The web side of the native shells: PKCE, the sign-in URL, shared text, links, and the sign-in / push flows against a stubbed shell.
 import assert from 'node:assert/strict';
-import { updateWidgets, setWidgetToken, takeWidgetTicks, inIosShell, pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox, stepUpInBrowser } from '../web/src/native.ts';
+import { updateWidgets, setWidgetToken, takeWidgetTicks, inWidgetShell, pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox, stepUpInBrowser } from '../web/src/native.ts';
 
 const g = globalThis as any;
 const set = (k: string, v: unknown) => Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
@@ -203,21 +203,34 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
   assert.ok(readFileSync('mobile/android/app/src/main/java/com/knocturnlabs/compass/MainActivity.java', 'utf8').includes('CompassLink.mayCapture('), 'Android capture goes through CompassLink');
   assert.ok(readFileSync('mobile/ios/App/App/CompassViewController.swift', 'utf8').includes('CompassLink.mayCapture('), 'iOS capture goes through CompassLink');
 }
-// Widgets (v2.3): iOS only. In a browser, on Android or on the Mac they do nothing; on iOS they call the three plugin methods the Swift side declares.
+// Widgets (v2.3): iOS and Android (Task 2b). In a browser or on the Mac they do nothing; in a phone or tablet shell they call the three plugin
+// methods the Swift and Java sides declare.
 {
   const { readFileSync } = await import('node:fs');
   delete g.__TAURI_INTERNALS__;
-  assert.equal(inIosShell(), false);
+  assert.equal(inWidgetShell(), false);
   assert.equal(await updateWidgets('{"v":1}'), false, 'a browser: no-op');
   assert.deepEqual(await takeWidgetTicks(), []);
-  await assert.rejects(setWidgetToken('x'.repeat(40)), /iPhone and iPad/);
-  set('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 15)', maxTouchPoints: 5 });
-  set('Capacitor', { isNativePlatform: () => true, getPlatform: () => 'android', nativePromise: async () => { throw new Error('android must not be called'); } });
-  assert.equal(await updateWidgets('{"v":1}'), false, 'Android: no-op');
+  await assert.rejects(setWidgetToken('x'.repeat(40)), /iPhone, iPad and Android/);
+  set('__TAURI_INTERNALS__', { invoke: async () => { throw new Error('the Mac must not be called'); } });
+  assert.equal(inWidgetShell(), false, 'the Mac has no widgets');
+  assert.equal(await updateWidgets('{"v":1}'), false, 'Mac: no-op');
+  delete g.__TAURI_INTERNALS__;
   const sent: { method: string; args: any }[] = [];
   let widgetReply: (m: string) => any = () => ({});
+  set('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 15)', maxTouchPoints: 5 });
+  set('Capacitor', { isNativePlatform: () => true, getPlatform: () => 'android', nativePromise: async (_p: string, method: string, args: any) => { sent.push({ method, args }); return widgetReply(method); } });
+  assert.equal(inWidgetShell(), true, 'Android has widgets');
+  assert.equal(await updateWidgets('{"v":1}'), true);
+  assert.deepEqual(sent.pop(), { method: 'updateWidgets', args: { json: '{"v":1}' } }, 'Android: the snapshot goes to the Java side');
+  await setWidgetToken(null);
+  assert.deepEqual(sent.pop(), { method: 'setWidgetToken', args: { token: null } });
+  widgetReply = () => ({ ticks: [{ id: 'a1', at: '2026-10-21T10:00:00Z' }] });
+  assert.deepEqual(await takeWidgetTicks(), [{ id: 'a1', at: '2026-10-21T10:00:00Z' }]);
+  widgetReply = () => ({});
+  sent.length = 0;
   set('Capacitor', { isNativePlatform: () => true, getPlatform: () => 'ios', nativePromise: async (_p: string, method: string, args: any) => { sent.push({ method, args }); return widgetReply(method); } });
-  assert.equal(inIosShell(), true);
+  assert.equal(inWidgetShell(), true);
   assert.equal(await updateWidgets('{"v":1}'), true);
   assert.deepEqual(sent.pop(), { method: 'updateWidgets', args: { json: '{"v":1}' } });
   assert.equal(await updateWidgets(''), true, 'empty removes the file (signed out)');
@@ -242,6 +255,34 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
     assert.ok(swift.includes(`@objc func ${m}(`), `${m} is implemented`);
     assert.ok(readFileSync('web/src/native.ts', 'utf8').includes(`//     ${m}`), `${m} is in the native.ts header`);
   }
+  // The Java side declares the same three, and the Android widgets keep the rules (A1-A6): no new dependency, nothing exported that needn't be,
+  // immutable PendingIntents, ticks only to a Compass server through WidgetUrls, the token sealed under a Keystore key.
+  const java = readFileSync('mobile/android/app/src/main/java/com/knocturnlabs/compass/CompassNativePlugin.java', 'utf8');
+  for (const m of ['updateWidgets', 'setWidgetToken', 'takeWidgetTicks']) {
+    assert.ok(new RegExp(`@PluginMethod\\s+public void ${m}\\(PluginCall call\\)`).test(java), `${m} is declared in CompassNativePlugin.java`);
+    assert.ok(java.includes(` *   ${m}(`), `${m} is in the Java header`);
+  }
+  const wdir = 'mobile/android/app/src/main/java/com/knocturnlabs/compass/widgets/';
+  const providers = readFileSync(wdir + 'WidgetProviders.java', 'utf8'), tick = readFileSync(wdir + 'TickReceiver.java', 'utf8');
+  for (const src of [providers, tick]) {
+    assert.ok(!src.includes('FLAG_MUTABLE'), 'no mutable PendingIntent');
+    for (const m of src.matchAll(/PendingIntent\.get(?:Activity|Broadcast)\([^;]*;/g)) assert.ok(m[0].includes('FLAG_IMMUTABLE'), `immutable: ${m[0]}`);
+  }
+  assert.ok(tick.includes('WidgetUrls.doneUrl(') && !/new URL\("http/.test(tick), 'ticks go only to the URL WidgetUrls builds');
+  assert.ok(tick.includes('setInstanceFollowRedirects(false)'), 'a tick never follows a redirect');
+  const token = readFileSync(wdir + 'WidgetToken.java', 'utf8');
+  assert.ok(token.includes('"AndroidKeyStore"') && token.includes('BLOCK_MODE_GCM') && token.includes('"compass_widget_token"'), 'token sealed under a Keystore AES-GCM key');
+  const manifest = readFileSync('mobile/android/app/src/main/AndroidManifest.xml', 'utf8');
+  for (const k of ['TodaySmall', 'TodayMedium', 'TodayLarge', 'QuickAdd', 'AskAthena', 'ProjectPulse', 'Week']) {
+    assert.ok(new RegExp(`<receiver android:name="\\.widgets\\.WidgetProviders\\$${k}"[^>]*android:exported="false"`).test(manifest), `${k} provider declared, not exported`);
+  }
+  assert.ok(/<receiver android:name="\.widgets\.TickReceiver" android:exported="false"/.test(manifest), 'tick receiver not exported');
+  const { readdirSync } = await import('node:fs');
+  const infos = readdirSync('mobile/android/app/src/main/res/xml').filter((f) => /^widget_.*_info\.xml$/.test(f));
+  assert.equal(infos.length, 7, 'seven widgets');
+  for (const f of infos) assert.ok(readFileSync(`mobile/android/app/src/main/res/xml/${f}`, 'utf8').includes('android:widgetCategory="home_screen"'), `${f}: Home Screen only (no lock screen)`);
+  assert.equal([...providers.matchAll(/PendingIntent\.getActivity\(/g)].length + [...tick.matchAll(/PendingIntent\.getBroadcast\(/g)].length, 2, 'the two PendingIntent builders were checked');
+  assert.ok(!/glance|androidx\.security/i.test(readFileSync('mobile/android/app/build.gradle', 'utf8')), 'no new Gradle dependency');
   assert.ok(readFileSync('mobile/ios/App/App/App.entitlements', 'utf8').includes('$(AppIdentifierPrefix)com.knocturnlabs.compass.shared'), 'keychain group in the app entitlements');
   assert.ok(readFileSync('mobile/ios/App/App/Info.plist', 'utf8').includes('<key>WidgetKeychainGroup</key>'), 'the app reads its Keychain group from Info.plist');
   assert.ok(!/NSFileProtectionNone|\.noFileProtection/.test(readFileSync('mobile/ios/App/App/WidgetStore.swift', 'utf8')) && readFileSync('mobile/ios/App/App/WidgetStore.swift', 'utf8').includes('.completeFileProtectionUntilFirstUserAuthentication'), 'snapshot file protection');

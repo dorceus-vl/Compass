@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A day: its name, then one bar per open task in its horizon's colour. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/cell"
+    android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="2dp" android:layout_marginEnd="2dp"
+    android:orientation="vertical" android:padding="5dp" android:background="@drawable/widget_cell">
+    <TextView android:id="@+id/day_name" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:fontFamily="monospace" android:textSize="9sp" android:textAllCaps="true" android:textColor="@color/w_faint" />
+    <LinearLayout android:id="@+id/bars" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+    <TextView android:id="@+id/more" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone"
+        android:fontFamily="monospace" android:textSize="9sp" android:textColor="@color/w_faint" />
+</LinearLayout>

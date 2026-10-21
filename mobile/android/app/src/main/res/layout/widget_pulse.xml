@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Project pulse (4x2): the picked project's RAG, % done, next milestone, slip, high risks and overdue. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+    android:background="@drawable/widget_bg" android:padding="12dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:id="@+id/name" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:fontFamily="monospace" android:textSize="10sp" android:letterSpacing="0.14" android:textAllCaps="true"
+            android:textColor="@color/w_faint" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/rag" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp"
+            android:paddingStart="7dp" android:paddingEnd="7dp" android:paddingTop="1dp" android:paddingBottom="1dp"
+            android:fontFamily="monospace" android:textSize="9sp" android:letterSpacing="0.06" android:textAllCaps="true" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/body" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/milestone" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="11sp" android:textColor="@color/w_dim" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/slip" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:textSize="11sp" android:textColor="@color/w_dim" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/risks" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:textSize="11sp" android:textColor="@color/w_dim" android:maxLines="1" android:ellipsize="end" />
+        </LinearLayout>
+        <FrameLayout android:id="@+id/ring_box" android:layout_width="56dp" android:layout_height="56dp" android:layout_marginStart="10dp">
+            <ProgressBar android:id="@+id/ring" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:indeterminate="false" android:max="100" android:progressDrawable="@drawable/widget_ring" />
+            <TextView android:id="@+id/ring_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center"
+                android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/w_text" />
+        </FrameLayout>
+    </LinearLayout>
+    <TextView android:id="@+id/message" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center"
+        android:textSize="13sp" android:textStyle="bold" android:textColor="@color/w_dim" android:visibility="gone" />
+</LinearLayout>

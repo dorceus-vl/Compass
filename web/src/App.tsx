@@ -64,7 +64,7 @@ export function App() {
   useEffect(() => {
     if (auth !== 'in' || !shell() || quickAdd) return;
     if (thisDeviceId()) void enablePush().catch(() => {}); // already allowed, so no prompt; the token may have changed
-    const stopWidgets = startWidgetWriter(); // iOS only: the widget snapshot (v2.3, W2)
+    const stopWidgets = startWidgetWriter(); // iOS and Android only: the widget snapshot (v2.3, W2)
     const stopShell = startShell({ onSharedText: (t) => { setShared((s) => ({ n: (s?.n ?? 0) + 1, ...sharedToQuickAdd(t) })); setPalette(true); }, onPath: (p) => { if (new URL(p, location.origin).searchParams.get('quickadd') === '1') setPalette(true); else navigate(p); }, /* the Quick add widget's `/?quickadd=1` (v2.3) */ notifyOn: () => thisDeviceId() === 'local' });
     return () => { stopWidgets(); stopShell(); };
   }, [auth]);

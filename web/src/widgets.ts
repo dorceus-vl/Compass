@@ -1,12 +1,12 @@
-// The widget writer (v2.3, ruling W2). Only in the iOS shell: builds the widget snapshot from the offline mirror (and the RAID and baseline copies
-// the device already holds, so it works offline) and hands it to the shell, which writes it into the app group and reloads the widgets.
+// The widget writer (v2.3, ruling W2). Only in the iOS and Android shells (A3): builds the widget snapshot from the offline mirror (and the RAID and baseline copies
+// the device already holds, so it works offline) and hands it to the shell, which writes it (iOS: the app group) and redraws the widgets.
 // When: at start, when the app comes to the front, and after every change to the mirror (a sync pull, a local edit), at most once every 2 seconds.
 // Settings come from the server when online and are kept in `meta` (`widget-settings`) so the file is still right offline.
 import { api, online } from './api.ts';
 import { idb } from './store/db.ts';
 import { onChange } from './store/sync.ts';
 import { completeTask, resolveId } from './store/useStore.ts';
-import { inIosShell, nativeDevice, setWidgetToken, takeWidgetTicks, updateWidgets } from './native.ts';
+import { inWidgetShell, nativeDevice, setWidgetToken, takeWidgetTicks, updateWidgets } from './native.ts';
 import { buildWidgetSnapshot } from '../../shared/widget-snapshot.ts';
 import { parseSnapshot, type Snapshot } from '../../shared/baseline.ts';
 import { DEFAULT_SETTINGS, type Milestone, type Project, type RaidItem, type Settings, type Task } from '../../shared/types.ts';
@@ -49,7 +49,7 @@ let lastJson = '';
 let gen = 0; // bumped by clearWidgets and by stopping, so a write already in flight doesn't land after them
 /** Builds and sends the snapshot now. Skipped when nothing but the time changed. */
 export async function writeWidgets(): Promise<void> {
-  if (!inIosShell()) return;
+  if (!inWidgetShell()) return;
   const mine = gen;
   const [tasks, projects, milestones, s] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones'), readSettings()]);
   const snap = buildWidgetSnapshot({ tasks, projects, milestones, ...(await readCaches(projects)), tz: s.tz, hide_work_on_lock: s.hide_work_on_lock, now: new Date() });
@@ -67,9 +67,9 @@ async function sendTicks(): Promise<void> {
   }
 }
 
-/** Starts the writer; does nothing outside the iOS shell. Returns the stop function. */
+/** Starts the writer; does nothing outside the iOS and Android shells. Returns the stop function. */
 export function startWidgetWriter(): () => void {
-  if (!inIosShell()) return () => {};
+  if (!inWidgetShell()) return () => {};
   let timer: ReturnType<typeof setTimeout> | undefined;
   const soon = () => { clearTimeout(timer); timer = setTimeout(() => void writeWidgets().catch(() => {}), DEBOUNCE_MS); };
   const front = () => { if (document.visibilityState === 'visible') void sendTicks().then(soon, soon); };
@@ -79,12 +79,12 @@ export function startWidgetWriter(): () => void {
   return () => { gen++; clearTimeout(timer); off(); document.removeEventListener('visibilitychange', front); };
 }
 
-/** The name this device's tick token carries on the server ("iPhone app", "iPad app"). */
-export const widgetDeviceName = () => `${nativeDevice()?.label ?? 'iPhone'} app`;
+/** The name this device's tick token carries on the server ("iPhone app", "iPad app", "Android app"). */
+export const widgetDeviceName = () => { const d = nativeDevice(); return d?.platform === 'android' ? 'Android app' : `${d?.label ?? 'iPhone'} app`; };
 
 /** Explicit sign-out, while the session is still valid: revoke this device's tick token on the server. Best effort: a failure never blocks sign-out. */
 export async function revokeWidgetToken(): Promise<void> {
-  if (!inIosShell() || !online()) return;
+  if (!inWidgetShell() || !online()) return;
   try {
     const { tokens } = await api<{ tokens: { id: string; device_name: string }[] }>('/widget/tokens');
     for (const t of tokens.filter((x) => x.device_name === widgetDeviceName())) await api(`/widget/token/${t.id}`, { method: 'DELETE' }).catch(() => {});

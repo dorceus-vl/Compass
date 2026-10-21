@@ -4,4 +4,28 @@
     <string name="title_activity_main">Compass</string>
     <string name="package_name">com.knocturnlabs.compass</string>
     <string name="custom_url_scheme">com.knocturnlabs.compass</string>
+    <!-- Widgets (v2.3, Android) -->
+    <string name="widget_placeholder">Open Compass once to fill this widget</string>
+    <string name="widget_next">NEXT</string>
+    <string name="widget_done">done</string>
+    <string name="widget_next_milestone">NEXT MILESTONE</string>
+    <string name="widget_add">Add</string>
+    <string name="widget_athena_short">Athena</string>
+    <string name="widget_quick_add_label">Add a task</string>
+    <string name="widget_athena_label">Ask Athena</string>
+    <string name="widget_today_small">Today</string>
+    <string name="widget_today_small_desc">How many tasks are due today, how many are late, and the next one.</string>
+    <string name="widget_today_medium">Today · tasks</string>
+    <string name="widget_today_medium_desc">The next three tasks, with a tick to mark them done.</string>
+    <string name="widget_today_large">Today · by horizon</string>
+    <string name="widget_today_large_desc">Today\'s tasks by horizon, what is blocked, and the next milestone.</string>
+    <string name="widget_quick_add">Quick add</string>
+    <string name="widget_quick_add_desc">Add a task in one tap.</string>
+    <string name="widget_ask_athena">Ask Athena</string>
+    <string name="widget_ask_athena_desc">Open Athena, Compass\'s copilot, in one tap.</string>
+    <string name="widget_pulse">Project pulse</string>
+    <string name="widget_pulse_desc">One project\'s RAG, progress, next milestone and risks.</string>
+    <string name="widget_week">This week</string>
+    <string name="widget_week_desc">The week by day, open tasks and your projects.</string>
+    <string name="widget_pick_project">Pick a project</string>
 </resources>

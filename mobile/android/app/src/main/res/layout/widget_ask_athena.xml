@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ask Athena (1x1): one tap target, the whole widget opens Athena. No data. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center"
+    android:background="@drawable/widget_bg" android:contentDescription="@string/widget_athena_label">
+    <ImageView android:layout_width="18dp" android:layout_height="18dp" android:src="@drawable/widget_badge" android:importantForAccessibility="no" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/widget_athena_short"
+        android:textSize="11sp" android:textColor="@color/w_dim" android:importantForAccessibility="no" />
+</LinearLayout>

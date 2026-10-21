@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The small-caps head every data widget shares: "TODAY · WED OCT 21" and the ivory ring standing in for the badge. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="horizontal" android:gravity="center_vertical">
+    <TextView android:id="@+id/head" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:fontFamily="monospace" android:textSize="10sp" android:letterSpacing="0.14" android:textAllCaps="true"
+        android:textColor="@color/w_faint" android:maxLines="1" android:ellipsize="end" />
+    <ImageView android:layout_width="14dp" android:layout_height="14dp" android:layout_marginStart="6dp"
+        android:src="@drawable/widget_badge" android:importantForAccessibility="no" />
+</LinearLayout>

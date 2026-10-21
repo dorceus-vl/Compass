@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Today, large (4x4): tasks by horizon, the Blocked count, and the next milestone. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+    android:background="@drawable/widget_bg" android:padding="12dp">
+    <include layout="@layout/widget_head" />
+    <LinearLayout android:id="@+id/rows" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical" />
+    <LinearLayout android:id="@+id/footer" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+        <ImageView android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/w_border" android:layout_marginBottom="6dp" android:importantForAccessibility="no" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/widget_next_milestone"
+            android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/w_faint" />
+        <TextView android:id="@+id/milestone" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="12sp" android:textColor="@color/w_text" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+</LinearLayout>

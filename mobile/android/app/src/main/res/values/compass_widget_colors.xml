@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widgets' colours (v2.3, A1): copied exactly from assets/brand/DESIGN.md (token names without their two leading dashes, which XML comments cannot hold). Dark only, like the app. -->
+<resources>
+    <color name="w_bg">#050507</color>          <!-- bg -->
+    <color name="w_panel">#0B0B10</color>       <!-- panel -->
+    <color name="w_field">#131319</color>       <!-- field -->
+    <color name="w_border">#17FFFFFF</color>    <!-- field-border rgba(255,255,255,.09) -->
+    <color name="w_text">#F2F1F7</color>        <!-- text -->
+    <color name="w_dim">#A9A7B8</color>         <!-- text-dim -->
+    <color name="w_faint">#8A8899</color>       <!-- text-faint -->
+    <color name="w_accent">#EDE3C9</color>      <!-- accent (Compass Ivory) -->
+    <color name="w_on_accent">#1A1608</color>   <!-- on-accent -->
+    <color name="w_ok">#5CC98B</color>          <!-- ok -->
+    <color name="w_warn">#E39A62</color>        <!-- warn -->
+    <color name="w_danger">#E0606C</color>      <!-- danger -->
+    <color name="w_short">#DDB46E</color>       <!-- h-short -->
+    <color name="w_medium">#7DB4AC</color>      <!-- h-medium -->
+    <color name="w_long">#9D95C6</color>        <!-- h-long -->
+    <color name="w_track">#1AFFFFFF</color>     <!-- the ring's track: white at .1, as the iOS widgets -->
+</resources>

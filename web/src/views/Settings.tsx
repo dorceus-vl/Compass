@@ -6,7 +6,7 @@ import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { Link } from '../router.ts';
 import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
-import { shell, nativeDevice, setWidgetToken } from '../native.ts';
+import { shell, nativeDevice, setWidgetToken, inWidgetShell } from '../native.ts';
 import { clearWidgets, revokeWidgetToken, widgetDeviceName } from '../widgets.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
@@ -81,7 +81,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Email s={s} save={save} />
       <Ai s={s} save={save} />
       <AthenaCard s={s} save={save} />
-      {shell() === 'ios' && <WidgetsCard s={s} save={save} />}
+      {inWidgetShell() && <WidgetsCard s={s} save={save} />}
       <KellyCard />
       <TemplatesCard />
       <ExportCard />
@@ -165,7 +165,7 @@ function Notifications({ s, save }: { s: Settings; save: Save }) {
   );
 }
 
-/** Settings → Widgets (v2.3, W8): iPhone and iPad app only. */
+/** Settings → Widgets (v2.3, W8): the iPhone, iPad and Android apps. Android has no Lock Screen widgets, so its hide switch says it is for iPhone and iPad (A2). */
 type WidgetToken = { id: string; device_name: string; created_at: string; last_used_at: string | null };
 function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
   const me = widgetDeviceName(); // the name its token carries; ponytail: two iPhones share one name, so turning it on in one replaces the other's token
@@ -196,7 +196,7 @@ function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
     <div className="card">
       <CardHead icon="today" title="Widgets" desc="What the Home Screen and Lock Screen widgets show. Widgets are filled each time the app syncs." />
       <label style={row}>
-        Hide work titles on the Lock Screen
+        <span>Hide work titles on the Lock Screen{shell() === 'android' && <span style={{ display: 'block', fontSize: 12, color: 'var(--text-faint)' }}>iPhone and iPad</span>}</span>
         <input type="checkbox" checked={s.widgets.hide_work_on_lock} onChange={(e) => save({ widgets: { hide_work_on_lock: e.target.checked } })} style={{ width: 20, height: 20, accentColor: 'var(--accent)' }} />
       </label>
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>On, a work task shows as “Work task” on the Lock Screen, where anyone can glance at it. On the Home Screen it shows its title. Tasks in Offline-only projects never show a title in a widget.</p>

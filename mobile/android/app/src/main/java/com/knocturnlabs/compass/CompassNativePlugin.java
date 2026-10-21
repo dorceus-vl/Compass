@@ -12,6 +12,7 @@ import androidx.activity.result.ActivityResult;
 import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.app.NotificationManagerCompat;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -23,6 +24,9 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
+import com.knocturnlabs.compass.widgets.WidgetProviders;
+import com.knocturnlabs.compass.widgets.WidgetStore;
+import com.knocturnlabs.compass.widgets.WidgetToken;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -38,6 +42,9 @@ import org.json.JSONObject;
  *   registerPush() → { kind: 'fcm', token } | { unsupported: true } (no google-services.json) | { denied: true }
  *   takeSharedText() → { text: null }               a share (ACTION_SEND text/plain) goes straight out as the event below, so none waits
  *   openExternal({ url })                           http(s), mailto:, tel: in the system
+ *   updateWidgets({ json })                        v2.3 (A3): the widget snapshot, at most 64 KB, into the app's private files (atomic); '' removes it; then every widget redraws
+ *   setWidgetToken({ token })                      v2.3 (A5): the widget's tick token, sealed under an Android Keystore key; null deletes it
+ *   takeWidgetTicks() → { ticks: [{ id, at }] }    v2.3: ticks a widget couldn't send (pending-ticks.json), cleared as they are read
  *   events sharedText { text }, notificationTap { url }   (kept until the page listens, so a cold start loses neither)
  * It also decides every top-level navigation of the web view (CompassLink.route): Compass stays in, other pages go to the browser.
  * saveDownload is CompassDownloads' half (not part of the page's contract): the file's base64 in parts, then the system's Save dialog.
@@ -164,6 +171,45 @@ public class CompassNativePlugin extends Plugin {
     @PluginMethod
     public void takeSharedText(PluginCall call) {
         call.resolve(new JSObject().put("text", JSONObject.NULL));
+    }
+
+    // ---- Widgets (v2.3, Task 2b; the files and token live in com.knocturnlabs.compass.widgets) ----
+
+    @PluginMethod
+    public void updateWidgets(PluginCall call) {
+        try {
+            WidgetStore.write(getContext().getFilesDir(), call.getString("json", ""));
+        } catch (WidgetStore.Failure f) {
+            call.reject("too_big".equals(f.code) ? "The widget snapshot is too big." : "The widget snapshot isn’t valid.", f.code);
+            return;
+        } catch (Exception e) {
+            call.reject("The widget snapshot couldn’t be saved.", "failed");
+            return;
+        }
+        WidgetProviders.refreshAll(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setWidgetToken(PluginCall call) {
+        String token = call.getData().isNull("token") ? null : call.getString("token");
+        if (token != null && !WidgetStore.validToken(token)) {
+            call.reject("That widget token isn’t valid.", "invalid_request");
+            return;
+        }
+        try {
+            WidgetToken.set(getContext(), token);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("The widget token couldn’t be saved.", "failed");
+        }
+    }
+
+    @PluginMethod
+    public void takeWidgetTicks(PluginCall call) {
+        JSArray ticks = new JSArray();
+        for (String[] t : WidgetStore.takeTicks(getContext().getFilesDir())) ticks.put(new JSObject().put("id", t[0]).put("at", t[1]));
+        call.resolve(new JSObject().put("ticks", ticks));
     }
 
     // ---- Links ----
