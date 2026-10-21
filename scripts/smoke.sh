@@ -1089,17 +1089,19 @@ stub ''; KR6=$(refresh); [ "$(kbody "$KR6" | js 'Object.keys(d.errors).length')"
 SET0=$(curl "${H[@]}" $B/api/settings | js d.digest_hour); HRNOW=$(TZ=America/Toronto date +%-H)
 SYSEMB; stub ''
 donen() { kn "SELECT count(*) AS n FROM audit_log WHERE action='knowledge.apps.done'"; }
-if [ "$HRNOW" -lt 23 ]; then # before the hour: nothing, even with no attempt on record
+if [ "$HRNOW" -lt 23 ] && [ "$(TZ=America/Toronto date +%-H)" = "$HRNOW" ]; then # before the hour (skipped if the hour just rolled over): nothing, even with no attempt on record
   arm; curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$((HRNOW + 1))}" >/dev/null; cron; sleep 2
   [ "$(donen)" = 0 ] || fail "the cron refreshed before digest_hour"
 fi
 arm; curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$HRNOW}" >/dev/null
-cron; for _ in $(seq 1 40); do [ "$(donen)" = 1 ] && break; sleep 0.25; done
-[ "$(donen)" = 1 ] || fail "the cron did not refresh once digest_hour had come"
+# v2.2: the refresh runs in the cron beside the purge and the embed pass on one local SQLite, so it can take longer than 10 s: wait up to 40 s (the product rules are unchanged).
+# The 10-minute claim is cleared by arm just above; a leftover claim or a lagging done row shows in the failure text.
+cron; for _ in $(seq 1 160); do [ "$(donen)" = 1 ] && break; sleep 0.25; done
+[ "$(donen)" = 1 ] || fail "the cron did not refresh once digest_hour had come (audit: $(D1X "SELECT action||'@'||at AS r FROM audit_log WHERE action LIKE 'knowledge.apps.%'" | js 'd[0].results.map(r=>r.r).join()'))"
 cron; sleep 2; [ "$(donen)" = 1 ] || fail "the cron refreshed twice in one day"
 # a day's refresh with a failure, made two hours ago: the next tick tries again (and once it is clean, no more)
 TWO=$(date -u -v-2H +%Y-%m-%dT%H:%M:%S.000Z); D1X "UPDATE audit_log SET at='$TWO' WHERE action='knowledge.apps.refresh'; UPDATE audit_log SET at='$TWO', detail='{\"ok\":[],\"failed\":[\"hollow\"]}' WHERE action='knowledge.apps.done'" >/dev/null
-cron; for _ in $(seq 1 40); do [ "$(donen)" = 2 ] && break; sleep 0.25; done
+cron; for _ in $(seq 1 160); do [ "$(donen)" = 2 ] && break; sleep 0.25; done
 [ "$(donen)" = 2 ] || fail "the cron did not retry a failed refresh an hour later"
 cron; sleep 2; [ "$(donen)" = 2 ] || fail "the cron retried a clean refresh"
 curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$SET0}" >/dev/null
@@ -1528,7 +1530,7 @@ spost() { curl "${H[@]}" -w '\n%{http_code}' -X POST "$B/api/projects/$1/stakeho
 nextjs() { node --experimental-strip-types --no-warnings --input-type=module -e 'const { nextDue } = await import(process.cwd() + "/shared/stakeholders.ts"); console.log(nextDue(process.argv[1] || null, +process.argv[2], process.argv[3], process.argv[4] || undefined))' "$1" "$2" "$3" "${4:-}"; }
 S2PARK=$(date -u +%Y-%m-%dT%H:%M:%S.001Z); D1X "UPDATE stakeholders SET deleted_at = '$S2PARK' WHERE deleted_at IS NULL" >/dev/null # park the dev data's stakeholders so the count below is the smoke's own; put back at the end (and by fail())
 S2Q=$(curl "${H[@]}" $B/api/settings | js '[d.quiet_from,d.quiet_to,d.digest_hour,d.tz].join()'); Q0=$(echo "$S2Q" | cut -d, -f1,2); S2DH=$(echo "$S2Q" | cut -d, -f3); S2TZ=$(echo "$S2Q" | cut -d, -f4)
-restore_quiet() { [ -z "${Q0:-}" ] || curl -s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${Q0%,*}\",\"quiet_to\":\"${Q0#*,}\",\"digest_hour\":$S2DH,\"push\":{\"stakeholder\":true}}" >/dev/null || true; Q0=; D1X "UPDATE stakeholders SET deleted_at = NULL WHERE deleted_at = '$S2PARK'" >/dev/null; } # also restores the digest hour; fail() calls it
+restore_quiet() { [ -z "${Q0:-}" ] || curl -s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${Q0%,*}\",\"quiet_to\":\"${Q0#*,}\",\"digest_hour\":$S2DH,\"push\":{\"stakeholder\":true}}" >/dev/null || true; Q0=; D1X "UPDATE stakeholders SET deleted_at = NULL WHERE deleted_at = '$S2PARK'; DELETE FROM push_subscriptions WHERE id = 'smk-s2dev'" >/dev/null; [ -z "${PUSH0:-}" ] || curl -s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json" -X PATCH $B/api/settings -d "{\"push\":$PUSH0}" >/dev/null || true; PUSH0=; } # also restores the digest hour; fail() calls it
 curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null
 SW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke stake work","kind":"work"}' | js d.project.id)
 SP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke stake own","kind":"personal"}' | js d.project.id)
@@ -1577,6 +1579,18 @@ cron; sleep 1; SO=$(SOUT)
 echo "$SO" | js "d.length===1&&d[0].title==='2 stakeholder updates due'&&d[0].url==='/projects/$SW/stakeholders'" | grep -qx true || fail "s2: expected one '2 stakeholder updates due' linking the first project: $SO"
 echo "$SO" | grep -q "Smoke\|Ada\|Cy\|Bo\b" && fail "s2: the push names someone: $SO"
 cron; sleep 1; [ "$(SOUT | js d.length)" = 1 ] || fail "s2: the cron pushed twice in one day"
+# The once-a-day guard is the outbox row, not a device (v2.2 C7 fix): with an unreachable device (push_log stays empty) a second tick must not deliver again, so its failed_count stays at 1.
+# The other push types are switched off for this block (their own ticks would also fail on the fake device), and put back after.
+PUSH0=$(curl "${H[@]}" $B/api/settings | js 'JSON.stringify(d.push)'); curl "${H[@]}" -X PATCH $B/api/settings -d "$(node -pe 'JSON.stringify({push:Object.fromEntries(Object.keys(JSON.parse(process.argv[1])).map(k=>[k,k==="stakeholder"]))})' "$PUSH0")" >/dev/null
+sclear; D1X "DELETE FROM push_subscriptions WHERE id = 'smk-s2dev'" >/dev/null
+SUBK=$(node -e 'const c=require("crypto"),j=c.generateKeyPairSync("ec",{namedCurve:"P-256"}).publicKey.export({format:"jwk"});const b=(x)=>Buffer.from(x,"base64url");console.log(Buffer.concat([Buffer.from([4]),b(j.x),b(j.y)]).toString("base64url")+" "+c.randomBytes(16).toString("base64url"))')
+D1X "INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, created_at, kind) VALUES ('smk-s2dev', 'http://127.0.0.1:9/smk-s2', '${SUBK% *}', '${SUBK#* }', '$TS', 'web')" >/dev/null
+fcount() { D1X "SELECT failed_count AS n FROM push_subscriptions WHERE id='smk-s2dev'" | js 'd[0].results[0].n'; }
+cron; sleep 2
+[ "$(fcount)" = 1 ] || fail "s2: the unreachable fake device was not tried (failed_count $(fcount))"
+[ "$(D1X "SELECT count(*) AS n FROM push_log WHERE key LIKE 'stakeholder:%'" | js 'd[0].results[0].n')" = 0 ] || fail "s2: push_log was written without a delivery"
+cron; sleep 2; [ "$(fcount)" = 1 ] && [ "$(SOUT | js d.length)" = 1 ] || fail "s2: a second tick delivered again to an unreachable device (failed_count $(fcount)): the outbox key is not the guard"
+D1X "DELETE FROM push_subscriptions WHERE id = 'smk-s2dev'" >/dev/null; curl "${H[@]}" -X PATCH $B/api/settings -d "{\"push\":$PUSH0}" >/dev/null; PUSH0=
 # the switch and quiet hours silence it (the next day's key is simulated by clearing the log)
 sclear; curl "${H[@]}" -X PATCH $B/api/settings -d '{"push":{"stakeholder":false}}' >/dev/null; cron; sleep 1
 [ "$(SOUT | js d.length)" = 0 ] || fail "s2: settings.push.stakeholder=false still pushed"
@@ -1590,12 +1604,17 @@ curl "${H[@]}" $B/api/projects/$SW/stakeholders | js "d.items.map(i=>i.name).joi
 curl "${H[@]}" $B/api/trash | js "const x=d.stakeholders.find(s=>s.id==='$SCYID'); !!x&&x.name==='Smoke Cy'&&x.project_name==='Smoke stake work'&&!('notes' in x)" | grep -qx true || fail "s2: Trash does not list the stakeholder"
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/stakeholders/$SCYID/restore)" = 200 ] || fail "s2: restore"
 curl "${H[@]}" $B/api/projects/$SW/stakeholders | js "d.items.length" | grep -qx 2 || fail "s2: a restored stakeholder is not listed"
+# the 500 cap holds on restore as on create: with 500 live (2 here + 498 by SQL) a 501st is 409, and so is restoring one from Trash
+D1X "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 498) INSERT INTO stakeholders (id, project_id, name, created_at, updated_at, enc_v) SELECT 'smkcap-'||i, '$SW', 'Cap '||i, '$TS', '$TS', 0 FROM n; INSERT INTO stakeholders (id, project_id, name, created_at, updated_at, deleted_at, enc_v) VALUES ('smkcap-trash', '$SW', 'Cap trash', '$TS', '$TS', '$TS', 0)" >/dev/null
+[ "$(spost $SW '{"name":"Cap 501"}' | tail -1)" = 409 ] || fail "s2: create past 500 should be 409"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/stakeholders/smkcap-trash/restore)" = 409 ] || fail "s2: restore past 500 should be 409"
+D1X "DELETE FROM stakeholders WHERE id LIKE 'smkcap-%'" >/dev/null
 D1X "SELECT group_concat(action||':'||ifnull(detail,''),'|') AS a FROM audit_log WHERE target IN ('$SAID','$SBID','$SCYID')" | js 'd[0].results[0].a' | grep -q "Smoke\|secret" && fail "s2: an audit row carries content"
 curl "${H[@]}" $B/api/export | js "d.stakeholders.some(x=>x.id==='$SAID'&&x.name==='Smoke Ada'&&x.notes==='smoke secret notes')" | grep -qx true || fail "s2: export did not open the stakeholder"
 # clean up (local D1 only) and put the settings back
 D1X "DELETE FROM stakeholders WHERE project_id IN ('$SW','$SP','$SC'); DELETE FROM projects WHERE id IN ('$SW','$SP','$SC'); DELETE FROM push_outbox WHERE id LIKE 'stakeholder:%'; DELETE FROM push_log WHERE key LIKE 'stakeholder:%'" >/dev/null
 restore_quiet
-echo "smoke: (s2) stakeholders: added (work sealed in D1, personal plain), edited (still sealed), bad bodies 400, marked sent (next due = last + cadence by the shared nextDue), athena flag false for Offline-only and true for Cloud, the cron sent one '2 stakeholder updates due' with no names (closed project not counted), not twice, not before digest_hour, not with the switch off or in quiet hours; Trash lists and restores; export opens it"
+echo "smoke: (s2) stakeholders: added (work sealed in D1, personal plain), edited (still sealed), bad bodies 400, marked sent (next due = last + cadence by the shared nextDue), athena flag false for Offline-only and true for Cloud, the cron sent one '2 stakeholder updates due' with no names (closed project not counted), not twice, not before digest_hour, not with the switch off or in quiet hours; Trash lists and restores; export opens it; the once-a-day guard is the outbox row (an unreachable device is tried once, push_log stays empty); the 500 cap holds on create and on restore"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

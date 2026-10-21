@@ -2,12 +2,11 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
-import { parseStakeholderInput, type Stakeholder } from '../../shared/stakeholders.ts';
+import { parseStakeholderInput, MAX_STAKEHOLDERS, type Stakeholder } from '../../shared/stakeholders.ts';
 
 type App = Hono<{ Bindings: Env; Variables: Variables }>;
 const readBody = (c: { req: { json: <T>() => Promise<T> } }) => c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
 /** A project keeps this many live stakeholders (the list reads them with this LIMIT, so every bind has a cap: CLAUDE.md rule 9). */
-export const MAX_STAKEHOLDERS = 500;
 
 /** Stakeholder register (v2.2, C6): list and add under a project, edit, trash and "contacted" by id. Work rows are sealed. Kelly has no route here. */
 export const byProject: App = new Hono(), byId: App = new Hono();

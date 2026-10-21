@@ -1,4 +1,7 @@
 // Stakeholder register (v2.2, C6 to C8): quadrants, when an update is due, the reminder text, the Athena seed and the input checks. Pure, so the Worker and the device agree.
+/** A project keeps this many live stakeholders (create and restore both check it; the list reads at most this many). */
+export const MAX_STAKEHOLDERS = 500;
+
 export type Level = 'high' | 'low';
 export type Attitude = 'supportive' | 'neutral' | 'resistant';
 export type QuadrantId = 'manage' | 'satisfy' | 'inform' | 'monitor';

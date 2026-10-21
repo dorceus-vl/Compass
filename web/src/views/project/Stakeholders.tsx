@@ -43,7 +43,7 @@ function Edit({ project, item, onClose, onSaved }: { project: Project; item: Sta
   );
   return (
     <dialog ref={ref} className="tpl-dlg" aria-labelledby="sh-dlg-h" onClose={onClose}>
-      <form onSubmit={submit} className="tpl-form">
+      <form onSubmit={submit} className="tpl-form sh-form">
         <b id="sh-dlg-h">{item ? 'Edit stakeholder' : 'Add stakeholder'}</b>
         <label className="qf">Name<input className="field" autoFocus required maxLength={120} value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
         <label className="qf">Role<input className="field" maxLength={120} value={f.role} onChange={(e) => set('role', e.target.value)} /></label>
@@ -83,7 +83,7 @@ export function Stakeholders({ project }: { project: Project }) {
       {offline && <div className="sub" role="status">Offline: showing the last copy. Changes need a connection.</div>}
       <div className="row">
         <div className="seg" role="group" aria-label="View">{(['grid', 'list'] as const).map((v) => <button type="button" key={v} className={view === v ? 'on' : ''} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'grid' ? 'Grid' : 'List'}</button>)}</div>
-        <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} onClick={() => setEdit('new')}>Add stakeholder</button>
+        <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} disabled={offline} onClick={() => setEdit('new')}>Add stakeholder</button>
       </div>
       {loaded && !items.length && <p style={{ color: 'var(--text-faint)', margin: 0 }}>No stakeholders yet. Add the people who care about this project, how much say they have and how often they need an update.</p>}
       {view === 'grid' && items.length > 0 && (
@@ -95,7 +95,7 @@ export function Stakeholders({ project }: { project: Project }) {
               <section key={q.id} className="card sh-quad" aria-label={`${q.label}, ${mine.length}`}>
                 <div className="sh-qh"><b>{q.label}</b><span className="sub">{q.hint}</span></div>
                 <div className="sh-chips">
-                  {mine.map((s) => <button type="button" key={s.id} className="sh-chip" onClick={() => setEdit(s)} aria-label={`${s.name}, ${s.role ? `${s.role}, ` : ''}${ATT[s.attitude]}. Edit`}>
+                  {mine.map((s) => <button type="button" key={s.id} className="sh-chip" disabled={offline} onClick={() => setEdit(s)} aria-label={`${s.name}, ${s.role ? `${s.role}, ` : ''}${ATT[s.attitude]}. Edit`}>
                     <span className="sh-nm">{s.name}</span><Att a={s.attitude} /></button>)}
                   {!mine.length && <span className="sub">Nobody here.</span>}
                 </div>
@@ -115,9 +115,9 @@ export function Stakeholders({ project }: { project: Project }) {
               <td data-label="Cadence">{s.cadence_days ? `Every ${s.cadence_days} day${s.cadence_days === 1 ? '' : 's'}` : 'No plan'}</td>
               <td data-label="Last contact">{lastText(s)}</td>
               <td data-label="Next due"><span className={`chip ${t === 'Due now' ? 'over' : ''}`}>{t}</span></td>
-              <td className="sh-acts"><button type="button" className="btn" onClick={() => void sent(s)}>Mark sent</button>{draftCell(s)}
-                <button type="button" className="btn" onClick={() => setEdit(s)}>Edit</button>
-                <button type="button" className="btn" style={{ color: 'var(--danger)' }} onClick={() => void trash(s)}>Trash</button></td>
+              <td className="sh-acts"><button type="button" className="btn" disabled={offline} onClick={() => void sent(s)}>Mark sent</button>{draftCell(s)}
+                <button type="button" className="btn" disabled={offline} onClick={() => setEdit(s)}>Edit</button>
+                <button type="button" className="btn" style={{ color: 'var(--danger)' }} disabled={offline} onClick={() => void trash(s)}>Trash</button></td>
             </tr>); })}</tbody>
         </table></div>
       )}

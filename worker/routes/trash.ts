@@ -6,6 +6,7 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { remove } from '../lib/vectors.ts';
 import { MAX_BASELINES } from '../../shared/baseline.ts';
+import { MAX_STAKEHOLDERS } from '../../shared/stakeholders.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
 const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders' } as const;
@@ -56,6 +57,10 @@ trash.post('/:table/:id/restore', async (c) => {
   if (table === 'baselines') {
     const n = await c.env.DB.prepare('SELECT (SELECT COUNT(*) FROM baselines o WHERE o.project_id = b.project_id AND o.deleted_at IS NULL) AS n FROM baselines b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL').bind(id).first<{ n: number }>();
     if (n && n.n >= MAX_BASELINES) return c.json({ error: 'baseline_limit', message: `A project keeps ${MAX_BASELINES} baselines at most` }, 409);
+  }
+  if (table === 'stakeholders') {
+    const n = await c.env.DB.prepare('SELECT (SELECT COUNT(*) FROM stakeholders o WHERE o.project_id = b.project_id AND o.deleted_at IS NULL) AS n FROM stakeholders b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL').bind(id).first<{ n: number }>();
+    if (n && n.n >= MAX_STAKEHOLDERS) return c.json({ error: 'stakeholder_limit', message: `A project keeps ${MAX_STAKEHOLDERS} stakeholders at most` }, 409);
   }
   let r;
   try {

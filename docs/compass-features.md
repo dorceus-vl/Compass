@@ -88,7 +88,7 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Upcoming: the next 14 days as a scrolling list | Things | v1 |
 | Workload: hours per week vs capacity you set, across projects | Asana, monday | v2 |
 | Portfolio: every project with RAG, % done, next milestone, open risks, budget line | Asana portfolios, MS Project Online | v1 simple, v2 full |
-| Dashboard widgets: burndown, throughput, cycle time, overdue trend, done-this-week | Jira, monday | v2 |
+| Dashboard widgets: burndown, throughput, cycle time, overdue trend, done-this-week | Jira, monday | v2 (done, v2.2: a Dashboard tab per project: burndown against an ideal line from the latest baseline, done per week, overdue trend, risks by severity, milestone slip; a text summary and a table for each; the numbers go into the status report) |
 | Hill chart (what's figured out vs what's left, per task group) | Basecamp | later |
 | Keyboard-first navigation and command palette for every action | Linear | v1 |
 
@@ -103,10 +103,10 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | RAID log: risks (probability × impact, response, owner, trigger), assumptions, issues, dependencies | PMBOK | v1 |
 | Change requests: description, impact on scope / time / cost, decision, approver, date | PMBOK, PRINCE2 | v1 |
 | Decision log and action log, linked to the meeting they came from | | v1 |
-| Stakeholder register: power / interest grid, communication plan per stakeholder | PMBOK | v2 |
+| Stakeholder register: power / interest grid, communication plan per stakeholder | PMBOK | v2 (done, v2.2: grid and list, channel and cadence, Mark sent, one daily "N updates due" reminder with no names, Draft update through Athena; work entries encrypted, never shown to Kelly) |
 | Lessons learned per project, searchable across projects, fed to Athena | PMBOK closing | v1 |
 | Programs: group projects, roll up RAG, milestones and risks | PgMP | v2 |
-| Baselines: save schedule and compare (slip per task, per milestone) | MS Project | v2 |
+| Baselines: save schedule and compare (slip per task, per milestone) | MS Project | v2 (done, v2.2: several named baselines per project, slip view, ghost bars on the Timeline, "Schedule vs baseline" in the status report) |
 | Earned value: PV, EV, AC, SPI, CPI from estimates and % complete | PMBOK | later |
 | Sprints / cycles for Agile projects, velocity, burndown | Jira, Linear | v2 |
 | OKRs / goals: personal and work objectives with key results, tasks linked to them, the long horizon shows them | Asana goals | v2 |

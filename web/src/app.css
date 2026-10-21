@@ -1098,6 +1098,7 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .sh-qh{display:grid;gap:2px}.sh-qh b{font-size:16px}
 .sh-chips{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
 .sh-chip{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:44px;min-width:0;max-width:100%;padding:8px 12px;border-radius:12px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.sh-chip:disabled{opacity:.5;cursor:default}
 .sh-chip:hover{border-color:var(--accent)}.sh-chip:focus-visible,.sh-table .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sh-nm{font-weight:600;overflow-wrap:anywhere}
 .sh-att{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:500}
@@ -1115,5 +1116,5 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
   .sh-table td[data-label]::before{content:attr(data-label);display:inline-block;min-width:110px;color:var(--text-faint);font-size:12px}
   .sh-acts{margin-top:6px;grid-template-columns:repeat(2,minmax(0,max-content))}
 }
-.tpl-form .seg button{min-height:38px}
-@media (max-width:760px),(pointer:coarse){.tpl-form .seg button{min-height:44px}.tpl-form .seg{flex-wrap:wrap}}
+.sh-form .seg button{min-height:38px}
+@media (max-width:760px),(pointer:coarse){.sh-form .seg button{min-height:44px}.sh-form .seg{flex-wrap:wrap}}

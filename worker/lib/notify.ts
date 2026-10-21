@@ -112,20 +112,23 @@ export async function notifyUnblocked(env: Env, done: Task): Promise<void> {
 
 /**
  * C7: once a day, from digest_hour (in settings.tz) on, "N stakeholder updates due": a count, never a name (not even a personal one). Only live projects that are not closed.
- * The deep link is the Stakeholders tab of the first of them (by project order). "Once a day" is the push_log key `stakeholder:<local date>` (pushAll writes it once a device
- * received the push, so a failed attempt is retried at the next tick, quiet hours included); the outbox row has the same key, so a retry never lists it twice. Never throws.
+ * The deep link is the Stakeholders tab of the first of them (by project order). "Once a day" is the push_outbox row `stakeholder:<local date>` (deliver writes it whether or not a device
+ * is reachable; a switch-off or quiet hours write nothing, so those retry at the next tick). Never throws.
  */
 export async function notifyStakeholders(env: Env, at: Date): Promise<void> {
   try {
     const s = await getSettings(env), t = localNow(s.tz, at);
     if (+t.hhmm.slice(0, 2) < s.digest_hour || s.push.stakeholder === false) return;
+    // The outbox row (written by deliver, with or without a device) is the once-a-day guard, so no device has to receive it. A switch-off or quiet hours write nothing and retry at the next tick.
+    const key = `stakeholder:${t.date}`;
+    if (await env.DB.prepare('SELECT 1 FROM push_outbox WHERE id = ?1').bind(key).first()) return;
     // One query, no bound lists (rule 9); the LIMIT is the most cadenced stakeholders it reads.
     const { results } = await env.DB.prepare(`SELECT x.project_id, x.last_contact_at, x.cadence_days FROM stakeholders x JOIN projects p ON p.id = x.project_id
       WHERE x.deleted_at IS NULL AND x.cadence_days IS NOT NULL AND p.deleted_at IS NULL AND p.status != 'closed' ORDER BY p.sort, p.created_at, x.created_at LIMIT ?1`).bind(5000)
       .all<{ project_id: string; last_contact_at: string | null; cadence_days: number }>();
     const due = results.filter((r) => isDue(r, t.date, s.tz));
     const m = stakeholderPush(due.length, due[0] ? `/projects/${due[0].project_id}/stakeholders` : null);
-    if (m) await pushAll(env, 'stakeholder', `stakeholder:${t.date}`, m);
+    if (m) await pushAll(env, 'stakeholder', key, m);
   } catch (e) {
     console.error(`[push] notifyStakeholders failed: ${(e as Error).name}`); // never stops the rest of the cron
   }
