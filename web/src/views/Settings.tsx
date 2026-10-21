@@ -6,7 +6,7 @@ import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { Link } from '../router.ts';
 import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
-import { shell, nativeDevice } from '../native.ts';
+import { shell, nativeDevice, setWidgetToken } from '../native.ts';
 import { clearWidgets } from '../widgets.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
@@ -165,15 +165,53 @@ function Notifications({ s, save }: { s: Settings; save: Save }) {
 }
 
 /** Settings → Widgets (v2.3, W8): iPhone and iPad app only. */
+type WidgetToken = { id: string; device_name: string; created_at: string; last_used_at: string | null };
 function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
+  const me = `${nativeDevice()?.label ?? 'iPhone'} app`; // the name its token carries; ponytail: two iPhones share one name, so turning it on in one replaces the other's token
+  const [tokens, setTokens] = useState<WidgetToken[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api<{ tokens: WidgetToken[] }>('/widget/tokens').then((d) => setTokens(d.tokens)).catch(() => setTokens(null));
+  useEffect(() => { void load(); }, []);
+  const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) { toast((e as Error).message || 'Needs a connection'); } finally { setBusy(false); void load(); } };
+  const on = !!tokens?.some((t) => t.device_name === me);
+  // On: the server makes the token (passkey), the app keeps it in the Keychain the widgets read; the page never stores it. Off: revoke and delete the Keychain item.
+  const turnOn = () => run(async () => {
+    const r = await api<{ id: string; token: string }>('/widget/token', { method: 'POST', json: { device_name: me } });
+    try { await setWidgetToken(r.token); } catch (e) { await api(`/widget/token/${r.id}`, { method: 'DELETE' }).catch(() => {}); throw e; }
+    toast('Widgets can tick tasks now');
+  });
+  const revoke = (t: WidgetToken) => run(async () => {
+    await api(`/widget/token/${t.id}`, { method: 'DELETE' });
+    if (t.device_name === me) await setWidgetToken(null);
+    toast('Widget access removed');
+  });
+  const turnOff = () => run(async () => {
+    for (const t of tokens?.filter((x) => x.device_name === me) ?? []) { await api(`/widget/token/${t.id}`, { method: 'DELETE' }); }
+    await setWidgetToken(null);
+    toast('Widgets can no longer tick tasks');
+  });
+  const row = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 } as const;
   return (
     <div className="card">
       <CardHead icon="today" title="Widgets" desc="What the Home Screen and Lock Screen widgets show. Widgets are filled each time the app syncs." />
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 }}>
+      <label style={row}>
         Hide work titles on the Lock Screen
         <input type="checkbox" checked={s.widgets.hide_work_on_lock} onChange={(e) => save({ widgets: { hide_work_on_lock: e.target.checked } })} style={{ width: 20, height: 20, accentColor: 'var(--accent)' }} />
       </label>
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>On, a work task shows as “Work task” on the Lock Screen, where anyone can glance at it. On the Home Screen it shows its title. Tasks in Offline-only projects never show a title in a widget.</p>
+      <label style={{ ...row, marginTop: 10 }}>
+        Tick tasks from widgets
+        <input type="checkbox" checked={on} disabled={busy || tokens === null} onChange={(e) => (e.target.checked ? turnOn() : turnOff())} style={{ width: 20, height: 20, accentColor: 'var(--accent)' }} />
+      </label>
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Turning it on asks for your passkey and gives this device a key that can do one thing: mark a task done. Without it, a tick is sent the next time you open Compass.</p>
+      {tokens !== null && tokens.length > 0 && <div style={{ marginTop: 10 }}>
+        <div className="eyebrow" style={{ margin: '4px 0' }}>Devices that can tick</div>
+        {tokens.map((t) => (
+          <div key={t.id} className="row" style={{ justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 }}>
+            <span>{t.device_name}{t.device_name === me ? ' (this device)' : ''}<span style={{ display: 'block', fontSize: 12, color: 'var(--text-faint)' }}>{t.last_used_at ? `Last used ${new Date(t.last_used_at).toLocaleString()}` : 'Not used yet'}</span></span>
+            <button type="button" className="btn" disabled={busy} onClick={() => revoke(t)}>Revoke</button>
+          </div>))}
+      </div>}
     </div>
   );
 }

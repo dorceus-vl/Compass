@@ -11,6 +11,8 @@ export async function authGuard(c: Context<{ Bindings: Env; Variables: Variables
   if (c.req.method === 'POST' && new URL(c.req.url).pathname.replace(/\/$/, '') === '/api/inbox') return next();
   // /api/agent/* is called by Kelly (server to server, no cookie, no Origin); the agent routes check the bearer secret themselves.
   if (/^\/api\/agent(\/|$)/.test(new URL(c.req.url).pathname)) return next();
+  // POST /api/widget/tasks/:id/done is sent by the widget extension (no cookie, no Origin); the route checks the bearer token itself. Exactly this method and path.
+  if (c.req.method === 'POST' && /^\/api\/widget\/tasks\/[^/]+\/done$/.test(new URL(c.req.url).pathname)) return next();
   if (!sameOrigin(c.req.raw)) return c.json({ error: 'Forbidden' }, 403);
   if (PUBLIC.has(new URL(c.req.url).pathname)) return next();
   const session = await getSession(c);

@@ -198,6 +198,37 @@ try fm.removeItem(at: dir.appendingPathComponent(WidgetStore.snapshotName))
 WidgetStore.tick("t-x", in: dir)
 check(Snapshot.load(from: dir) == nil && WidgetStore.takeTicks(in: dir).first?["id"] == "t-x", "no snapshot: the tick is still queued")
 
+// Tick delivery (Task 2): a delivered tick leaves the queue (others stay, an empty queue is no file); an unknown id or no file changes nothing.
+try WidgetStore.appendTick("t-a", at: "2026-10-21T15:00:00.000Z", in: dir)
+try WidgetStore.appendTick("t-b", at: "2026-10-21T15:01:00.000Z", in: dir)
+try WidgetStore.removeTick("t-nope", in: dir)
+try WidgetStore.removeTick("t-a", in: dir)
+check(WidgetStore.takeTicks(in: dir) == [["id": "t-b", "at": "2026-10-21T15:01:00.000Z"]], "removeTick keeps the others")
+try WidgetStore.appendTick("t-c", at: "2026-10-21T15:02:00.000Z", in: dir)
+try WidgetStore.removeTick("t-c", in: dir)
+check(!fm.fileExists(atPath: dir.appendingPathComponent(WidgetStore.ticksName).path), "an empty queue is no file")
+try WidgetStore.removeTick("t-c", in: dir)
+
+// The tick's address: Compass over https, or (Debug builds only) http on this Mac; the bearer token never goes anywhere else.
+let prod = URL(string: "https://compass.knocturnlabs.com")!, local = URL(string: "http://localhost:8790")!
+check(WidgetServer.doneURL("t-1", server: prod)?.absoluteString == "https://compass.knocturnlabs.com/api/widget/tasks/t-1/done", "done url")
+check(WidgetServer.doneURL("t-1", server: URL(string: "https://compass.knocturnlabs.com/")!)?.absoluteString == "https://compass.knocturnlabs.com/api/widget/tasks/t-1/done", "done url, trailing slash")
+check(WidgetServer.doneURL("a/../b?c#d", server: prod)?.absoluteString == "https://compass.knocturnlabs.com/api/widget/tasks/a%2F%2E%2E%2Fb%3Fc%23d/done", "id encoded")
+check(WidgetServer.doneURL("t-1", server: local, allowLocal: true)?.absoluteString == "http://localhost:8790/api/widget/tasks/t-1/done", "local server in a debug build")
+check(WidgetServer.doneURL("t-1", server: local) == nil, "local server refused in a release build")
+check(WidgetServer.doneURL("t-1", server: URL(string: "http://127.0.0.1:8790")!, allowLocal: true) != nil, "127.0.0.1 in a debug build")
+for bad in ["https://example.com", "http://compass.knocturnlabs.com", "https://compass.knocturnlabs.com:8443", "https://compass.knocturnlabs.com.evil.com",
+            "https://compass.knocturnlabs.com@evil.com", "https://me@compass.knocturnlabs.com", "https://id.knocturnlabs.com", "https://compass.knocturnlabs.com/x",
+            "https://compass.knocturnlabs.com?x=1", "ftp://compass.knocturnlabs.com", "https://localhost:8790", "http://localhost.evil.com", "http://evil.com:8790", "file:///x"] {
+    check(WidgetServer.doneURL("t-1", server: URL(string: bad)!, allowLocal: true) == nil, "server refused: \(bad)")
+}
+check(WidgetServer.doneURL("", server: prod) == nil && WidgetServer.doneURL(String(repeating: "a", count: 65), server: prod) == nil, "bad ids refused")
+check(WidgetServer.configured(nil) == WidgetServer.production && WidgetServer.configured("") == WidgetServer.production && WidgetServer.configured("https://evil.com") == WidgetServer.production, "configured falls back to production")
+let req = WidgetServer.request(prod.appendingPathComponent("x"), token: "tok")
+check(req.httpMethod == "POST" && req.value(forHTTPHeaderField: "Authorization") == "Bearer tok" && req.timeoutInterval == 8 && req.httpBody == nil && !req.httpShouldHandleCookies, "request shape")
+check(WidgetServer.settles(200) && WidgetServer.settles(404), "200 and 404 settle the tick")
+for st: Int? in [nil, 401, 403, 429, 500, 503, 201, 302] { check(!WidgetServer.settles(st), "stays queued: \(String(describing: st))") }
+
 // Taps: the Compass host only, ids encoded.
 check(CompassURL.task("t-1").absoluteString == "https://compass.knocturnlabs.com/?task=t-1", "task link")
 check(CompassURL.task("a&b=c#d").host == "compass.knocturnlabs.com" && URLComponents(url: CompassURL.task("a&b=c#d"), resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "a&b=c#d", "task id encoded")

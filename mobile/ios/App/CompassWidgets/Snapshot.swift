@@ -152,9 +152,68 @@ enum CompassURL {
     }
 }
 
+/// Where a tick goes (W5/W6). Compass's own server and nothing else: `https://compass.knocturnlabs.com`, or, in a Debug build only, plain http on this Mac
+/// (`localhost`, `127.0.0.1`) so a simulator build can talk to `wrangler dev`. The bearer token is never sent anywhere else.
+enum WidgetServer {
+    static let production = URL(string: "https://compass.knocturnlabs.com")!
+    static let infoKey = "CompassServerURL" // `$(COMPASS_SERVER_URL)` in Info.plist: empty (the default) means production; `npm run build:sim` passes COMPASS_URL
+
+    static func allowed(_ server: URL, allowLocal: Bool) -> Bool {
+        guard server.user == nil, server.password == nil, ["", "/"].contains(server.path), server.query == nil, server.fragment == nil, let host = server.host?.lowercased() else { return false }
+        if server.scheme?.lowercased() == "https" { return host == "compass.knocturnlabs.com" && server.port == nil }
+        return allowLocal && server.scheme?.lowercased() == "http" && (host == "localhost" || host == "127.0.0.1")
+    }
+
+    /// The server a build talks to: production unless Info.plist names a local one (Debug builds only).
+    static func configured(_ raw: String? = Bundle.main.object(forInfoDictionaryKey: infoKey) as? String) -> URL {
+        #if DEBUG
+        if let raw, let url = URL(string: raw), allowed(url, allowLocal: true) { return url }
+        #endif
+        return production
+    }
+
+    /// `POST <server>/api/widget/tasks/<id>/done`; nil for a server that isn't Compass or an id that isn't a plain task id.
+    static func doneURL(_ id: String, server: URL, allowLocal: Bool = false) -> URL? {
+        guard allowed(server, allowLocal: allowLocal), !id.isEmpty, id.count <= 64,
+              let seg = id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))),
+              var c = URLComponents(url: server, resolvingAgainstBaseURL: false) else { return nil }
+        c.percentEncodedPath = "/api/widget/tasks/\(seg)/done"
+        return c.url
+    }
+
+    /// The request: a bearer token, no cookies, no body, 8 seconds.
+    static func request(_ url: URL, token: String) -> URLRequest {
+        var r = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        r.httpMethod = "POST"
+        r.httpShouldHandleCookies = false
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return r
+    }
+
+    /// Whether the server's answer settles the tick: 200 (done), or 404 (the task is gone or already done, so there's nothing left to send).
+    /// Anything else (401 revoked, 429, 5xx, no answer) leaves it queued for the app.
+    static func settles(_ status: Int?) -> Bool { status == 200 || status == 404 }
+
+    /// Sends the tick; true when the server settled it. The token goes only to `url` (built by `doneURL`) and a redirect is never followed.
+    static func post(_ url: URL, token: String) async -> Bool {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 8
+        config.httpCookieStorage = nil
+        let session = URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (_, response) = try? await session.data(for: request(url, token: token)) else { return false }
+        return settles((response as? HTTPURLResponse)?.statusCode)
+    }
+
+    private final class NoRedirect: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+    }
+}
+
 extension WidgetStore {
     /// MarkDoneIntent's local half (W5): the widget shows the tick at once, and the app sends it (`takeTicks`) when it next opens.
-    /// Task 2 posts first and keeps the queued tick only for a failure.
+    /// The intent then posts it (`WidgetServer`) and drops the queued tick once the server has it.
     static func tick(_ id: String, at: Date = Date(), in dir: URL) {
         let file = dir.appendingPathComponent(snapshotName)
         try? coordinated(file) { url in // read and write under one hold: a sign-out removal can't be undone by a tick in flight

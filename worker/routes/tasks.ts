@@ -137,11 +137,11 @@ async function crossKindLinks(env: Env, task: Task, own: string[], kind: Kind): 
  * The one way a task becomes done: marks it done, writes the 'done' event and, for a recurring task, creates
  * the next occurrence (counted from the user's local date). `task` is the already-edited task; `fields` are its extra changed columns.
  */
-export async function completeTask(env: Env, task: Task, fields: string[] = [], actor: TaskEvent['actor'] = 'you'): Promise<{ task: Task; next?: Task }> {
+export async function completeTask(env: Env, task: Task, fields: string[] = [], actor: TaskEvent['actor'] = 'you', data?: unknown): Promise<{ task: Task; next?: Task }> {
   const t = now();
   const done: Task = { ...task, status: 'done', done_at: t, updated_at: t };
   await updateTask(env, done, ['status', 'done_at', ...fields]);
-  await addEvent(env, done, actor, 'done');
+  await addEvent(env, done, actor, 'done', data); // data: e.g. { via: 'widget' }
   await notifyUnblocked(env, done); // V3: also when Kelly completes it (the one path)
   const rule = parseRecur(done.recur);
   if (!rule) return { task: done };

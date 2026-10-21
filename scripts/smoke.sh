@@ -1615,6 +1615,69 @@ curl "${H[@]}" $B/api/export | js "d.stakeholders.some(x=>x.id==='$SAID'&&x.name
 D1X "DELETE FROM stakeholders WHERE project_id IN ('$SW','$SP','$SC'); DELETE FROM projects WHERE id IN ('$SW','$SP','$SC'); DELETE FROM push_outbox WHERE id LIKE 'stakeholder:%'; DELETE FROM push_log WHERE key LIKE 'stakeholder:%'" >/dev/null
 restore_quiet
 echo "smoke: (s2) stakeholders: added (work sealed in D1, personal plain), edited (still sealed), bad bodies 400, marked sent (next due = last + cadence by the shared nextDue), athena flag false for Offline-only and true for Cloud, the cron sent one '2 stakeholder updates due' with no names (closed project not counted), not twice, not before digest_hour, not with the switch off or in quiet hours; Trash lists and restores; export opens it; the once-a-day guard is the outbox row (an unreachable device is tried once, push_log stays empty); the 500 cap holds on create and on restore"
+# (w) v2.3 Task 2: the widget tick token. Created with the dev step-up; one POST marks a task done (actor you, via widget); a bad or revoked token is a plain 401 with no
+# audit row; a done or trashed task is 404; the 61st call in a minute is 429; the audit rows hold ids and no text; the guard lets through exactly that method and path.
+wtok() { curl "${H[@]}" -X POST $B/api/widget/token -d "{\"device_name\":\"$1\"}"; }
+wdone() { curl -s -o /dev/null -w '%{http_code}' -X POST "$B/api/widget/tasks/$2/done" -H "Authorization: Bearer $1"; } # no cookie, no Origin: as the widget sends it
+WTJ=$(wtok "Smoke iPhone"); WTID=$(echo "$WTJ" | js d.id); WTK=$(echo "$WTJ" | js d.token)
+[ "$(echo "$WTK" | grep -cE '^[A-Za-z0-9_-]{43}$')" = 1 ] || fail "w: the token is not 256 random bits as base64url"
+[ "$(D1X "SELECT count(*) AS n FROM widget_tokens WHERE id='$WTID' AND token_hash='$WTK'" | js 'd[0].results[0].n')" = 0 ] || fail "w: the token itself is stored"
+[ "$(D1X "SELECT length(token_hash) AS n FROM widget_tokens WHERE id='$WTID'" | js 'd[0].results[0].n')" = 64 ] || fail "w: the stored hash is not SHA-256 hex"
+curl "${H[@]}" $B/api/widget/tokens | js "d.tokens.some(t=>t.id==='$WTID'&&t.device_name==='Smoke iPhone')&&!JSON.stringify(d).includes('$WTK')&&d.tokens.every(t=>!('token_hash' in t)&&!('token' in t))" | grep -qx true || fail "w: the list is wrong or shows a secret"
+nos() { case "$(curl -s -o /dev/null -w '%{http_code}' "$@")" in 401|403) return 0;; *) return 1;; esac; } # refused by the guard: no session (401), or no Origin (403)
+nos -X POST $B/api/widget/token -d '{}' || fail "w: creating a token without a session was not refused"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $B" -X POST $B/api/widget/token -d '{}')" = 401 ] || fail "w: creating a token without a session is not 401"
+WP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke widget","kind":"work"}' | js d.project.id)
+WT=$(curl "${H[@]}" -X POST $B/api/tasks -d '{"title":"Smoke widget secret title","due_at":"2026-01-01"}' | js d.task.id)
+WW=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke widget work\",\"project_id\":\"$WP\",\"due_at\":\"2026-01-01\"}" | js d.task.id)
+WR=$(curl "${H[@]}" -X POST $B/api/tasks -d '{"title":"Smoke widget recur","due_at":"2026-01-01","recur":"{\"freq\":\"daily\",\"interval\":1}"}' | js d.task.id)
+WAUD() { D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND at >= '$TS'" | js 'd[0].results[0].n'; }
+D1X "DELETE FROM audit_log WHERE actor='widget'" >/dev/null
+[ "$(WAUD)" = 0 ] || fail "w: audit rows before any widget call"
+[ "$(wdone "$WTK" $WT)" = 200 ] || fail "w: done with a token is not 200"
+[ "$(task $WT status)" = done ] || fail "w: the task is not done"
+[ "$(D1X "SELECT actor||'|'||data AS a FROM task_events WHERE task_id='$WT' AND type='done'" | js 'd[0].results[0].a')" = 'you|{"via":"widget"}' ] || fail "w: the done event is not actor you with via widget"
+[ "$(wdone "$WTK" $WW)" = 200 ] && [ "$(task $WW status)" = done ] || fail "w: done on a work task"
+[ "$(D1X "SELECT actor||'|'||(enc_v>0) AS a FROM task_events WHERE task_id='$WW' AND type='done'" | js 'd[0].results[0].a')" = 'you|1' ] || fail "w: a work task's done event is not actor you and sealed"
+[ "$(wdone "$WTK" $WT)" = 404 ] || fail "w: a task already done is not 404"
+[ "$(wdone "$WTK" no-such-task)" = 404 ] || fail "w: a missing task is not 404"
+[ "$(wdone "$WTK" $WR)" = 200 ] || fail "w: done on a recurring task"
+curl "${H[@]}" "$B/api/tasks?status=all" | js "d.tasks.filter(t=>t.title==='Smoke widget recur'&&t.status!=='done').length===1" | grep -qx true || fail "w: the recurrence did not make the next task"
+WTR=$(curl "${H[@]}" -X POST $B/api/tasks -d '{"title":"Smoke widget trashed"}' | js d.task.id); curl "${H[@]}" -X DELETE $B/api/tasks/$WTR >/dev/null
+[ "$(wdone "$WTK" $WTR)" = 404 ] || fail "w: a trashed task is not 404"
+[ "$(D1X "SELECT last_used_at IS NOT NULL AS u FROM widget_tokens WHERE id='$WTID'" | js 'd[0].results[0].u')" = 1 ] || fail "w: last_used_at not set"
+# bad tokens: 401, no row, no count
+W0=$(WAUD)
+for bad in "" "Bearer" "Bearer short" "Bearer $(echo "$WTK" | tr 'A-Za-z' 'a-zA-Z')" "Bearer ${WTK}x" "Basic $WTK"; do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$B/api/widget/tasks/$WT/done" ${bad:+-H "Authorization: $bad"})" = 401 ] || fail "w: bad token '$bad' is not 401"
+done
+[ "$(WAUD)" = "$W0" ] || fail "w: a bad token wrote an audit row"
+# the guard: only POST on exactly this path; Kelly's agent secret and the cookie routes stay as they were
+nos -X GET "$B/api/widget/tasks/$WT/done" -H "Authorization: Bearer $WTK" || fail "w: GET reached the widget route without a session"
+nos -X POST "$B/api/widget/tasks/$WT/done/" -H "Authorization: Bearer $WTK" || fail "w: a trailing slash got past the guard"
+nos -X POST "$B/api/widget/token" -H "Authorization: Bearer $WTK" || fail "w: a widget token created a token"
+nos -X DELETE "$B/api/tasks/$WT" -H "Authorization: Bearer $WTK" || fail "w: a widget token reached another route"
+nos -X POST "$B/api/tasks/$WT/done" -H "Authorization: Bearer $WTK" || fail "w: a widget token reached the cookie done route"
+# the audit rows: actor widget, action widget.done, the task id and the token id, never text
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND action='widget.done' AND target='$WT' AND detail LIKE '%\"ok\":true%'" | js 'd[0].results[0].n')" = 1 ] || fail "w: the tick is not audited once"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND (detail LIKE '%Smoke widget%' OR target LIKE '%Smoke widget%')" | js 'd[0].results[0].n')" = 0 ] || fail "w: task text reached the audit log"
+# 60 a minute: every answered call is audited, so the 61st is 429 (and is not audited: a flood can't grow the log)
+for i in $(seq 1 70); do c=$(wdone "$WTK" no-such-$i); [ "$c" = 404 ] && continue; [ "$c" = 429 ] && break; fail "w: call $i got $c"; done
+[ "$c" = 429 ] || fail "w: no 429 within 70 calls"
+[ "$(WAUD)" = 60 ] || fail "w: the limit did not stop at 60 audited calls (or a 429 was audited)"
+# revoke: 401 at once; a second token for the same device replaces the first; the list has no revoked one
+WTJ2=$(wtok "Smoke iPhone"); WTK2=$(echo "$WTJ2" | js d.token); WTID2=$(echo "$WTJ2" | js d.id)
+[ "$(wdone "$WTK" $WR)" = 401 ] || fail "w: the replaced token still works"
+[ "$(D1X "SELECT count(*) AS n FROM widget_tokens WHERE device_name='Smoke iPhone' AND revoked_at IS NULL" | js 'd[0].results[0].n')" = 1 ] || fail "w: one token per device"
+WT3=$(curl "${H[@]}" -X POST $B/api/tasks -d '{"title":"Smoke widget revoked"}' | js d.task.id)
+curl "${H[@]}" -X DELETE $B/api/widget/token/$WTID2 | grep -q '"ok":true' || fail "w: revoke"
+[ "$(wdone "$WTK2" $WT3)" = 401 ] || fail "w: a revoked token is not 401"
+[ "$(task $WT3 status)" != done ] || fail "w: a revoked token completed a task"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/widget/token/$WTID2)" = 404 ] || fail "w: revoking twice is not 404"
+curl "${H[@]}" $B/api/widget/tokens | js "!d.tokens.some(t=>t.id==='$WTID'||t.id==='$WTID2')" | grep -qx true || fail "w: the list shows a revoked token"
+curl "${H[@]}" $B/api/export | grep -q "$WTK2" && fail "w: the export holds a token"
+D1X "DELETE FROM widget_tokens WHERE created_at >= '$T0'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
+echo "smoke: (w) widget tick: token 256-bit base64url and stored as SHA-256 only, listed without secrets, done with it (actor you, via widget, sealed for work, recurrence runs, last_used_at set), a done, missing or trashed task 404, bad tokens 401 with no audit row, the guard lets only that method and path through, audit rows hold ids and no text, 60 a minute then 429 (not audited), a new token for the same device and a revoke both end the old one at once"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

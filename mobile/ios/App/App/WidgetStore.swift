@@ -71,6 +71,16 @@ enum WidgetStore {
         try JSONSerialization.data(withJSONObject: list).write(to: file, options: writeOptions)
     }
 
+    /// Drops a tick the widget has now delivered to the server (Task 2), so the app doesn't send it again. A file the app already took has nothing to drop.
+    static func removeTick(_ id: String, in dir: URL) throws {
+        let file = dir.appendingPathComponent(ticksName)
+        guard let data = try? Data(contentsOf: file), let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        let kept = list.filter { $0["id"] as? String != id }
+        if kept.count == list.count { return }
+        if kept.isEmpty { try? FileManager.default.removeItem(at: file); return }
+        try JSONSerialization.data(withJSONObject: kept).write(to: file, options: writeOptions)
+    }
+
     // MARK: Keychain (W6)
 
     static func tokenQuery(group: String?) -> [String: Any] {
@@ -83,6 +93,16 @@ enum WidgetStore {
     /// A token is the text the server gave: letters, digits, `-` and `_`, 16 to 200 characters. Nothing else is stored.
     static func validToken(_ t: String) -> Bool {
         (16...200).contains(t.utf8.count) && t.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || $0 == 45 || $0 == 95 }
+    }
+
+    /// The token the app stored (the widget's intent is the reader); nil when there is none or the Keychain won't answer.
+    static func readToken(group: String? = keychainGroup) -> String? {
+        var q = tokenQuery(group: group)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data, let t = String(data: d, encoding: .utf8), validToken(t) else { return nil }
+        return t
     }
 
     /// Stores (or with nil deletes) the token in the Keychain item the widget extension reads. This device only, after the first unlock.
