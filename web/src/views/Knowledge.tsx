@@ -236,7 +236,7 @@ function CollectionPage({ coll, reloadColls, searching }: { coll: Coll; reloadCo
     catch (e) { if (!(e instanceof SignedOut)) toast((e as Error).message); setRev((n) => n + 1); }
   };
   const setBoundary = async (to: 'locked' | 'cloud') => {
-    if (to === coll.boundary) return;
+    if (to === coll.boundary) { await reloadColls(); return; } // the page may be behind the server: refresh instead of silently doing nothing
     const ok = await confirmAction(to === 'cloud'
       ? `Make “${coll.name}” Cloud AI? Its passages will be indexed for search by meaning and Athena can read them in work threads. Your passkey is asked next.`
       : `Make “${coll.name}” Locked? Its search index is deleted and no AI will read it. You can still search it by words on this device.`);
@@ -296,7 +296,13 @@ export function KnowledgeView({ id }: { id?: string }) {
     try { setColls((await api<{ collections: Coll[] }>('/knowledge/collections')).collections); setErr(false); }
     catch (e) { if (!(e instanceof SignedOut)) setErr(true); }
   }, []);
-  useEffect(() => { void reload(); }, [reload]);
+  // Fresh on every open of a collection and whenever the tab comes back, so a switch never acts on a stale Locked / Cloud AI state.
+  useEffect(() => { void reload(); }, [reload, id]);
+  useEffect(() => {
+    const back = () => { if (document.visibilityState === 'visible') void reload(); };
+    document.addEventListener('visibilitychange', back); window.addEventListener('focus', back);
+    return () => { document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
+  }, [reload]);
   // Each search spends one of the 120 query embeds an hour (shared with Athena and Kelly): it runs on Enter, or after an 800 ms pause once 3 characters are typed.
   const [asked, setAsked] = useState('');
   useEffect(() => {

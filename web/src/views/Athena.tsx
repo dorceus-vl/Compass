@@ -439,6 +439,9 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
             ? <div className="chip cp-lock" aria-label="Project">
                 <Icon name="lock" /><b>{projects.find((p) => p.id === projSel)?.name ?? (kind === 'work' ? 'No project (work)' : 'None (personal)')}</b>
                 <small>{thread ? 'stays with this conversation' : 'this project'}</small></div>
+            : null}
+          {thread && <button type="button" className="chip ath-more ath-new" onClick={() => onOpen('new')}><Icon name="plus" />New conversation</button>}
+          {projectId || thread ? null
             : <select className="field" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Project" value={sel} disabled={up}
                 onChange={(e) => { const v = e.target.value; setSel(v); keepAllowed(v === WORK ? 'work' : projects.find((p) => p.id === v)?.kind ?? 'personal'); if (att.length) { setAtt([]); setAttErr('Files belong to one project, so attach them again.'); } }}>
                 <option value="">None (personal)</option><option value={WORK}>No project (work)</option>{projects.filter((p) => !p.deleted_at).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
