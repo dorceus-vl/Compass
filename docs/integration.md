@@ -93,6 +93,8 @@ Only shared items are visible: a task with no project if it is personal; otherwi
 
 Refusals: `401` bad secret; `403 { error: 'kelly_disabled' }`; `403 { error: 'scope_not_granted', scope }`; `400 { error }` bad body; `404`; `429 { error: 'rate_limited' }` (more than 60 calls in 60 seconds) or `{ error: 'write_limit' }` (more than 30 creates and dones in an hour).
 
+v2.1 (dependencies, checklists, templates, meeting series) leaves the agent API task shape unchanged: Kelly sees the same seven task keys and nothing about `blocked_by` or `checklist`; completing a task she marks done can send Vlad an "unblocked" push, which she is not told about.
+
 Audit: every authenticated call writes one `audit_log` row: actor `kelly`, action `agent.today`, `agent.tasks.list`, `agent.tasks.get`, `agent.tasks.create`, `agent.tasks.done`, `agent.projects` or `agent.knowledge.search`, target the task id when there is one, detail `{ "ok": true }` or `{ "refused": "kelly_disabled" | "scope_not_granted" | "not_found" | "rate_limited" | "write_limit" | "invalid" | "error" }`. Never task text; a knowledge search writes the counts of passages and collections and never the query. If the handler fails after the checks, the row says `error` and the call answers 500 `{ error: 'internal' }`. What Kelly polls (her agenda, the idle line, the Morning Show) shares one `/today` answer for 40 minutes and remembers a 401, `kelly_disabled` or `scope_not_granted` for an hour without calling, so a Kelly screen left open costs fewer than 40 rows a day; her chat tools always call.
 
 Only top-level tasks are visible: a subtask is never listed, and a lookup or `done` on one is a 404 (subtasks do not inherit their parent's project or kind).

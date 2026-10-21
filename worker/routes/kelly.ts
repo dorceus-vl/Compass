@@ -44,7 +44,10 @@ kelly.get('/log', async (c) => {
   const { results } = await c.env.DB.prepare(`SELECT id, at, actor, action, target, detail FROM audit_log WHERE (${CALL} OR action IN ('kelly.scopes', 'kelly.document')) AND at < ?1 ORDER BY at DESC LIMIT ?2`).bind(before, limit).all<Row>();
   const ids = [...new Set(results.filter((r) => r.action.startsWith('agent.tasks.') && r.target).map((r) => r.target!))];
   const live = new Set<string>();
-  if (ids.length) for (const t of (await c.env.DB.prepare(`SELECT id FROM tasks WHERE deleted_at IS NULL AND id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`).bind(...ids).all<{ id: string }>()).results) live.add(t.id);
+  for (let i = 0; i < ids.length; i += 50) { // D1 binds at most 100 parameters a statement; the page can name 100 tasks
+    const part = ids.slice(i, i + 50);
+    for (const t of (await c.env.DB.prepare(`SELECT id FROM tasks WHERE deleted_at IS NULL AND id IN (${part.map((_, j) => `?${j + 1}`).join(',')})`).bind(...part).all<{ id: string }>()).results) live.add(t.id);
+  }
   const parse = (s: string | null) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
   return c.json({ rows: results.map((r) => ({ ...r, detail: parse(r.detail), task_live: !!r.target && live.has(r.target) })), next: results.length === limit ? results[results.length - 1].at : null });
 });

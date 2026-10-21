@@ -65,14 +65,14 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Feature | From | Tier |
 | --- | --- | --- |
 | Title, notes (Markdown), kind personal / work, horizon short / medium / long, status, project, due, start, priority, estimate, tags | all | v1 |
-| Subtasks and checklists; progress bar from subtasks | Trello, Asana | v1 |
+| Subtasks and checklists; progress bar from subtasks | Trello, Asana | v1 (checklists inside a task: done, v2.1) |
 | Recurring tasks (every N days, weekdays, monthly on the Nth, after completion) | Todoist | v1 |
 | Waiting on: a person or vendor, asked-on date, nudge reminder every N days | | v1 |
-| Blocked by / blocks (dependencies between tasks) | Jira, Asana | v2 |
+| Blocked by / blocks (dependencies between tasks) | Jira, Asana | v2 (done, v2.1: same kind, loops refused, push when unblocked, arrows on the Timeline) |
 | Attachments and links (files kept in R2, Hollow links for big files) | | v1 |
 | Comments and activity log per task (your own notes over time, Kelly's additions) | all | v1 |
 | Custom fields per project (number, text, choice, date, person) | ClickUp, monday | v2 |
-| Task templates (new project kickoff, release, vendor onboarding) and checklists | Asana | v2 |
+| Task templates (new project kickoff, release, vendor onboarding) and checklists | Asana | v2 (done, v2.1: built-ins plus your own, saved from a task or a project) |
 | Time tracking: start / stop, manual entries, per project totals | ClickUp, Wrike | v2 |
 | Focus mode: pick 3 for today, Pomodoro timer, Do Not Disturb hint to Aura | Things | later |
 
@@ -119,7 +119,7 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Meeting review from SonarFlow / Knocturn ID notes (section 1) | | v1 |
 | Meeting prep card: agenda from open items, last meeting's decisions and actions, who owes what | Kelly meeting prep | v1 |
 | Minutes document generated from review (Word / Markdown) and sent through Kelly with Confirm-Before-Acting | | v1 |
-| Recurring meeting series: running list of decisions and actions across occurrences | | v2 |
+| Recurring meeting series: running list of decisions and actions across occurrences | | v2 (done, v2.1: series by title, open actions, open questions, Prepare next session) |
 | Follow-up nudges for action items owned by others (waiting-on rules) | | v1 |
 | Agenda builder with time boxes, shared as a document | | v2 |
 
