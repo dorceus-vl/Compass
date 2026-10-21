@@ -1385,6 +1385,10 @@ sget $VS2 | js "d.questions[0].answered===false" | grep -q true || fail "v4: un-
 curl "${H[@]}" -X PATCH $B/api/meetings/series/$VS2 -d "{\"answer\":{\"hash\":\"$QH\",\"answered\":true}}" >/dev/null
 # V13: the key is a hash and the name is ciphertext (no title words in a plain column)
 D1X "SELECT key AS k, name AS n, enc_v AS e FROM meeting_series WHERE id='$VS2'" | js "const r=d[0].results[0]; /^[0-9a-f]{64}$/.test(r.k)&&r.e===2&&!/smoke/i.test(r.n)" | grep -q true || fail "v4: V13 key/name"
+# D1 allows 100 bound parameters a statement: a series of 110 more meetings (and the 4 real ones) still opens (the local SQLite would not catch a bound list, so scripts/series.test.ts also bans one)
+D1X "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 110) INSERT INTO meeting_reviews (id, recording_id, title, summary, decisions, action_items, open_questions, important_notes, project_id, state, received_at, reviewed_at, updated_at, series_id, enc_v) SELECT 'serbulk-'||i||'-$R', 'serbulk'||i||'$R', 'bulk', NULL, '[]', '[]', '[]', '[]', '$VP', 'reviewed', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z', '$VS2', 0 FROM n" >/dev/null
+sget $VS2 | js "d.meetings.length===112&&d.actions.length===3&&d.decisions.length===2" | grep -q true || fail "v4: a series with 110 more meetings did not open"
+D1X "DELETE FROM meeting_reviews WHERE recording_id LIKE 'serbulk%$R'" >/dev/null
 # a move by hand: a new series; another project's series is refused; a later accept keeps the series' key
 post "$IDS" "$(mnotes "Smoke$RL other thing" 3)" >/dev/null; post "$IDS" "$(mnotes "Smoke$RL stray talk" 4)" >/dev/null
 V3=$(mid 3); V4=$(mid 4)

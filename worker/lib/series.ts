@@ -71,12 +71,14 @@ export async function backfillSeries(env: Env): Promise<void> {
 
 type TaskLite = { id: string; source_ref: string | null; source_url: string | null; project_id: string | null; status: string };
 /** V7: the review a meeting task came from. New tasks carry `meeting:<review id>:<n>`; older ones match by project and the review's url (the longest url wins). */
+/** The url, then the end or a query/fragment: `…/rec/12` never claims `…/rec/123`. */
+const startsWithUrl = (full: string, url: string) => full.startsWith(url) && (full.length === url.length || '?&#'.includes(full[url.length]));
 export function reviewOfTask(t: TaskLite, reviews: { id: string; url: string | null; project_id: string | null }[]): string | null {
   const m = /^meeting:([^:]+):\d+$/.exec(t.source_ref ?? '');
   if (m) return reviews.some((r) => r.id === m[1]) ? m[1] : null;
   if (!t.source_url) return null;
   let best: { id: string; n: number } | null = null;
-  for (const r of reviews) if (r.url && r.project_id === t.project_id && t.source_url.startsWith(r.url) && (!best || r.url.length > best.n)) best = { id: r.id, n: r.url.length };
+  for (const r of reviews) if (r.url && r.project_id === t.project_id && startsWithUrl(t.source_url, r.url) && (!best || r.url.length > best.n)) best = { id: r.id, n: r.url.length };
   return best?.id ?? null;
 }
 
@@ -87,13 +89,13 @@ export const meetingTasks = async (env: Env) =>
 export async function seriesDetail(env: Env, series: SeriesRow) {
   const { results } = await env.DB.prepare('SELECT * FROM meeting_reviews WHERE series_id = ?1 ORDER BY received_at DESC LIMIT 200').bind(series.id).all<Record<string, unknown> & { enc_v?: number }>();
   const reviews: MeetingReview[] = (await openAll(env, 'meeting_reviews', results)).map((r) => asReview(r));
-  const ids = reviews.map((r) => r.id);
-  const inList = ids.map((_, i) => `?${i + 1}`).join(',');
-  const decRows = ids.length ? (await env.DB.prepare(`SELECT * FROM decisions WHERE from_meeting_id IN (${inList}) AND deleted_at IS NULL ORDER BY decided_at DESC, created_at DESC`).bind(...ids).all<Decision>()).results : [];
+  // D1 allows 100 bound parameters a statement, so nothing here binds one per review or task: subselects on series_id, and tasks filtered in JS.
+  const decRows = (await env.DB.prepare(`SELECT * FROM decisions WHERE from_meeting_id IN (SELECT id FROM meeting_reviews WHERE series_id = ?1) AND deleted_at IS NULL ORDER BY decided_at DESC, created_at DESC`).bind(series.id).all<Decision>()).results;
   const decisions: SeriesDecision[] = (await openAll(env, 'decisions', decRows)).map((d) => ({ id: d.id, text: d.text, decided_at: d.decided_at, at_ref: d.at_ref, from_meeting_id: d.from_meeting_id }));
 
   const mine = (await meetingTasks(env)).filter((t) => reviewOfTask(t, reviews));
-  const full = mine.length ? (await env.DB.prepare(`SELECT * FROM tasks WHERE id IN (${mine.map((_, i) => `?${i + 1}`).join(',')})`).bind(...mine.map((t) => t.id)).all<Record<string, unknown> & { enc_v?: number }>()).results : [];
+  const mineIds = new Set(mine.map((t) => t.id));
+  const full = mine.length ? (await env.DB.prepare(`SELECT * FROM tasks WHERE source_kind = 'meeting' AND deleted_at IS NULL`).all<Record<string, unknown> & { enc_v?: number }>()).results.filter((t) => mineIds.has(t.id as string)) : [];
   const actions: SeriesAction[] = (await openAll(env, 'tasks', full)).map((t) => {
     const lite = mine.find((x) => x.id === t.id)!;
     const owner = (t.waiting_on as string | null) ?? /^Owner: (.+)$/m.exec((t.notes as string | null) ?? '')?.[1] ?? null;

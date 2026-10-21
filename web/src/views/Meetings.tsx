@@ -3,6 +3,7 @@ import type { MeetingReview } from '../../../shared/types.ts';
 import type { SeriesSummary } from '../../../shared/series.ts';
 import { loadMeetings, loadSeries } from '../inbox.ts';
 import { Link } from '../router.ts';
+import { useStore } from '../store/useStore.ts';
 import { SignedOut } from '../api.ts';
 import { accent } from '../ui/colors.ts';
 import { appGlyph } from '../ui/sources.ts';
@@ -26,12 +27,14 @@ function Row({ m }: { m: MeetingReview }) {
 
 /** A series: its name, how many meetings, the last one's date and the actions still open. */
 function SeriesCard({ s }: { s: SeriesSummary }) {
+  const { projects } = useStore();
+  const where = s.project_id ? projects.find((p) => p.id === s.project_id)?.name ?? 'Project' : 'Not filed';
   return (
     <Link to={`/meetings/series/${s.id}`} className="acard mtg" style={accent('var(--src-meeting)')}>
       <div className="ico" aria-hidden="true">{appGlyph('sonarflow')}</div>
       <div className="tx">
         <h3>{s.name}</h3>
-        <p>{n(s.meetings, 'meeting')} · last {s.last_at ? when(s.last_at) : '-'} · {n(s.open_actions, 'open action')}</p>
+        <p>{where} · {n(s.meetings, 'meeting')} · last {s.last_at ? when(s.last_at) : '-'} · {n(s.open_actions, 'open action')}</p>
       </div>
       {s.new_meetings > 0 && <span className="chip" style={{ color: 'var(--src-meeting)', borderColor: 'color-mix(in srgb,var(--src-meeting) 40%,transparent)' }}>{s.new_meetings} new</span>}
     </Link>

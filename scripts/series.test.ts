@@ -49,4 +49,12 @@ assert.deepEqual(questions, { t: 'list', items: ['Who owns the budget?'] }, 'an 
 assert.deepEqual(decisions, { t: 'list', items: ['d4 (2026-10-14)', 'd3 (2026-10-10)', 'd2 (2026-10-07)'] }, 'the last three, newest first');
 assert.deepEqual(carried, { t: 'list', items: ['Budget is tight', 'Vendor call pending'] }, "only the last meeting's notes");
 assert.ok(toMarkdown(full).includes('## Open questions'), 'it renders through the minutes builders');
+
+// D1 allows 100 bound parameters a statement: no series query may spread a per-item list into .bind(...) or build an IN list of placeholders.
+import { readFileSync } from 'node:fs';
+for (const f of ['../worker/lib/series.ts', '../worker/routes/meetings.ts']) {
+  const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+  assert.equal(/\.bind\(\s*\.\.\.[a-z]/i.test(src), false, `${f}: a spread in .bind(...) grows with the data`);
+  assert.equal(/map\(\(_, i\) => `\?\$\{i/.test(src), false, `${f}: a generated placeholder list`);
+}
 console.log('series.test.ts ok');
