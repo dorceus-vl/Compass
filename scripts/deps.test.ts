@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/deps.test.ts
 import assert from 'node:assert/strict';
-import { wouldCycle, isBlocked, parseBlockedBy, blockedIds, openBlockers, blocksOf, MAX_BLOCKERS, parseChecklist, checklistProgress, untickChecklist } from '../shared/deps.ts';
+import { wouldCycle, isBlocked, parseBlockedBy, blockedIds, openBlockers, blocksOf, MAX_BLOCKERS, parseChecklist, checklistProgress, untickChecklist, shouldAdoptChecklist } from '../shared/deps.ts';
 
 // wouldCycle(graph, from, to): would "from is blocked by to" close a loop? graph maps a task to the ids it waits on.
 const g = (o: Record<string, string[]>) => new Map(Object.entries(o));
@@ -84,4 +84,12 @@ assert.equal(checklistProgress('[]'), null);
 assert.equal(checklistProgress('nonsense'), null);
 assert.equal(untickChecklist(JSON.stringify([item(1, { done: true }), item(2)])), JSON.stringify([item(1), item(2)]), 'every item unticked, ids and order kept');
 assert.equal(untickChecklist(null), null);
+// shouldAdoptChecklist: a value we already sent or opened with is never adopted (an older reply must not revert the list); a new one is, unless an edit waits.
+const seen = new Set<string | null>([null, '[A]', '[B]', '[C]']);
+assert.equal(shouldAdoptChecklist('[A]', seen, false), false, 'a reply to our first PATCH after we sent B and C');
+assert.equal(shouldAdoptChecklist('[B]', seen, false), false, 'a reply to our second PATCH');
+assert.equal(shouldAdoptChecklist(null, seen, false), false, 'the opening (empty) value');
+assert.equal(shouldAdoptChecklist('', seen, false), false, 'empty text counts as null');
+assert.equal(shouldAdoptChecklist('[X]', seen, false), true, 'another device changed it');
+assert.equal(shouldAdoptChecklist('[X]', seen, true), false, 'not while our own edit waits');
 console.log('deps: ok');

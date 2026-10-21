@@ -81,3 +81,12 @@ export function untickChecklist(v: string | null): string | null {
   const items = parseChecklist(v);
   return items && items.length ? JSON.stringify(items.map((i) => ({ ...i, done: false }))) : null;
 }
+
+/**
+ * Should the open checklist take the `checklist` value now on the task row? Only a value we have not seen: `seen` holds the value the sheet
+ * opened with and every value we sent or adopted, so a reply to an older PATCH (offline replay, a PATCH for another field still in flight)
+ * never puts an earlier list over the one on the screen. Never while an edit of ours is waiting to be sent.
+ */
+export function shouldAdoptChecklist(prop: string | null, seen: ReadonlySet<string | null>, pending: boolean): boolean {
+  return !pending && !seen.has(prop || null);
+}

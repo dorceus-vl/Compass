@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task } from '../../../shared/types.ts';
-import { parseChecklist, MAX_CHECKLIST, MAX_CHECKLIST_TEXT, type ChecklistItem } from '../../../shared/deps.ts';
+import { parseChecklist, shouldAdoptChecklist, MAX_CHECKLIST, MAX_CHECKLIST_TEXT, type ChecklistItem } from '../../../shared/deps.ts';
 import { updateTask } from '../store/useStore.ts';
 
 /** What gets saved: items with no text yet stay on the screen only. */
@@ -18,22 +18,28 @@ export function Checklist({ task }: { task: Task }) {
   const focusId = useRef<string | null>(null);
   const list = useRef<HTMLUListElement>(null);
   const sent = useRef(task.checklist || null); // the last value we queued, so two quick changes are never compared with a stale prop
-  const send = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } const next = persisted(live.current); if (next !== sent.current) { sent.current = next; void updateTask(task.id, { checklist: next }); } };
+  const seen = useRef(new Set<string | null>([task.checklist || null])); // every value we opened with, sent or adopted: replies to older PATCHes carry these
+  const addBtn = useRef<HTMLButtonElement>(null);
+  const focusAdd = useRef(false);
+  const send = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } const next = persisted(live.current); if (next !== sent.current) { sent.current = next; seen.current.add(next); void updateTask(task.id, { checklist: next }); } };
   const sendRef = useRef(send); sendRef.current = send;
   const commit = (xs: ChecklistItem[], now = true) => {
     live.current = xs; setItems(xs);
     if (timer.current) clearTimeout(timer.current);
     if (now) sendRef.current(); else timer.current = window.setTimeout(() => sendRef.current(), 500);
   };
-  // A change from another device arrives with the next pull; take it unless an edit of ours is waiting.
+  // A change from another device arrives with the next pull. The task row also takes the reply to each of our own queued PATCHes
+  // (replay after a reconnect), and those can be older than what is on the screen, so only a value we have not seen is adopted.
   useEffect(() => {
-    if (timer.current) return;
-    if (persisted(live.current) !== (task.checklist || null)) { live.current = parseChecklist(task.checklist) ?? []; sent.current = task.checklist || null; setItems(live.current); }
+    const prop = task.checklist || null;
+    if (!shouldAdoptChecklist(prop, seen.current, !!timer.current)) return;
+    seen.current.add(prop); sent.current = prop; live.current = parseChecklist(prop) ?? []; setItems(live.current);
   }, [task.checklist]);
   useEffect(() => () => { if (timer.current) sendRef.current(); }, []); // closing the sheet saves what is waiting
   useEffect(() => { // move focus to the item an action asked for, after it has rendered
+    if (focusAdd.current) { focusAdd.current = false; addBtn.current?.focus(); }
     if (!focusId.current) return;
-    list.current?.querySelector<HTMLInputElement>(`[data-item="${focusId.current}"] input[type=text]`)?.focus();
+    list.current?.querySelector<HTMLInputElement>(`[data-item="${CSS.escape(focusId.current)}"] input[type=text]`)?.focus();
     focusId.current = null;
   });
 
@@ -51,20 +57,22 @@ export function Checklist({ task }: { task: Task }) {
     focusId.current = items[idx].id;
     commit(xs);
   };
-  const remove = (idx: number, focusPrev = false) => {
-    const prev = items[idx - 1] ?? items[idx + 1];
-    if (focusPrev && prev) focusId.current = prev.id;
+  // After a removal focus goes to a neighbour (Backspace: the one above, the × button: the one below), and to "Add an item" when none is left.
+  const remove = (idx: number, preferPrev = false) => {
+    const [a, b] = preferPrev ? [items[idx - 1], items[idx + 1]] : [items[idx + 1], items[idx - 1]];
+    const t = a ?? b;
+    if (t) focusId.current = t.id; else focusAdd.current = true;
     commit(items.filter((_, i) => i !== idx));
   };
   const focusSibling = (idx: number, by: -1 | 1) => {
-    const t = items[idx + by]; if (t) list.current?.querySelector<HTMLInputElement>(`[data-item="${t.id}"] input[type=text]`)?.focus();
+    const t = items[idx + by]; if (t) list.current?.querySelector<HTMLInputElement>(`[data-item="${CSS.escape(t.id)}"] input[type=text]`)?.focus();
   };
 
   return (
     <section className="chk" aria-label="Checklist">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Checklist</span>
-        {items.length > 0 && <span className="chk-count" aria-live="polite">{done}/{items.length} done</span>}
+        <span className="chk-count" aria-live="polite">{items.length > 0 ? `${done}/${items.length} done` : ''}</span>
       </div>
       {items.length > 0 && <div className="chk-bar" aria-hidden="true"><i style={{ width: `${Math.round((100 * done) / items.length)}%` }} /></div>}
       <ul ref={list} className="chk-list">
@@ -75,7 +83,7 @@ export function Checklist({ task }: { task: Task }) {
               onChange={(e) => patch(it.id, { text: e.target.value }, false)}
               onBlur={() => { if (timer.current) sendRef.current(); }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); if (it.text.trim()) addAfter(idx); }
+                if (e.key === 'Enter') { if (e.nativeEvent.isComposing) return; e.preventDefault(); if (it.text.trim()) addAfter(idx); }
                 else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(idx, e.key === 'ArrowUp' ? -1 : 1); }
                 else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); focusSibling(idx, e.key === 'ArrowUp' ? -1 : 1); }
                 else if ((e.key === 'Backspace' || e.key === 'Delete') && !it.text) { e.preventDefault(); remove(idx, true); }
@@ -88,7 +96,7 @@ export function Checklist({ task }: { task: Task }) {
           </li>
         ))}
       </ul>
-      <button type="button" className="btn chk-add" disabled={items.length >= MAX_CHECKLIST} onClick={() => addAfter(items.length - 1)}>
+      <button type="button" ref={addBtn} className="btn chk-add" disabled={items.length >= MAX_CHECKLIST} onClick={() => addAfter(items.length - 1)}>
         {items.length >= MAX_CHECKLIST ? 'Fifty items at most' : '+ Add an item'}
       </button>
     </section>
