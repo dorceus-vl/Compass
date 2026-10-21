@@ -17,7 +17,7 @@ export function TemplatesCard() {
     catch (e) { input.value = t.name; toast((e as Error).message || 'Could not rename'); }
   };
   const remove = async (t: TemplateInfo) => {
-    if (!(await confirmAction(`Delete the template "${t.name}"? It stays in Trash for 30 days; items made from it are not affected.`, { danger: true }))) return;
+    if (!(await confirmAction(`Delete the template "${t.name}"? It stays in Trash for 30 days (restore it there); items made from it are not affected.`, { danger: true }))) return;
     try { await api(`/templates/${t.id}`, { method: 'DELETE' }); toast('Template deleted'); await load(); }
     catch (e) { toast((e as Error).message || 'Could not delete'); }
   };

@@ -7,7 +7,7 @@ import { requireStepUp } from '../lib/step-up.ts';
 import { remove } from '../lib/vectors.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
-const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items' } as const;
+const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates' } as const;
 // Phase 3 rows show "name · project": the list query joins the project (name, enc_v) and this opens it.
 const PM_TABLES = ['raid_items', 'change_requests', 'decisions', 'lessons', 'documents', 'ai_threads'] as const;
 const TRASH_DAYS = 30, AUDIT_DAYS = 90, SESSION_DAYS = 30;
@@ -32,6 +32,9 @@ trash.get('/', async (c) => {
     .all<{ collection_name: string; collection_enc_v: number; enc_v: number }>();
   pm.knowledge_collections = await openAll(c.env, 'knowledge_collections', kc.results);
   pm.knowledge_items = await Promise.all((await openAll(c.env, 'knowledge_items', ki.results)).map(async ({ collection_enc_v, ...r }) => ({ ...r, collection_name: (await open(c.env, 'knowledge_collections', { name: r.collection_name, enc_v: collection_enc_v })).name })));
+  // v2.1: a deleted template, by name only (the body never leaves the server).
+  const tp = await c.env.DB.prepare('SELECT id, name, kind, scope, deleted_at, enc_v FROM templates WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all<{ enc_v: number }>();
+  pm.templates = await openAll(c.env, 'templates', tp.results);
   return c.json({ tasks: await openAll(c.env, 'tasks', t.results), projects: await openAll(c.env, 'projects', p.results), milestones: await openAll(c.env, 'milestones', m.results), ...pm, purge_after_days: TRASH_DAYS });
 });
 

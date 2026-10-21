@@ -27,7 +27,7 @@ const utcDay = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); 
 export const daysBetween = (from: string, to: string) => utcDay(to) - utcDay(from);
 export const addDays = (ymd: string, n: number) => new Date((utcDay(ymd) + n) * 86_400_000).toISOString().slice(0, 10);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-export const isDate = (v: unknown): v is string => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(Date.parse(v));
+export const isDate = (v: unknown): v is string => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v; // 2026-02-30 is not a date
 
 /** A template flattened for applying: one task list (a task template's subtasks point at index 0) with real dates. */
 export interface Dated {

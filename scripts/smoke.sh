@@ -1336,6 +1336,11 @@ for id in $TPL $WTPL $PTPL; do [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/templates/$TPL)" = 404 ] || fail "v3: delete twice"
 [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/templates/builtin:kickoff)" = 404 ] || fail "v3: a built-in cannot be deleted"
 tget | js "d.templates.filter(t=>!t.builtin&&t.name.includes('$R')).length" | grep -qx 0 || fail "v3: deleted templates still listed"
+# Trash lists a deleted template (name opened, no body) and restores it
+curl "${H[@]}" $B/api/trash | js "d.templates.some(t=>t.id==='$WTPL'&&t.name==='Smoke renamed work $R'&&t.body===undefined)" | grep -q true || fail "v3: Trash does not list the deleted work template by name"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/templates/$PTPL/restore)" = 200 ] || fail "v3: restore a template from Trash"
+tget | js "d.templates.some(t=>t.id==='$PTPL')" | grep -q true || fail "v3: a restored template is not listed"
+curl "${H[@]}" -X DELETE $B/api/templates/$PTPL >/dev/null
 want 404 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"name\":\"x\"}" || fail "v3: apply a deleted template"
 D1X "DELETE FROM templates WHERE id IN ('$TPL','$WTPL','$PTPL')" >/dev/null # the rows deleted above would wait for the 30-day purge; local D1 only
 for x in $SP $NP $NP2 $WP $PBP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done

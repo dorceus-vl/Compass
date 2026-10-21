@@ -53,6 +53,7 @@ templates.post('/', async (c) => {
     const p = await open(c.env, 'projects', prow);
     const ms = await openAll(c.env, 'milestones', (await c.env.DB.prepare('SELECT * FROM milestones WHERE project_id = ?1 AND deleted_at IS NULL ORDER BY due_at, sort').bind(p.id).all<Milestone>()).results);
     const ts = await openAll(c.env, 'tasks', (await c.env.DB.prepare('SELECT * FROM tasks WHERE project_id = ?1 AND deleted_at IS NULL ORDER BY created_at, sort_in_column').bind(p.id).all<Task>()).results);
+    if (ts.some((x) => x.kind !== p.kind)) return c.json({ error: 'template_invalid' }, 400); // never put work text in a personal template
     if (ts.length > MAX_TEMPLATE_TASKS || ms.length > MAX_TEMPLATE_MILESTONES) return c.json({ error: 'template_too_big' }, 400);
     scope = 'project'; kind = p.kind; body = snapshotProject(p, ms, ts);
   }

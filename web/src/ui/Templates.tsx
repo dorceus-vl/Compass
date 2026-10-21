@@ -75,7 +75,8 @@ export function SaveAsTemplate({ from, defaultName, onClose }: { from: { task_id
   const ref = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState(defaultName);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { ref.current?.showModal(); }, []);
+  const [on, setOn] = useState(online());
+  useEffect(() => { ref.current?.showModal(); const f = () => setOn(online()); addEventListener('online', f); addEventListener('offline', f); return () => { removeEventListener('online', f); removeEventListener('offline', f); }; }, []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || busy) return;
@@ -91,11 +92,12 @@ export function SaveAsTemplate({ from, defaultName, onClose }: { from: { task_id
     <dialog ref={ref} className="tpl-dlg" aria-label="Save as template" onClose={onClose} onClick={(e) => e.stopPropagation()}>
       <form onSubmit={submit} className="tpl-form">
         <b>Save as template</b>
-        <p className="hint" style={{ margin: 0 }}>Keeps the structure and checklists, and dates as days from the earliest one. Not who it waits on, and nothing marked done.</p>
+        <p className="hint" style={{ margin: 0 }}>Keeps the structure and checklists, and dates as days from the earliest one. Not who it waits on, and nothing marked done. Edits not yet synced are left out.</p>
+        {!on && <p className="hint" style={{ margin: 0 }}>Needs a connection.</p>}
         <input className="field" autoFocus required maxLength={200} aria-label="Template name" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="btn" onClick={() => ref.current?.close()}>Cancel</button>
-          <button className="btn primary" disabled={busy || !name.trim()}>Save</button>
+          <button className="btn primary" disabled={!on || busy || !name.trim()}>Save</button>
         </div>
       </form>
     </dialog>

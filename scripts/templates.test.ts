@@ -84,3 +84,9 @@ for (const b of BUILTINS) {
 }
 assert.deepEqual(BUILTINS[0].body.milestones.map((m) => m.name), ['Kickoff', 'Plan baselined', 'First status']);
 console.log('templates.test.ts ok');
+// fix round: a date that does not exist is refused; 200 subtasks is the cap for a task template
+import { isDate } from '../shared/templates.ts';
+assert.equal(isDate('2026-02-30'), false);
+assert.equal(isDate('2028-02-29'), true);
+assert.ok(parseBody('task', { task: t('x'), subtasks: Array.from({ length: MAX_TEMPLATE_TASKS - 1 }, (_, i) => t('s' + i)) }), '199 subtasks + the task = 200 ok');
+assert.equal(parseBody('task', { task: t('x'), subtasks: Array.from({ length: MAX_TEMPLATE_TASKS }, (_, i) => t('s' + i)) }), null, '200 subtasks is over');

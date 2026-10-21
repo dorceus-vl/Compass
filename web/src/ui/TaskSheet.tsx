@@ -145,7 +145,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>
         <span className="row" style={{ gap: 8 }}>
-        <button className="btn" onClick={() => { if (task.id.startsWith('tmp-')) { toast('Wait for the task to sync, then save it'); return; } flush(); setSaveTpl(true); }}>Save as template</button>
+        <button className="btn" disabled={!navigator.onLine} title={navigator.onLine ? undefined : 'Needs a connection'} onClick={() => { if (task.id.startsWith('tmp-')) { toast('Wait for the task to sync, then save it'); return; } flush(); setSaveTpl(true); }}>Save as template</button>
         {mail && <button className="btn" disabled={!navigator.onLine} title={navigator.onLine ? undefined : 'Needs a connection'} onClick={() => setSplitting(true)}>Split into tasks</button>}
         <button className="btn" style={{ color: 'var(--danger)' }} onClick={async () => { if (await confirmAction('Move this task to Trash? It stays there 30 days.')) { trashed.current = true; await trashTask(task.id); toast('Moved to Trash'); ref.current?.close(); } }}>Trash</button>
         </span>

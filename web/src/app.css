@@ -993,7 +993,7 @@ section.chk{display:grid;gap:8px;margin-top:12px}
 /* v2.1 templates: the New from template / Save as template dialogs and Settings → Templates */
 .tpl-dlg{max-width:560px}
 .tpl-form{display:grid;gap:12px}
-.tpl-list{display:grid;gap:8px;max-height:38vh;overflow:auto}
+.tpl-list{display:grid;gap:8px;align-content:start;grid-auto-rows:max-content;max-height:38vh;overflow:auto}
 .tpl-opt{display:flex;gap:12px;align-items:flex-start;padding:12px;min-height:44px;border:1px solid var(--field-border);border-radius:12px;background:var(--field);cursor:pointer}
 .tpl-opt:has(input:checked){border-color:var(--accent)}
 .tpl-opt:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px}

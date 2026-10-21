@@ -97,7 +97,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
             {PROJECT_SWATCHES.map((s, i) => <button type="button" key={s} className="sw" style={{ ['--sw' as string]: s } as CSSProperties} aria-label={`Colour ${SWATCH_NAME[i]}`}
               aria-pressed={color.toLowerCase() === s.toLowerCase()} onClick={() => p.colour !== s && save({ colour: s })}><i /></button>)}
           </div>
-          <button className="btn" onClick={() => { if (p.id.startsWith('tmp-')) { toast('Wait for the project to sync, then save it'); return; } setSaveTpl(true); }}>Save as template</button>
+          <button className="btn" disabled={!online()} title={online() ? undefined : 'Needs a connection'} onClick={() => { if (p.id.startsWith('tmp-')) { toast('Wait for the project to sync, then save it'); return; } setSaveTpl(true); }}>Save as template</button>
           <button className="btn ptrash" onClick={async () => { if (await confirmAction(`Move "${p.name}" to Trash? Its tasks stay on the board.`, { danger: true })) { await trashProject(p.id); toast('Moved to Trash'); navigate('/projects'); } }}>Trash</button>
         </div>
       </header>
