@@ -41,6 +41,8 @@ export interface Settings {
   kelly: { enabled: boolean; scopes: AgentScope[]; at?: string };
   /** Athena: her ElevenLabs voice and whether answers are spoken (Task 4), and the id of her still portrait (set by POST/DELETE /api/athena/portrait). */
   athena: { voice_id: string | null; speak_answers: boolean; portrait_id: string | null };
+  /** iPhone and iPad widgets (v2.3, W8): on the Lock Screen a work task shows as "Work task" while this is on. */
+  widgets: { hide_work_on_lock: boolean };
 }
 /** One of Athena's avatar loops (Settings → Athena). The file is served by GET /api/athena/media/:id. */
 export type AthenaClipState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -53,6 +55,7 @@ export const DEFAULT_SETTINGS: Settings = {
   work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
   kelly: { enabled: false, scopes: [] },
   athena: { voice_id: null, speak_answers: false, portrait_id: null },
+  widgets: { hide_work_on_lock: true },
 };
 export interface TodayAnswer {
   date: string; short: Task[]; medium: Task[]; long: Task[]; overdue: Task[]; done_this_week: number; open_today: number;

@@ -28,6 +28,7 @@ import { KellyLog } from './views/KellyLog.tsx';
 import { Palette } from './ui/Palette.tsx';
 import { TaskSheet } from './ui/TaskSheet.tsx';
 import { startSync, replay } from './store/sync.ts';
+import { startWidgetWriter, clearWidgets } from './widgets.ts';
 import { shell, startShell, sharedToQuickAdd, closeQuickAdd, stepUpInBrowser, openExternal } from './native.ts';
 import { enablePush, thisDeviceId } from './push.ts';
 
@@ -57,13 +58,15 @@ export function App() {
     const q = new URLSearchParams(location.search); q.delete('task');
     history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
   }, [auth, taskParam]);
-  useEffect(() => { if (auth === 'out') dropLocked(); }, [auth]); // Locked passages live in memory only: gone with the session
+  useEffect(() => { if (auth === 'out') { dropLocked(); void clearWidgets(); } }, [auth]); // Locked passages live in memory only: gone with the session
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
   // In an app shell: shared text opens quick add prefilled, links and notification taps move inside Compass, and the push token is kept fresh.
   useEffect(() => {
     if (auth !== 'in' || !shell() || quickAdd) return;
     if (thisDeviceId()) void enablePush().catch(() => {}); // already allowed, so no prompt; the token may have changed
-    return startShell({ onSharedText: (t) => { setShared((s) => ({ n: (s?.n ?? 0) + 1, ...sharedToQuickAdd(t) })); setPalette(true); }, onPath: (p) => navigate(p), notifyOn: () => thisDeviceId() === 'local' });
+    const stopWidgets = startWidgetWriter(); // iOS only: the widget snapshot (v2.3, W2)
+    const stopShell = startShell({ onSharedText: (t) => { setShared((s) => ({ n: (s?.n ?? 0) + 1, ...sharedToQuickAdd(t) })); setPalette(true); }, onPath: (p) => navigate(p), notifyOn: () => thisDeviceId() === 'local' });
+    return () => { stopWidgets(); stopShell(); };
   }, [auth]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); } };

@@ -8,6 +8,10 @@
 //     registerPush    ask permission, return the token        {}                            { kind: 'apns'|'fcm', token, env? } | { unsupported: true } | { denied: true }
 //     takeSharedText  the text a share left; clears it        {}                            { text: string | null }
 //     openExternal    open in the system browser              { url }                       {}
+//     updateWidgets   iOS only (v2.3, W2): write the widget    { json }                      {}  (json is the snapshot text, at most 64 KB, written atomically into the app group with
+//                     snapshot, reload the timelines                                              file protection completeUntilFirstUserAuthentication; '' removes it; rejects with code "too_big")
+//     setWidgetToken  iOS only (W6): the widget's tick token   { token: string | null }      {}  (a Keychain item shared with the widget extension; null deletes it; the page never stores it)
+//     takeWidgetTicks iOS only: ticks a widget queued offline  {}                            { ticks: { id, at }[] }  (pending-ticks.json in the app group, cleared as it is read)
 //     event sharedText { text }       event notificationTap { url }
 //   Tauri (Mac): command open_external { url }; command notify_permission → 'granted' | 'denied'; event compass-auth { url } (payload);
 //     command notify { title, body, url } (a banner; the page reads GET /api/push/outbox, ruling N3); command close_quick_add
@@ -129,6 +133,27 @@ export function sharedToQuickAdd(text: string): { title: string; notes: string |
   const first = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const url = text.match(/https?:\/\/[^\s<>]+/)?.[0].replace(/[).,;!?]+$/, '') ?? null;
   return { title: first.slice(0, 120).trim(), notes: url };
+}
+
+// ---- Widgets (iOS only, v2.3) ----
+export const inIosShell = () => shell() === 'ios';
+/** Hands the widget snapshot (JSON text, at most 64 KB; '' removes it) to the shell. Resolves false when there is no iOS shell or the shell refused it; never throws. */
+export async function updateWidgets(json: string): Promise<boolean> {
+  if (!inIosShell() || json.length > 64 * 1024) return false; // ponytail: characters, not bytes; the snapshot is capped far below and native re-checks the bytes
+  try { await callCap('updateWidgets', { json }); return true; } catch { return false; }
+}
+/** Keeps (or with null removes) the widget's tick token in the shell's Keychain. Rejects when the shell can't store it, so the caller can say so. */
+export async function setWidgetToken(token: string | null): Promise<void> {
+  if (!inIosShell()) throw new Error('Widgets are only in the iPhone and iPad app.');
+  await callCap('setWidgetToken', { token });
+}
+/** The ticks a widget couldn't send (no network), oldest first; empty outside the iOS shell. */
+export async function takeWidgetTicks(): Promise<{ id: string; at: string }[]> {
+  if (!inIosShell()) return [];
+  try {
+    const r = (await callCap('takeWidgetTicks')) as { ticks?: unknown } | null;
+    return Array.isArray(r?.ticks) ? r.ticks.filter((t): t is { id: string; at: string } => !!t && typeof (t as any).id === 'string' && typeof (t as any).at === 'string') : [];
+  } catch { return []; }
 }
 
 // ---- Links ----

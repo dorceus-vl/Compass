@@ -49,6 +49,11 @@ settings.patch('/', async (c) => {
     }
     patch.athena = a;
   }
+  if (body.widgets && typeof body.widgets === 'object') {
+    const b = body.widgets as Record<string, unknown>;
+    if (b.hide_work_on_lock !== undefined && typeof b.hide_work_on_lock !== 'boolean') return c.json({ error: 'widgets.hide_work_on_lock must be true or false' }, 400);
+    patch.widgets = { ...(await getSettings(c.env)).widgets, ...(b.hide_work_on_lock !== undefined && { hide_work_on_lock: b.hide_work_on_lock }) };
+  }
   if (Array.isArray(body.work_email_domains)) {
     const d = body.work_email_domains;
     if (d.length > 10 || !d.every((x) => typeof x === 'string' && DOMAIN.test(x))) return c.json({ error: 'work_email_domains must be up to 10 lowercase domains' }, 400);

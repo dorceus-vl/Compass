@@ -11,6 +11,7 @@
 		283B3D1943DAFB7F659BA12A /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7390D27081E42A3C6134F0BD /* ShareViewController.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		373078B7A3FCA706D75EF635 /* CompassLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240431FD3E8A22D75CA7EFB3 /* CompassLink.swift */; };
+		A0B1C2D3E4F5061728394A5B /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B1C2D3E4F5061728394A5C /* WidgetStore.swift */; };
 		4D30F4BA73CE986FC2FD1D06 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 86C1F886E8B93E7275D11032 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4F22205D00C3E80C118AEC4E /* CompassViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E039BD4338369BEFD4AC866 /* CompassViewController.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -50,6 +51,7 @@
 /* Begin PBXFileReference section */
 		1E039BD4338369BEFD4AC866 /* CompassViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CompassViewController.swift; sourceTree = "<group>"; };
 		240431FD3E8A22D75CA7EFB3 /* CompassLink.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CompassLink.swift; sourceTree = "<group>"; };
+		A0B1C2D3E4F5061728394A5C /* WidgetStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -130,6 +132,7 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				240431FD3E8A22D75CA7EFB3 /* CompassLink.swift */,
+				A0B1C2D3E4F5061728394A5C /* WidgetStore.swift */,
 				FFFEB4276465FF4F10D235E9 /* CompassNative.swift */,
 				1E039BD4338369BEFD4AC866 /* CompassViewController.swift */,
 				91F9B325ED1862A5E8395031 /* App.entitlements */,
@@ -314,6 +317,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6852FE996820072D4E8 /* SceneDelegate.swift in Sources */,
 				373078B7A3FCA706D75EF635 /* CompassLink.swift in Sources */,
+				A0B1C2D3E4F5061728394A5B /* WidgetStore.swift in Sources */,
 				A25B38A10E5BB88279A01FCC /* CompassNative.swift in Sources */,
 				4F22205D00C3E80C118AEC4E /* CompassViewController.swift in Sources */,
 			);

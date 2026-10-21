@@ -1,7 +1,7 @@
 // node --experimental-strip-types scripts/native.test.ts
 // The web side of the native shells: PKCE, the sign-in URL, shared text, links, and the sign-in / push flows against a stubbed shell.
 import assert from 'node:assert/strict';
-import { pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox, stepUpInBrowser } from '../web/src/native.ts';
+import { updateWidgets, setWidgetToken, takeWidgetTicks, inIosShell, pkce, signInUrl, callbackCode, sharedToQuickAdd, linkAction, tapAction, shell, nativeDevice, nativeSignIn, registerNativePush, pollOutbox, stepUpInBrowser } from '../web/src/native.ts';
 
 const g = globalThis as any;
 const set = (k: string, v: unknown) => Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
@@ -202,5 +202,48 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
   assert.ok(!manifest.includes('android.permission.CAMERA'), 'no camera');
   assert.ok(readFileSync('mobile/android/app/src/main/java/com/knocturnlabs/compass/MainActivity.java', 'utf8').includes('CompassLink.mayCapture('), 'Android capture goes through CompassLink');
   assert.ok(readFileSync('mobile/ios/App/App/CompassViewController.swift', 'utf8').includes('CompassLink.mayCapture('), 'iOS capture goes through CompassLink');
+}
+// Widgets (v2.3): iOS only. In a browser, on Android or on the Mac they do nothing; on iOS they call the three plugin methods the Swift side declares.
+{
+  const { readFileSync } = await import('node:fs');
+  delete g.__TAURI_INTERNALS__;
+  assert.equal(inIosShell(), false);
+  assert.equal(await updateWidgets('{"v":1}'), false, 'a browser: no-op');
+  assert.deepEqual(await takeWidgetTicks(), []);
+  await assert.rejects(setWidgetToken('x'.repeat(40)), /iPhone and iPad/);
+  set('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 15)', maxTouchPoints: 5 });
+  set('Capacitor', { isNativePlatform: () => true, getPlatform: () => 'android', nativePromise: async () => { throw new Error('android must not be called'); } });
+  assert.equal(await updateWidgets('{"v":1}'), false, 'Android: no-op');
+  const sent: { method: string; args: any }[] = [];
+  let widgetReply: (m: string) => any = () => ({});
+  set('Capacitor', { isNativePlatform: () => true, getPlatform: () => 'ios', nativePromise: async (_p: string, method: string, args: any) => { sent.push({ method, args }); return widgetReply(method); } });
+  assert.equal(inIosShell(), true);
+  assert.equal(await updateWidgets('{"v":1}'), true);
+  assert.deepEqual(sent.pop(), { method: 'updateWidgets', args: { json: '{"v":1}' } });
+  assert.equal(await updateWidgets(''), true, 'empty removes the file (signed out)');
+  sent.length = 0;
+  assert.equal(await updateWidgets('x'.repeat(64 * 1024 + 1)), false, 'over 64 KB is never sent');
+  assert.equal(sent.length, 0);
+  widgetReply = () => { throw Object.assign(new Error('too big'), { code: 'too_big' }); };
+  assert.equal(await updateWidgets('{"v":1}'), false, 'a refusal does not throw');
+  widgetReply = () => ({});
+  await setWidgetToken('abcdefghijklmnopqrstuvwxyz0123456789-_AB');
+  assert.deepEqual(sent.pop(), { method: 'setWidgetToken', args: { token: 'abcdefghijklmnopqrstuvwxyz0123456789-_AB' } });
+  await setWidgetToken(null);
+  assert.deepEqual(sent.pop(), { method: 'setWidgetToken', args: { token: null } });
+  widgetReply = () => ({ ticks: [{ id: 't1', at: '2026-10-21T10:00:00Z' }, { id: 5 }, null, { id: 't2', at: '2026-10-21T10:01:00Z' }] });
+  assert.deepEqual(await takeWidgetTicks(), [{ id: 't1', at: '2026-10-21T10:00:00Z' }, { id: 't2', at: '2026-10-21T10:01:00Z' }], 'only well-formed ticks');
+  widgetReply = () => ({});
+  assert.deepEqual(await takeWidgetTicks(), []);
+  // The Swift side declares the same three methods, and the header documents them; the app's entitlements carry the shared Keychain group.
+  const swift = readFileSync('mobile/ios/App/App/CompassNative.swift', 'utf8');
+  for (const m of ['updateWidgets', 'setWidgetToken', 'takeWidgetTicks']) {
+    assert.ok(swift.includes(`CAPPluginMethod(name: "${m}"`), `${m} is declared in CompassNative.swift`);
+    assert.ok(swift.includes(`@objc func ${m}(`), `${m} is implemented`);
+    assert.ok(readFileSync('web/src/native.ts', 'utf8').includes(`//     ${m}`), `${m} is in the native.ts header`);
+  }
+  assert.ok(readFileSync('mobile/ios/App/App/App.entitlements', 'utf8').includes('$(AppIdentifierPrefix)com.knocturnlabs.compass.shared'), 'keychain group in the app entitlements');
+  assert.ok(readFileSync('mobile/ios/App/App/Info.plist', 'utf8').includes('<key>WidgetKeychainGroup</key>'), 'the app reads its Keychain group from Info.plist');
+  assert.ok(!/NSFileProtectionNone|\.noFileProtection/.test(readFileSync('mobile/ios/App/App/WidgetStore.swift', 'utf8')) && readFileSync('mobile/ios/App/App/WidgetStore.swift', 'utf8').includes('.completeFileProtectionUntilFirstUserAuthentication'), 'snapshot file protection');
 }
 console.log('native: ok');

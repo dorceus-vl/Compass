@@ -7,6 +7,7 @@ import { Link } from '../router.ts';
 import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
 import { shell, nativeDevice } from '../native.ts';
+import { clearWidgets } from '../widgets.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
 import { AthenaCard } from './AthenaCard.tsx';
@@ -53,6 +54,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
     const left = (await idb.all('queue')).length;
     if (left > 0 && !(await confirmAction(`${left === 1 ? '1 change hasn\'t' : `${left} changes haven't`} synced yet. Sign out and discard them?`, { danger: true }))) return;
     await logout().catch(() => {});
+    await clearWidgets();
     await Promise.all((['tasks', 'projects', 'milestones', 'meta', 'queue'] as const).map((st) => idb.clear(st)));
     onSignedOut();
   };
@@ -78,6 +80,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Email s={s} save={save} />
       <Ai s={s} save={save} />
       <AthenaCard s={s} save={save} />
+      {shell() === 'ios' && <WidgetsCard s={s} save={save} />}
       <KellyCard />
       <TemplatesCard />
       <ExportCard />
@@ -157,6 +160,20 @@ function Notifications({ s, save }: { s: Settings; save: Save }) {
           {label}<input type="checkbox" checked={s.push[k]} onChange={(e) => save({ push: { [k]: e.target.checked } })} style={{ width: 20, height: 20, accentColor: 'var(--accent)' }} />
         </label>))}
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Quiet hours above hold back everything except the test.</p>
+    </div>
+  );
+}
+
+/** Settings → Widgets (v2.3, W8): iPhone and iPad app only. */
+function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
+  return (
+    <div className="card">
+      <CardHead icon="today" title="Widgets" desc="What the Home Screen and Lock Screen widgets show. Widgets are filled each time the app syncs." />
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 }}>
+        Hide work titles on the Lock Screen
+        <input type="checkbox" checked={s.widgets.hide_work_on_lock} onChange={(e) => save({ widgets: { hide_work_on_lock: e.target.checked } })} style={{ width: 20, height: 20, accentColor: 'var(--accent)' }} />
+      </label>
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>On, a work task shows as “Work task” on the Lock Screen, where anyone can glance at it. On the Home Screen it shows its title. Tasks in Offline-only projects never show a title in a widget.</p>
     </div>
   );
 }

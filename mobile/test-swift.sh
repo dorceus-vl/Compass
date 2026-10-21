@@ -76,3 +76,66 @@ print("ShareText: all checks passed")
 SWIFT
 swiftc -o "$out/share" ios/App/ShareExtension/ShareText.swift "$out/s/main.swift"
 "$out/share"
+
+# The widgets' App Group files and Keychain query (v2.3): atomic protected write, size and shape limits, ticks read and cleared.
+mkdir "$out/w"; cat > "$out/w/main.swift" <<'SWIFT'
+import Foundation
+func check(_ ok: Bool, _ what: String) { if !ok { print("FAIL: \(what)"); exit(1) } }
+let fm = FileManager.default
+let dir = fm.temporaryDirectory.appendingPathComponent("widgetstore-\(UUID().uuidString)")
+try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+defer { try? fm.removeItem(at: dir) }
+let snap = dir.appendingPathComponent(WidgetStore.snapshotName)
+func text() -> String? { try? String(contentsOf: snap, encoding: .utf8) }
+
+// Write: the file holds exactly the text, a second write replaces it whole, nothing else is left in the folder (atomic: no temp file stays).
+try WidgetStore.write("{\"v\":1,\"a\":\"first\"}", in: dir)
+check(text() == "{\"v\":1,\"a\":\"first\"}", "written")
+try WidgetStore.write("{\"v\":1,\"a\":\"second\"}", in: dir)
+check(text() == "{\"v\":1,\"a\":\"second\"}", "replaced")
+check(try fm.contentsOfDirectory(atPath: dir.path) == [WidgetStore.snapshotName], "no temp file left")
+// File protection: readable only after the first unlock since boot, and the option is what the writer asks for.
+check(WidgetStore.writeOptions.contains(.atomic) && WidgetStore.writeOptions.contains(.completeFileProtectionUntilFirstUserAuthentication), "write options")
+check((try fm.attributesOfItem(atPath: snap.path)[.protectionKey] as? FileProtectionType) == .completeUntilFirstUserAuthentication, "protection attribute on the file")
+// Limits: 64 KB exactly is fine, one byte more is refused and the old file stays; not a JSON object is refused too.
+let pad = String(repeating: "x", count: WidgetStore.maxBytes - "{\"p\":\"\"}".utf8.count)
+try WidgetStore.write("{\"p\":\"\(pad)\"}", in: dir)
+check(text()?.utf8.count == WidgetStore.maxBytes, "64 KB accepted")
+let before = text()
+do { try WidgetStore.write("{\"p\":\"\(pad)x\"}", in: dir); check(false, "over 64 KB accepted") } catch { check(error as? WidgetStore.Failure == .tooBig, "too big") }
+for bad in ["not json", "[1,2]", "\"str\"", "{"] {
+    do { try WidgetStore.write(bad, in: dir); check(false, "accepted: \(bad)") } catch { check(error as? WidgetStore.Failure == .notJSON, "not json: \(bad)") }
+}
+check(text() == before, "a refused write leaves the old file")
+// Empty text removes it (signed out), and removing twice is fine.
+try WidgetStore.write("", in: dir)
+check(!fm.fileExists(atPath: snap.path), "removed")
+try WidgetStore.write("", in: dir)
+
+// Ticks: none to start; a file is read oldest first, malformed entries skipped, then cleared; a tick written afterwards is a new file.
+check(WidgetStore.takeTicks(in: dir).isEmpty, "no ticks")
+let ticks = dir.appendingPathComponent(WidgetStore.ticksName)
+try Data("[{\"id\":\"t1\",\"at\":\"2026-10-21T10:00:00Z\"},{\"id\":5},{\"at\":\"x\"},{\"id\":\"\",\"at\":\"y\"},{\"id\":\"t2\",\"at\":\"2026-10-21T10:01:00Z\"}]".utf8).write(to: ticks)
+let got = WidgetStore.takeTicks(in: dir)
+check(got == [["id": "t1", "at": "2026-10-21T10:00:00Z"], ["id": "t2", "at": "2026-10-21T10:01:00Z"]], "ticks read: \(got)")
+check(!fm.fileExists(atPath: ticks.path) && WidgetStore.takeTicks(in: dir).isEmpty, "ticks cleared")
+check(try fm.contentsOfDirectory(atPath: dir.path).isEmpty, "no .taking file left")
+try Data("garbage".utf8).write(to: ticks)
+check(WidgetStore.takeTicks(in: dir).isEmpty && !fm.fileExists(atPath: ticks.path), "a corrupt ticks file is dropped")
+let many = "[" + (0..<300).map { "{\"id\":\"t\($0)\",\"at\":\"a\"}" }.joined(separator: ",") + "]"
+try Data(many.utf8).write(to: ticks)
+check(WidgetStore.takeTicks(in: dir).count == WidgetStore.maxTicks, "ticks capped")
+
+// Keychain item: the shared group when given, this device only after the first unlock, and only well-formed tokens are stored.
+let q = WidgetStore.tokenQuery(group: "TEAM.com.knocturnlabs.compass.shared")
+check(q[kSecAttrAccessGroup as String] as? String == "TEAM.com.knocturnlabs.compass.shared", "access group")
+check(q[kSecClass as String] as! CFString == kSecClassGenericPassword && q[kSecAttrAccount as String] as? String == "tick-token", "item identity")
+check(WidgetStore.tokenQuery(group: nil)[kSecAttrAccessGroup as String] == nil && WidgetStore.tokenQuery(group: "")[kSecAttrAccessGroup as String] == nil, "no group, no key")
+check(WidgetStore.validToken("abcdefghijklmnop_-ABC123") && WidgetStore.validToken(String(repeating: "a", count: 43)), "token ok")
+for bad in ["", "short", String(repeating: "a", count: 201), "has space in it 1234567", "quote\"1234567890123456", "naïve-token-1234567890123"] { check(!WidgetStore.validToken(bad), "token refused: \(bad)") }
+// A bad token is refused before the Keychain is touched (no entitlement needed to see that).
+do { try WidgetStore.setToken("bad token", group: nil); check(false, "bad token stored") } catch { check(error as? WidgetStore.Failure == .badToken, "bad token error") }
+print("WidgetStore: all checks passed")
+SWIFT
+swiftc -o "$out/widgets" ios/App/App/WidgetStore.swift "$out/w/main.swift"
+"$out/widgets"

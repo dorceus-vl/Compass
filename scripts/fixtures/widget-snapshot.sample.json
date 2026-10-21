@@ -1,0 +1,258 @@
+{
+  "v": 1,
+  "at": "2026-10-21T15:00:00.000Z",
+  "tz": "America/Toronto",
+  "today": {
+    "due": 3,
+    "late": 1,
+    "done": 1,
+    "total": 4,
+    "next": {
+      "id": "t-vendor",
+      "title": "Call the vendor about the test env",
+      "due_label": "Today",
+      "late": false,
+      "horizon": "short",
+      "work": true,
+      "offline": false,
+      "project": "p-branch"
+    }
+  },
+  "items": [
+    {
+      "id": "t-status",
+      "title": "Send the status report",
+      "due_label": "Yesterday",
+      "late": true,
+      "horizon": "medium",
+      "work": true,
+      "offline": false,
+      "project": "p-branch"
+    },
+    {
+      "id": "t-vendor",
+      "title": "Call the vendor about the test env",
+      "due_label": "Today",
+      "late": false,
+      "horizon": "short",
+      "work": true,
+      "offline": false,
+      "project": "p-branch"
+    },
+    {
+      "id": "t-secret",
+      "title": null,
+      "due_label": "Today",
+      "late": false,
+      "horizon": "short",
+      "work": true,
+      "offline": true,
+      "project": "p-secret"
+    },
+    {
+      "id": "t-dentist",
+      "title": "Book the dentist",
+      "due_label": "Tomorrow",
+      "late": false,
+      "horizon": "long",
+      "work": false,
+      "offline": false,
+      "project": "p-home"
+    },
+    {
+      "id": "t-sow",
+      "title": "Review the SOW",
+      "due_label": "Fri",
+      "late": false,
+      "horizon": "short",
+      "work": true,
+      "offline": false,
+      "project": "p-vendor"
+    },
+    {
+      "id": "t-cab",
+      "title": "Book the CAB slot",
+      "due_label": "Mon",
+      "late": false,
+      "horizon": "medium",
+      "work": true,
+      "offline": false,
+      "project": "p-vendor"
+    }
+  ],
+  "horizons": {
+    "short": [
+      {
+        "id": "t-vendor",
+        "title": "Call the vendor about the test env",
+        "due_label": "Today",
+        "late": false,
+        "horizon": "short",
+        "work": true,
+        "offline": false,
+        "project": "p-branch"
+      },
+      {
+        "id": "t-secret",
+        "title": null,
+        "due_label": "Today",
+        "late": false,
+        "horizon": "short",
+        "work": true,
+        "offline": true,
+        "project": "p-secret"
+      },
+      {
+        "id": "t-sow",
+        "title": "Review the SOW",
+        "due_label": "Fri",
+        "late": false,
+        "horizon": "short",
+        "work": true,
+        "offline": false,
+        "project": "p-vendor"
+      }
+    ],
+    "medium": [
+      {
+        "id": "t-status",
+        "title": "Send the status report",
+        "due_label": "Yesterday",
+        "late": true,
+        "horizon": "medium",
+        "work": true,
+        "offline": false,
+        "project": "p-branch"
+      },
+      {
+        "id": "t-cab",
+        "title": "Book the CAB slot",
+        "due_label": "Mon",
+        "late": false,
+        "horizon": "medium",
+        "work": true,
+        "offline": false,
+        "project": "p-vendor"
+      }
+    ],
+    "long": [
+      {
+        "id": "t-dentist",
+        "title": "Book the dentist",
+        "due_label": "Tomorrow",
+        "late": false,
+        "horizon": "long",
+        "work": false,
+        "offline": false,
+        "project": "p-home"
+      }
+    ]
+  },
+  "blocked": 1,
+  "projects": [
+    {
+      "id": "p-branch",
+      "name": "Branch network refresh",
+      "rag": "amber",
+      "pct": 40,
+      "next_milestone": {
+        "name": "Pilot site live",
+        "late_days": 5
+      },
+      "slip_days": 7,
+      "high_risks": 3,
+      "overdue": 1,
+      "work": true,
+      "offline": false
+    },
+    {
+      "id": "p-vendor",
+      "name": "Vendor onboarding",
+      "rag": "green",
+      "pct": 0,
+      "next_milestone": {
+        "name": "UAT sign-off",
+        "late_days": 0
+      },
+      "slip_days": null,
+      "high_risks": null,
+      "overdue": 0,
+      "work": true,
+      "offline": false
+    },
+    {
+      "id": "p-secret",
+      "name": null,
+      "rag": "red",
+      "pct": 0,
+      "next_milestone": {
+        "name": null,
+        "late_days": 0
+      },
+      "slip_days": null,
+      "high_risks": null,
+      "overdue": 0,
+      "work": true,
+      "offline": true
+    },
+    {
+      "id": "p-home",
+      "name": "Home projects",
+      "rag": "none",
+      "pct": 0,
+      "next_milestone": null,
+      "slip_days": null,
+      "high_risks": null,
+      "overdue": 0,
+      "work": false,
+      "offline": false
+    }
+  ],
+  "week": [
+    {
+      "day": "2026-10-19",
+      "short": 0,
+      "medium": 0,
+      "long": 0
+    },
+    {
+      "day": "2026-10-20",
+      "short": 0,
+      "medium": 1,
+      "long": 0
+    },
+    {
+      "day": "2026-10-21",
+      "short": 2,
+      "medium": 0,
+      "long": 0
+    },
+    {
+      "day": "2026-10-22",
+      "short": 0,
+      "medium": 0,
+      "long": 1
+    },
+    {
+      "day": "2026-10-23",
+      "short": 1,
+      "medium": 0,
+      "long": 0
+    },
+    {
+      "day": "2026-10-24",
+      "short": 0,
+      "medium": 0,
+      "long": 0
+    },
+    {
+      "day": "2026-10-25",
+      "short": 0,
+      "medium": 0,
+      "long": 0
+    }
+  ],
+  "lock": {
+    "hide_work": true
+  }
+}

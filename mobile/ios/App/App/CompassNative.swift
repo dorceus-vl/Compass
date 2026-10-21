@@ -3,12 +3,16 @@ import WebKit
 import Capacitor
 import AuthenticationServices
 import UserNotifications
+import WidgetKit
 
 // Phase 4: what the page can't do itself in the app. web/src/native.ts is the caller; the contract is in its header:
 //   signIn({ url, callbackScheme }) → { url }      Knocturn ID in the system sheet (N1); a closed sheet rejects with code 'cancelled'
 //   registerPush() → { kind: 'apns', token, env } | { denied: true }
 //   takeSharedText() → { text: string | null }    the share the Share Extension left in the app group (N4), cleared as it is read
 //   openExternal({ url })                          http(s), mailto:, tel: in the system
+//   updateWidgets({ json })                        v2.3 (W2): the widget snapshot, at most 64 KB, written atomically into the app group (protected until the first unlock); '' removes it; then the widgets reload
+//   setWidgetToken({ token })                      v2.3 (W6): the widget's tick token in the shared Keychain item; null deletes it
+//   takeWidgetTicks() → { ticks: [{ id, at }] }    v2.3: ticks a widget queued offline (pending-ticks.json), cleared as they are read
 //   events sharedText { text }, notificationTap { url }   (kept until the page listens, so a cold start loses neither)
 // It also decides every top-level navigation of the web view (CompassLink.route): Compass stays in, other pages go to the browser.
 @objc(CompassNativePlugin)
@@ -20,6 +24,9 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
         CAPPluginMethod(name: "registerPush", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "takeSharedText", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openExternal", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateWidgets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setWidgetToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeWidgetTicks", returnType: CAPPluginReturnPromise),
     ]
 
     private var session: ASWebAuthenticationSession? // kept alive while the sheet is up
@@ -101,6 +108,45 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
         guard let url = CompassLink.external(call.getString("url")) else { return call.reject("That link can’t be opened.", "invalid_request") }
         DispatchQueue.main.async { UIApplication.shared.open(url) }
         call.resolve()
+    }
+
+    // MARK: widgets (v2.3)
+
+    @objc func updateWidgets(_ call: CAPPluginCall) {
+        guard let json = call.getString("json") else { return call.reject("No snapshot.", "invalid_request") }
+        guard let dir = WidgetStore.container() else { return call.reject("The widgets' storage isn't available.", "no_container") }
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try WidgetStore.write(json, in: dir)
+                WidgetCenter.shared.reloadAllTimelines()
+                call.resolve()
+            } catch WidgetStore.Failure.tooBig {
+                call.reject("The widget snapshot is too big.", "too_big")
+            } catch WidgetStore.Failure.notJSON {
+                call.reject("The widget snapshot isn't valid.", "invalid_request")
+            } catch {
+                call.reject("The widget snapshot couldn't be saved.", "failed")
+            }
+        }
+    }
+
+    @objc func setWidgetToken(_ call: CAPPluginCall) {
+        let token = call.getString("token") // nil or null deletes
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try WidgetStore.setToken(token)
+                call.resolve()
+            } catch WidgetStore.Failure.badToken {
+                call.reject("That widget token isn't valid.", "invalid_request")
+            } catch {
+                call.reject("The widget token couldn't be saved.", "failed")
+            }
+        }
+    }
+
+    @objc func takeWidgetTicks(_ call: CAPPluginCall) {
+        guard let dir = WidgetStore.container() else { return call.resolve(["ticks": []]) }
+        DispatchQueue.global(qos: .utility).async { call.resolve(["ticks": WidgetStore.takeTicks(in: dir)]) }
     }
 
     /// Every navigation of the web view comes here first (Capacitor's WebViewDelegationHandler). nil leaves it to Capacitor.
