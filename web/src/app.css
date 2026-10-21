@@ -1091,3 +1091,29 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 @media (max-width:760px),(pointer:coarse){.chart-tog{min-height:44px}}
 .rg-corner{grid-column:1/3}
 .dash-tile small{display:block;margin-top:2px;font-size:12px;color:var(--text-faint)}
+/* v2.2 stakeholders: the 2x2 grid with chips, and the list as a table that stacks into labelled rows on a phone */
+.sh-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.sh-axis{grid-column:1/-1;font:500 11px var(--mono);letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint)}
+.sh-quad{min-width:0;display:grid;gap:10px;align-content:start;min-height:140px}
+.sh-qh{display:grid;gap:2px}.sh-qh b{font-size:16px}
+.sh-chips{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.sh-chip{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:44px;min-width:0;max-width:100%;padding:8px 12px;border-radius:12px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.sh-chip:hover{border-color:var(--accent)}.sh-chip:focus-visible,.sh-table .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sh-nm{font-weight:600;overflow-wrap:anywhere}
+.sh-att{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:500}
+.sh-segs{align-items:flex-end}.sh-segs>.qf{flex:1 1 140px}
+.sh-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.sh-table th,.sh-table td{padding:10px;text-align:left;vertical-align:top;border-top:1px solid var(--border-soft)}
+.sh-table thead th{border-top:0;font:500 11px var(--mono);letter-spacing:2.4px;text-transform:uppercase;color:var(--text-faint);white-space:nowrap}
+.sh-table tbody th{font-weight:500;min-width:150px}.sh-table tbody th .sh-att{display:flex;margin-top:2px}
+.sh-acts{display:grid;grid-template-columns:repeat(2,max-content);gap:6px;align-items:center;justify-content:start}.sh-acts .btn{min-height:44px;padding:8px 12px;font-size:13px;justify-content:center}.sh-acts .sub{grid-column:1/-1;max-width:200px}.sh-table .chip{white-space:nowrap}
+@media (max-width:760px){
+  .sh-grid{grid-template-columns:minmax(0,1fr)}.sh-axis{display:none}
+  .sh-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .sh-table,.sh-table tbody,.sh-table tr,.sh-table td,.sh-table th{display:block}
+  .sh-table tr{padding:10px 0;border-top:1px solid var(--border-soft)}.sh-table th,.sh-table td{border:0;padding:3px 0}
+  .sh-table td[data-label]::before{content:attr(data-label);display:inline-block;min-width:110px;color:var(--text-faint);font-size:12px}
+  .sh-acts{margin-top:6px;grid-template-columns:repeat(2,minmax(0,max-content))}
+}
+.tpl-form .seg button{min-height:38px}
+@media (max-width:760px),(pointer:coarse){.tpl-form .seg button{min-height:44px}.tpl-form .seg{flex-wrap:wrap}}

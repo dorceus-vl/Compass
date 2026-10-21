@@ -1521,6 +1521,81 @@ curl "${H[@]}" -X POST $B/api/reports/status -d "$DSR" | js "d.ai_summary===null
 [ "$(D1X "SELECT count(*) AS n FROM ai_usage" | js 'd[0].results[0].n')" = "$DN1" ] || fail "p1: an offline report made a model call"
 D1X "DELETE FROM baselines WHERE project_id='$DW'; DELETE FROM raid_items WHERE project_id='$DW'; DELETE FROM task_events WHERE task_id IN ('$DT1','$DT2','$DT3'); UPDATE tasks SET parent_id=NULL WHERE project_id='$DW'; DELETE FROM tasks WHERE project_id='$DW'; DELETE FROM milestones WHERE project_id='$DW'; DELETE FROM audit_log WHERE target IN ('$DW','$DN'); DELETE FROM projects WHERE id IN ('$DW','$DN')" >/dev/null
 echo "smoke: (p1) report: the route returns the opened latest baseline and the subtasks; the shared model gives 2 late (task +4, milestone +5), 1 high and 1 unrated risk, 2 open, and the summary text holds numbers only (no baseline name); no baseline -> null; Offline-only -> ai_refused offline_boundary with no model call"
+# (s2) v2.2 Task 2: stakeholders. Add, edit, mark sent (the next due moves, by the shared nextDue); a work stakeholder is ciphertext in D1 (a personal one plain); bad bodies are 400; the list's `athena` flag is false for an
+# Offline-only project; Trash lists and restores; export opens it; the cron sends ONE "2 stakeholder updates due" (count only, no names, a closed project's stakeholder is not counted), not twice the same day, not before digest_hour,
+# not with the switch off or in quiet hours. Local D1 only.
+spost() { curl "${H[@]}" -w '\n%{http_code}' -X POST "$B/api/projects/$1/stakeholders" -d "$2"; }
+nextjs() { node --experimental-strip-types --no-warnings --input-type=module -e 'const { nextDue } = await import(process.cwd() + "/shared/stakeholders.ts"); console.log(nextDue(process.argv[1] || null, +process.argv[2], process.argv[3], process.argv[4] || undefined))' "$1" "$2" "$3" "${4:-}"; }
+S2PARK=$(date -u +%Y-%m-%dT%H:%M:%S.001Z); D1X "UPDATE stakeholders SET deleted_at = '$S2PARK' WHERE deleted_at IS NULL" >/dev/null # park the dev data's stakeholders so the count below is the smoke's own; put back at the end (and by fail())
+S2Q=$(curl "${H[@]}" $B/api/settings | js '[d.quiet_from,d.quiet_to,d.digest_hour,d.tz].join()'); Q0=$(echo "$S2Q" | cut -d, -f1,2); S2DH=$(echo "$S2Q" | cut -d, -f3); S2TZ=$(echo "$S2Q" | cut -d, -f4)
+restore_quiet() { [ -z "${Q0:-}" ] || curl -s -b $J -c $J -H "Origin: $B" -H "Content-Type: application/json" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${Q0%,*}\",\"quiet_to\":\"${Q0#*,}\",\"digest_hour\":$S2DH,\"push\":{\"stakeholder\":true}}" >/dev/null || true; Q0=; D1X "UPDATE stakeholders SET deleted_at = NULL WHERE deleted_at = '$S2PARK'" >/dev/null; } # also restores the digest hour; fail() calls it
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null
+SW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke stake work","kind":"work"}' | js d.project.id)
+SP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke stake own","kind":"personal"}' | js d.project.id)
+SC=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke stake closed","kind":"personal"}' | js d.project.id)
+SA=$(spost $SW '{"name":"Smoke Ada","role":"Smoke sponsor","power":"high","interest":"high","attitude":"resistant","channel":"Email","cadence_days":7,"notes":"smoke secret notes"}'); [ "$(kst "$SA")" = 201 ] || fail "s2: add: $SA"
+SAID=$(kbody "$SA" | js d.item.id)
+# a work stakeholder is ciphertext in D1; a personal one is plain
+RAWS=$(D1X "SELECT name||'|'||ifnull(role,'')||'|'||ifnull(channel,'')||'|'||ifnull(notes,'')||'|'||enc_v||'|'||power||'|'||cadence_days AS r FROM stakeholders WHERE id='$SAID'" | js 'd[0].results[0].r')
+case "$RAWS" in *Smoke*|*Email*|*secret*) fail "s2: a work stakeholder is not sealed in D1: $RAWS";; esac
+case "$RAWS" in *"|2|high|7") ;; *) fail "s2: enc_v or the plain columns: $RAWS";; esac
+SB=$(spost $SP '{"name":"Smoke Bo","attitude":"supportive","cadence_days":3}'); [ "$(kst "$SB")" = 201 ] || fail "s2: add personal: $SB"; SBID=$(kbody "$SB" | js d.item.id)
+[ "$(D1X "SELECT name||'|'||enc_v AS r FROM stakeholders WHERE id='$SBID'" | js 'd[0].results[0].r')" = "Smoke Bo|0" ] || fail "s2: a personal stakeholder is not plain"
+SCY=$(spost $SW '{"name":"Smoke Cy","power":"low","interest":"high","cadence_days":7}'); SCYID=$(kbody "$SCY" | js d.item.id)
+SD=$(spost $SC '{"name":"Smoke Di","cadence_days":7}'); SDID=$(kbody "$SD" | js d.item.id)
+curl "${H[@]}" -X PATCH $B/api/projects/$SC -d '{"status":"closed"}' >/dev/null
+# the list opens it, in order, and says whether Athena may help: Offline-only (a new work project) false, Cloud true, back to Offline false
+SL=$(curl "${H[@]}" $B/api/projects/$SW/stakeholders)
+echo "$SL" | js "d.items.map(i=>i.name).join()==='Smoke Ada,Smoke Cy'&&d.items[0].notes==='smoke secret notes'&&d.items[0].role==='Smoke sponsor'&&d.athena===false" | grep -qx true || fail "s2: list or athena=false for an Offline-only project: $SL"
+curl "${H[@]}" -X PATCH $B/api/projects/$SW -d '{"data_boundary":"cloud"}' >/dev/null
+curl "${H[@]}" $B/api/projects/$SW/stakeholders | js d.athena | grep -qx true || fail "s2: athena should be true for a live Cloud project"
+curl "${H[@]}" -X PATCH $B/api/projects/$SW -d '{"data_boundary":"offline"}' >/dev/null
+curl "${H[@]}" $B/api/projects/$SW/stakeholders | js d.athena | grep -qx false || fail "s2: athena should be false again"
+curl "${H[@]}" $B/api/projects/$SP/stakeholders | js d.athena | grep -qx true || fail "s2: a personal project is Cloud"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/projects/nope/stakeholders)" = 404 ] || fail "s2: unknown project is 404"
+# edit: the patch keeps the row sealed and changes only what was sent; bad bodies are 400
+SE=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/stakeholders/$SAID -d '{"attitude":"neutral","cadence_days":14,"role":"Smoke sponsor 2"}'); [ "$(kst "$SE")" = 200 ] || fail "s2: edit: $SE"
+curl "${H[@]}" $B/api/projects/$SW/stakeholders | js "const a=d.items[0]; a.attitude==='neutral'&&a.cadence_days===14&&a.role==='Smoke sponsor 2'&&a.notes==='smoke secret notes'&&a.name==='Smoke Ada'" | grep -qx true || fail "s2: edit lost a field"
+D1X "SELECT name||ifnull(role,'')||ifnull(notes,'') AS r FROM stakeholders WHERE id='$SAID'" | js 'd[0].results[0].r' | grep -q "Smoke\|secret" && fail "s2: an edited work stakeholder is plain"
+for bad in '{"name":"  "}' "{\"name\":\"$(printf 'x%.0s' $(seq 121))\"}" '{"name":"a","role":"'$(printf 'x%.0s' $(seq 121))'"}' '{"name":"a","channel":"'$(printf 'x%.0s' $(seq 61))'"}' '{"name":"a","notes":"'$(printf 'x%.0s' $(seq 2001))'"}' '{"name":"a","power":"medium"}' '{"name":"a","attitude":"angry"}' '{"name":"a","cadence_days":0}' '{"name":"a","cadence_days":366}' '{"name":"a","cadence_days":1.5}' '{}'; do
+  [ "$(kst "$(spost $SW "$bad")")" = 400 ] || fail "s2: not 400: ${bad:0:60}"; done
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/stakeholders/$SAID -d '{"name":""}')" = 400 ] && [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/stakeholders/nope -d '{"role":"x"}')" = 404 ] || fail "s2: a patch blanking the name is 400, an unknown id 404"
+# mark sent: last_contact_at is now, and the next due is that day plus the cadence (14), by the same shared code the device uses
+SM=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/stakeholders/$SAID/contacted); [ "$(kst "$SM")" = 200 ] || fail "s2: contacted: $SM"
+LAST=$(kbody "$SM" | js d.last_contact_at); [ "$(curl "${H[@]}" $B/api/projects/$SW/stakeholders | js "d.items[0].last_contact_at")" = "$LAST" ] || fail "s2: last_contact_at not stored"
+STODAY=$(TZ=$S2TZ date +%Y-%m-%d); [ "$(nextjs "$LAST" 14 "$STODAY" "$S2TZ")" = "$(TZ=$S2TZ date -v+14d +%Y-%m-%d)" ] || fail "s2: next due did not move to last + 14 days: $(nextjs "$LAST" 14 "$STODAY" "$S2TZ")"
+[ "$(nextjs "" 7 "$STODAY")" = "$STODAY" ] || fail "s2: never contacted is due today"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/stakeholders/nope/contacted)" = 404 ] || fail "s2: contacted on an unknown id is 404"
+# the cron: due now = Cy (work, never contacted, 7 days) and Bo (personal, never contacted, 3 days); Ada was just sent, Di's project is closed
+HRNOW=$(TZ=$S2TZ date +%-H); SOUT() { curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "JSON.stringify(d.items.filter(i=>/stakeholder update/.test(i.title)))"; }
+sclear() { D1X "DELETE FROM push_outbox WHERE id LIKE 'stakeholder:%'; DELETE FROM push_log WHERE key LIKE 'stakeholder:%'" >/dev/null; }
+SINCE=$(node -pe 'new Date(Date.now()-1000).toISOString()'); sclear
+if [ "$HRNOW" -lt 23 ]; then curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$((HRNOW + 1))}" >/dev/null; cron; sleep 1
+  [ "$(SOUT | js d.length)" = 0 ] || fail "s2: pushed before digest_hour"; fi
+curl "${H[@]}" -X PATCH $B/api/settings -d "{\"digest_hour\":$HRNOW}" >/dev/null
+cron; sleep 1; SO=$(SOUT)
+echo "$SO" | js "d.length===1&&d[0].title==='2 stakeholder updates due'&&d[0].url==='/projects/$SW/stakeholders'" | grep -qx true || fail "s2: expected one '2 stakeholder updates due' linking the first project: $SO"
+echo "$SO" | grep -q "Smoke\|Ada\|Cy\|Bo\b" && fail "s2: the push names someone: $SO"
+cron; sleep 1; [ "$(SOUT | js d.length)" = 1 ] || fail "s2: the cron pushed twice in one day"
+# the switch and quiet hours silence it (the next day's key is simulated by clearing the log)
+sclear; curl "${H[@]}" -X PATCH $B/api/settings -d '{"push":{"stakeholder":false}}' >/dev/null; cron; sleep 1
+[ "$(SOUT | js d.length)" = 0 ] || fail "s2: settings.push.stakeholder=false still pushed"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"push":{"stakeholder":true},"quiet_from":"00:00","quiet_to":"23:59"}' >/dev/null; cron; sleep 1
+[ "$(SOUT | js d.length)" = 0 ] || fail "s2: pushed in quiet hours"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null; cron; sleep 1
+[ "$(SOUT | js d.length)" = 1 ] || fail "s2: switched on and not quiet, nothing was pushed"
+# Trash lists a deleted stakeholder by name and project, Restore brings it back; the audit rows hold no names; export opens it
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/stakeholders/$SCYID)" = 200 ] || fail "s2: trash"
+curl "${H[@]}" $B/api/projects/$SW/stakeholders | js "d.items.map(i=>i.name).join()" | grep -qx "Smoke Ada" || fail "s2: a trashed stakeholder is still listed"
+curl "${H[@]}" $B/api/trash | js "const x=d.stakeholders.find(s=>s.id==='$SCYID'); !!x&&x.name==='Smoke Cy'&&x.project_name==='Smoke stake work'&&!('notes' in x)" | grep -qx true || fail "s2: Trash does not list the stakeholder"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/stakeholders/$SCYID/restore)" = 200 ] || fail "s2: restore"
+curl "${H[@]}" $B/api/projects/$SW/stakeholders | js "d.items.length" | grep -qx 2 || fail "s2: a restored stakeholder is not listed"
+D1X "SELECT group_concat(action||':'||ifnull(detail,''),'|') AS a FROM audit_log WHERE target IN ('$SAID','$SBID','$SCYID')" | js 'd[0].results[0].a' | grep -q "Smoke\|secret" && fail "s2: an audit row carries content"
+curl "${H[@]}" $B/api/export | js "d.stakeholders.some(x=>x.id==='$SAID'&&x.name==='Smoke Ada'&&x.notes==='smoke secret notes')" | grep -qx true || fail "s2: export did not open the stakeholder"
+# clean up (local D1 only) and put the settings back
+D1X "DELETE FROM stakeholders WHERE project_id IN ('$SW','$SP','$SC'); DELETE FROM projects WHERE id IN ('$SW','$SP','$SC'); DELETE FROM push_outbox WHERE id LIKE 'stakeholder:%'; DELETE FROM push_log WHERE key LIKE 'stakeholder:%'" >/dev/null
+restore_quiet
+echo "smoke: (s2) stakeholders: added (work sealed in D1, personal plain), edited (still sealed), bad bodies 400, marked sent (next due = last + cadence by the shared nextDue), athena flag false for Offline-only and true for Cloud, the cron sent one '2 stakeholder updates due' with no names (closed project not counted), not twice, not before digest_hour, not with the switch off or in quiet hours; Trash lists and restores; export opens it"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

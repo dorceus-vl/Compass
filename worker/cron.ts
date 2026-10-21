@@ -1,7 +1,7 @@
 import type { Env } from './types.ts';
 import type { Milestone, Task } from '../shared/types.ts';
 import { getSettings } from './lib/db.ts';
-import { pushAll } from './lib/notify.ts';
+import { pushAll, notifyStakeholders } from './lib/notify.ts';
 import { duePushes, localNow } from './lib/schedule.ts';
 import { purgeTrash, purgeAudit, purgeSessions, purgeInbox } from './routes/trash.ts';
 import { embedPending, unembedStale } from './lib/vectors.ts';
@@ -16,6 +16,7 @@ async function pushes(env: Env, at: Date): Promise<void> {
     .map((m) => ({ id: m.id, name: m.name, due_at: m.due_at, done_at: m.done_at, work: m.enc_v === 2 }));
   for (const p of duePushes({ now: localNow(settings.tz, at), settings, tasks, milestones }))
     await pushAll(env, p.type, p.key, p.message).catch((e) => console.error(`[cron] push ${p.type} failed: ${(e as Error).name}`)); // one failed push never skips the rest
+  await notifyStakeholders(env, at); // v2.2 C7: once a day from digest_hour
 }
 
 /** `at` is the scheduled time, not the moment the Worker happened to run, so a late start still lands in its own 15-minute slot. */

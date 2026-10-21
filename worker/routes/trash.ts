@@ -8,7 +8,7 @@ import { remove } from '../lib/vectors.ts';
 import { MAX_BASELINES } from '../../shared/baseline.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
-const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines' } as const;
+const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders' } as const;
 // Phase 3 rows show "name · project": the list query joins the project (name, enc_v) and this opens it.
 const PM_TABLES = ['raid_items', 'change_requests', 'decisions', 'lessons', 'documents', 'ai_threads'] as const;
 const TRASH_DAYS = 30, AUDIT_DAYS = 90, SESSION_DAYS = 30;
@@ -40,6 +40,10 @@ trash.get('/', async (c) => {
   const bl = await c.env.DB.prepare('SELECT x.id, x.project_id, x.name, x.task_count, x.milestone_count, x.taken_at, x.deleted_at, x.enc_v, p.name AS project_name, p.enc_v AS project_enc_v FROM baselines x LEFT JOIN projects p ON p.id = x.project_id WHERE x.deleted_at IS NOT NULL ORDER BY x.deleted_at DESC')
     .all<{ project_name: string | null; project_enc_v: number; enc_v: number }>();
   pm.baselines = await Promise.all((await openAll(c.env, 'baselines', bl.results)).map(async ({ project_enc_v, ...r }) => ({ ...r, project_name: r.project_name === null ? null : (await open(c.env, 'projects', { name: r.project_name, enc_v: project_enc_v })).name })));
+  // v2.2: a deleted stakeholder, by name and project (notes and the rest stay on the server).
+  const sh = await c.env.DB.prepare('SELECT x.id, x.project_id, x.name, x.role, x.deleted_at, x.enc_v, p.name AS project_name, p.enc_v AS project_enc_v FROM stakeholders x LEFT JOIN projects p ON p.id = x.project_id WHERE x.deleted_at IS NOT NULL ORDER BY x.deleted_at DESC')
+    .all<{ project_name: string | null; project_enc_v: number; enc_v: number }>();
+  pm.stakeholders = await Promise.all((await openAll(c.env, 'stakeholders', sh.results)).map(async ({ project_enc_v, ...r }) => ({ ...r, project_name: r.project_name === null ? null : (await open(c.env, 'projects', { name: r.project_name, enc_v: project_enc_v })).name })));
   return c.json({ tasks: await openAll(c.env, 'tasks', t.results), projects: await openAll(c.env, 'projects', p.results), milestones: await openAll(c.env, 'milestones', m.results), ...pm, purge_after_days: TRASH_DAYS });
 });
 

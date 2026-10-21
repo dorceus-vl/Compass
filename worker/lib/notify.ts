@@ -1,11 +1,12 @@
 import type { Env } from '../types.ts';
 import type { PushType, InboxItem, MeetingReview, Task } from '../../shared/types.ts';
 import { getSettings, now } from './db.ts';
-import { inQuietHours } from './schedule.ts';
+import { inQuietHours, localNow } from './schedule.ts';
 import { sendPush, type PushMessage, type Sent } from './webpush.ts';
 import { sendApns } from './apns.ts';
 import { sendFcm } from './fcm.ts';
 import { parseBlockedBy, isBlocked } from '../../shared/deps.ts';
+import { isDue, stakeholderPush } from '../../shared/stakeholders.ts';
 
 const MAX_FAILS = 10;
 type Sub = { id: string; kind: 'web' | 'apns' | 'fcm'; endpoint: string; env: string | null; p256dh: string | null; auth: string | null };
@@ -106,5 +107,26 @@ export async function notifyUnblocked(env: Env, done: Task): Promise<void> {
     }
   } catch (e) {
     console.error(`[push] notifyUnblocked failed: ${(e as Error).name}`);
+  }
+}
+
+/**
+ * C7: once a day, from digest_hour (in settings.tz) on, "N stakeholder updates due": a count, never a name (not even a personal one). Only live projects that are not closed.
+ * The deep link is the Stakeholders tab of the first of them (by project order). "Once a day" is the push_log key `stakeholder:<local date>` (pushAll writes it once a device
+ * received the push, so a failed attempt is retried at the next tick, quiet hours included); the outbox row has the same key, so a retry never lists it twice. Never throws.
+ */
+export async function notifyStakeholders(env: Env, at: Date): Promise<void> {
+  try {
+    const s = await getSettings(env), t = localNow(s.tz, at);
+    if (+t.hhmm.slice(0, 2) < s.digest_hour || s.push.stakeholder === false) return;
+    // One query, no bound lists (rule 9); the LIMIT is the most cadenced stakeholders it reads.
+    const { results } = await env.DB.prepare(`SELECT x.project_id, x.last_contact_at, x.cadence_days FROM stakeholders x JOIN projects p ON p.id = x.project_id
+      WHERE x.deleted_at IS NULL AND x.cadence_days IS NOT NULL AND p.deleted_at IS NULL AND p.status != 'closed' ORDER BY p.sort, p.created_at, x.created_at LIMIT ?1`).bind(5000)
+      .all<{ project_id: string; last_contact_at: string | null; cadence_days: number }>();
+    const due = results.filter((r) => isDue(r, t.date, s.tz));
+    const m = stakeholderPush(due.length, due[0] ? `/projects/${due[0].project_id}/stakeholders` : null);
+    if (m) await pushAll(env, 'stakeholder', `stakeholder:${t.date}`, m);
+  } catch (e) {
+    console.error(`[push] notifyStakeholders failed: ${(e as Error).name}`); // never stops the rest of the cron
   }
 }
