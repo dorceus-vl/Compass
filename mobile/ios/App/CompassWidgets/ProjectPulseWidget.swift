@@ -33,7 +33,7 @@ struct PulseView: View {
         if let s = snap, let p = s.projects.first(where: { $0.id == projectId }) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Text(p.shownName.uppercased()).font(Theme.label(9.5)).tracking(1.4).foregroundStyle(Theme.faint).lineLimit(1)
+                    Text(p.shownName.uppercased()).font(Theme.label(9.5)).tracking(1.4).foregroundStyle(Theme.faint).lineLimit(1).privacySensitive(s.hides(p))
                     Spacer(minLength: 4)
                     if p.rag != "none" {
                         Text(p.rag.uppercased()).font(Theme.label(9.5)).tracking(0.6).foregroundStyle(Theme.rag(p.rag))
@@ -43,7 +43,7 @@ struct PulseView: View {
                 }
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 5) {
-                        milestone(p)
+                        milestone(p).privacySensitive(s.hides(p))
                         Text(slip(p.slipDays))
                         Text(p.highRisks.map { "\($0) high risk\($0 == 1 ? "" : "s") · " } ?? "") + Text("\(p.overdue) overdue")
                     }

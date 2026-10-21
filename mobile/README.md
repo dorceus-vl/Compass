@@ -24,10 +24,11 @@ comes to the front and sends it to the page once, which opens quick add prefille
 app group (an unsigned build gives the extension and the app separate stores).
 
 Widgets (v2.3): the `CompassWidgets` extension (`ios/App/CompassWidgets/`, bundle id `com.knocturnlabs.compass.widgets`, iOS 17, WidgetKit
-and App Intents) draws Today, Quick add, Project pulse, the Lock Screen widgets and the iPad's This week from the snapshot the page writes
+and App Intents) draws Today, Quick add, Ask Athena (each small widget is one tap target), Project pulse, the Lock Screen widgets and the iPad's This week from the snapshot the page writes
 into the app group (`widget-snapshot.json`); it never reads the network. Its tick circles mark the task done in that file at once and queue
 the tick in `pending-ticks.json`, which the app sends when it next opens. `WidgetStore.swift` (in `ios/App/App/`) is compiled into both
-targets. Taps are `https://compass.knocturnlabs.com/...` links, routed in-app by the scene delegate and `CompassLink`.
+targets. Taps are `https://compass.knocturnlabs.com/...` links, routed in-app by the scene delegate and `CompassLink`. While "Hide work titles on the Lock Screen" is on, work titles and work project names are
+`privacySensitive`, so iOS redacts them on a locked device (StandBy, the Lock Screen); the Lock Screen widgets show "Work task".
 
 ## Android
 

@@ -29,11 +29,21 @@ enum WidgetStore {
     /// Writes the snapshot into `dir`; an empty string removes it (signed out). Refuses text over 64 KB or that isn't a JSON object.
     static func write(_ json: String, in dir: URL) throws {
         let file = dir.appendingPathComponent(snapshotName)
-        if json.isEmpty { try? FileManager.default.removeItem(at: file); return }
+        if json.isEmpty { try coordinated(file, .forDeleting) { try? FileManager.default.removeItem(at: $0) }; return }
         let data = Data(json.utf8)
         guard data.count <= maxBytes else { throw Failure.tooBig }
         guard (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else { throw Failure.notJSON }
-        try data.write(to: file, options: writeOptions)
+        try coordinated(file, .forReplacing) { try data.write(to: $0, options: writeOptions) }
+    }
+
+    /// Runs `body` while holding the file against the other process (the app and the widget extension share the App Group), so a widget's
+    /// read-modify-write of the snapshot can't interleave with the app's write or its sign-out removal.
+    static func coordinated(_ file: URL, _ options: NSFileCoordinator.WritingOptions = [], _ body: (URL) throws -> Void) throws {
+        var outer: NSError?, inner: Error?
+        NSFileCoordinator().coordinate(writingItemAt: file, options: options, error: &outer) { url in
+            do { try body(url) } catch { inner = error }
+        }
+        if let e = inner ?? outer { throw e }
     }
 
     /// The ticks a widget queued while offline, oldest first; the file is cleared as it is read. The file is moved aside first (a rename is atomic),

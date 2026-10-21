@@ -65,9 +65,17 @@ struct Snapshot: Codable, Equatable {
 
     /// The large widget's footer: the latest of the projects' next milestones that can be named (an Offline project's can't); ties keep project order.
     var footerMilestone: (project: Project, milestone: Milestone)? {
-        projects.compactMap { p in p.nextMilestone.flatMap { $0.name == nil ? nil : (p, $0) } }.max { $0.1.lateDays < $1.1.lateDays }
+        projects.compactMap { p in p.nextMilestone.flatMap { $0.name == nil || p.offline ? nil : (p, $0) } }.max { $0.1.lateDays < $1.1.lateDays }
     }
     var weekOpen: Int { week.reduce(0) { $0 + $1.total } }
+    /// The listed tasks due on `day` (yyyy-MM-dd), found from their labels against the snapshot's own day; "Oct 30" names no day this week.
+    func items(on day: String) -> [Item] {
+        guard let today = atDay else { return [] }
+        return items.filter { Snapshot.dayOffset($0.dueLabel, today: today).flatMap { Snapshot.addDays(today, $0) } == day }
+    }
+    /// Whether the system should redact this task's words on a locked device (StandBy, the Lock Screen): work, while hide_work is on.
+    func hides(_ item: Item) -> Bool { lock.hideWork && item.work }
+    func hides(_ project: Project) -> Bool { lock.hideWork && project.work }
     /// The snapshot was written on another day than `now` (in its zone): its "Today" is yesterday's until the app writes again.
     func isStale(_ now: Date) -> Bool { atDay != Snapshot.ymd(now, tz: tz) }
     var atDay: String? { Snapshot.date(at).map { Snapshot.ymd($0, tz: tz) } }
@@ -148,7 +156,12 @@ extension WidgetStore {
     /// MarkDoneIntent's local half (W5): the widget shows the tick at once, and the app sends it (`takeTicks`) when it next opens.
     /// Task 2 posts first and keeps the queued tick only for a failure.
     static func tick(_ id: String, at: Date = Date(), in dir: URL) {
-        if let s = Snapshot.load(from: dir), let json = s.markingDone(id).encoded() { try? write(json, in: dir) }
+        let file = dir.appendingPathComponent(snapshotName)
+        try? coordinated(file) { url in // read and write under one hold: a sign-out removal can't be undone by a tick in flight
+            guard let data = try? Data(contentsOf: url), let s = Snapshot.decode(data), let json = s.markingDone(id).encoded() else { return }
+            let out = Data(json.utf8)
+            if out.count <= maxBytes { try out.write(to: url, options: writeOptions) }
+        }
         try? appendTick(id, at: Snapshot.iso(at), in: dir)
     }
 }

@@ -62,33 +62,46 @@ struct Ring: View {
     }
 }
 
-/// One task: its horizon bar, the tick circle (an App Intent, iOS 17), and its title and due label, which open the task.
+/// One task: its horizon bar, the tick circle (an App Intent, iOS 17), and its title and due label, which open the task. The tick's hit area
+/// is the whole leading part of the row (bar, gap and circle) at the row's full height; `height` lets a roomy widget (medium: 32 pt) give it more.
+/// `hide` marks a work title for redaction on a locked device (StandBy, the Lock Screen) while hide_work is on.
 struct TaskRow: View {
     let item: Snapshot.Item
+    var hide = false
     var tick = true
+    var height: CGFloat = 24
     var body: some View {
         let name = item.shown(lock: false, hideWork: false)
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 2).fill(Theme.horizon(item.horizon)).frame(width: 3).accessibilityHidden(true)
+        HStack(spacing: 6) {
             if tick {
                 Button(intent: MarkDoneIntent(taskId: item.id)) {
-                    Circle().strokeBorder(Theme.dim, lineWidth: 1.5).frame(width: 16, height: 16).frame(width: 24, height: 22).contentShape(Rectangle())
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2).fill(Theme.horizon(item.horizon)).frame(width: 3, height: 18)
+                        Circle().strokeBorder(Theme.dim, lineWidth: 1.5).frame(width: 16, height: 16)
+                    }
+                    .padding(.trailing, 8)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Mark done: \(name)")
+            } else {
+                RoundedRectangle(cornerRadius: 2).fill(Theme.horizon(item.horizon)).frame(width: 3, height: 18).accessibilityHidden(true)
             }
             Link(destination: CompassURL.task(item.id)) {
                 HStack(spacing: 6) {
-                    Text(name).foregroundStyle(item.title == nil || item.offline ? Theme.dim : Theme.text).lineLimit(1)
+                    Text(name).foregroundStyle(item.title == nil || item.offline ? Theme.dim : Theme.text).lineLimit(1).privacySensitive(hide)
                     Spacer(minLength: 4)
                     Text(item.dueLabel).font(Theme.label(10)).foregroundStyle(item.late ? Theme.danger : Theme.faint).lineLimit(1)
                 }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(name), \(item.late ? "late, " : "")\(item.dueLabel)")
         }
         .font(.system(size: 12))
-        .frame(height: 22)
+        .frame(height: height)
     }
 }
 

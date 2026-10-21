@@ -14,7 +14,10 @@ struct MarkDoneIntent: AppIntent {
     init(taskId: String) { self.taskId = taskId }
 
     func perform() async throws -> some IntentResult {
-        if let dir = WidgetStore.container() { WidgetStore.queue.sync { WidgetStore.tick(taskId, in: dir) } }
+        if let dir = WidgetStore.container() {
+            let id = taskId
+            await withCheckedContinuation { done in WidgetStore.queue.async { WidgetStore.tick(id, in: dir); done.resume() } }
+        }
         WidgetCenter.shared.reloadAllTimelines()
         return .result()
     }

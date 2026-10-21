@@ -162,6 +162,13 @@ check(vendor.shown(lock: true, hideWork: true) == "Work task" && vendor.shown(lo
 check(dentist.shown(lock: true, hideWork: true) == "Book the dentist", "personal shown on lock")
 check(s.projects.first { $0.id == "p-secret" }!.shownName == "Offline-only project", "offline project unnamed")
 check(s.footerMilestone?.milestone.name == "Pilot site live", "footer milestone")
+// Locked device: work words are marked for redaction while hide_work is on, personal ones never.
+check(s.hides(vendor) && !s.hides(dentist) && s.hides(s.projects.first { $0.id == "p-branch" }!) && !s.hides(s.projects.first { $0.id == "p-home" }!), "redaction marks")
+let shownOff = Snapshot.decode(Data(s.encoded()!.replacingOccurrences(of: "\"hide_work\":true", with: "\"hide_work\":false").utf8))!
+check(!shownOff.hides(vendor), "hide_work off: nothing redacted")
+// The iPad's day cells: listed tasks found by their labels; a far date names no day.
+check(s.items(on: "2026-10-21").map(\.id) == ["t-vendor", "t-secret"] && s.items(on: "2026-10-23").map(\.id) == ["t-sow"], "items on a day")
+check(s.items(on: "2026-10-20").map(\.id) == ["t-status"] && s.items(on: "2026-10-25").isEmpty, "yesterday and empty day")
 
 // Ticking a late task: due, late, overdue and its day move; done grows; total stays.
 let a = s.markingDone("t-status")

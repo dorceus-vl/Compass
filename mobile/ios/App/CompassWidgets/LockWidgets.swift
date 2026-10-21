@@ -18,12 +18,27 @@ struct LockEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: SnapEntry
     var body: some View {
+        // The midnight entry before the app writes again: yesterday's counts aren't today's, so the widgets say so instead.
+        let snap = entry.snap.flatMap { $0.isStale(entry.date) ? nil : $0 }
+        if entry.snap != nil && snap == nil {
+            Group {
+                if family == .accessoryCircular { Image(systemName: "arrow.clockwise") } else { Text("Open Compass to update") }
+            }
+            .accessibilityLabel("Open Compass to update")
+            .containerBackground(for: .widget) { family == .accessoryCircular ? AnyView(AccessoryWidgetBackground()) : AnyView(Color.clear) }
+            .widgetURL(CompassURL.today)
+        } else {
+            entryBody(snap)
+        }
+    }
+
+    @ViewBuilder private func entryBody(_ snap: Snapshot?) -> some View {
         switch family {
-        case .accessoryCircular: LockCircular(s: entry.snap).containerBackground(for: .widget) { AccessoryWidgetBackground() }.widgetURL(CompassURL.today)
+        case .accessoryCircular: LockCircular(s: snap).containerBackground(for: .widget) { AccessoryWidgetBackground() }.widgetURL(CompassURL.today)
         case .accessoryRectangular:
-            LockRectangular(s: entry.snap).containerBackground(for: .widget) { Color.clear }
-                .widgetURL(entry.snap?.today.next.map { CompassURL.task($0.id) } ?? CompassURL.today)
-        default: LockInline(s: entry.snap).containerBackground(for: .widget) { Color.clear }.widgetURL(CompassURL.today)
+            LockRectangular(s: snap).containerBackground(for: .widget) { Color.clear }
+                .widgetURL(snap?.today.next.map { CompassURL.task($0.id) } ?? CompassURL.today)
+        default: LockInline(s: snap).containerBackground(for: .widget) { Color.clear }.widgetURL(CompassURL.today)
         }
     }
 }

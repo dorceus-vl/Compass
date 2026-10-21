@@ -7,6 +7,7 @@ struct CompassWidgets: WidgetBundle {
     var body: some Widget {
         TodayWidget()
         QuickAddWidget()
+        AskAthenaWidget()
         ProjectPulseWidget()
         LockWidgets()
         WeekWidget()

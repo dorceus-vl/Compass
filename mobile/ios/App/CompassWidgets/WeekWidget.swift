@@ -24,19 +24,18 @@ struct WeekView: View {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
                         if s.items.isEmpty { Text("Nothing open. The week is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim) }
-                        ForEach(s.items.prefix(5)) { TaskRow(item: $0) }
+                        ForEach(s.items.prefix(5)) { TaskRow(item: $0, hide: s.hides($0)) }
                         if !s.projects.isEmpty {
                             GroupLabel(text: "Projects").padding(.top, 4)
-                            ForEach(s.projects.prefix(4)) { ProjectRow(p: $0) }
+                            ForEach(s.projects.prefix(4)) { ProjectRow(p: $0, hide: s.hides($0)) }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(alignment: .top, spacing: 4) {
-                        ForEach(s.week, id: \.day) { DayCell(d: $0, today: $0.day == today) }
+                        ForEach(s.week, id: \.day) { d in DayCell(d: d, today: d.day == today, items: Array(s.items(on: d.day).prefix(2)), hide: s.hides) }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                Spacer(minLength: 0)
             }
         } else {
             Placeholder()
@@ -45,12 +44,12 @@ struct WeekView: View {
 }
 
 struct ProjectRow: View {
-    let p: Snapshot.Project
+    let p: Snapshot.Project; var hide = false
     var body: some View {
         Link(destination: CompassURL.dashboard(p.id)) {
             HStack(spacing: 8) {
                 Circle().fill(Theme.rag(p.rag)).frame(width: 8, height: 8)
-                Text(p.shownName).foregroundStyle(p.offline ? Theme.dim : Theme.text).lineLimit(1)
+                Text(p.shownName).foregroundStyle(p.offline ? Theme.dim : Theme.text).lineLimit(1).privacySensitive(hide)
                 Spacer(minLength: 4)
                 Text("\(p.pct)%").font(Theme.label(10)).foregroundStyle(Theme.faint)
             }
@@ -62,8 +61,9 @@ struct ProjectRow: View {
     }
 }
 
+/// A day: one bar per open task in its horizon's colour, then up to two of its titles (the same rules as a task row).
 struct DayCell: View {
-    let d: Snapshot.Day; let today: Bool
+    let d: Snapshot.Day; let today: Bool; let items: [Snapshot.Item]; let hide: (Snapshot.Item) -> Bool
     private static let maxBars = 8
     var body: some View {
         let bars = Array(repeating: Theme.short, count: d.short) + Array(repeating: Theme.medium, count: d.medium) + Array(repeating: Theme.long, count: d.long)
@@ -71,9 +71,13 @@ struct DayCell: View {
             Text(Snapshot.weekday(d.day).uppercased()).font(Theme.label(9)).foregroundStyle(today ? Theme.accent : Theme.faint)
             ForEach(Array(bars.prefix(Self.maxBars).enumerated()), id: \.offset) { RoundedRectangle(cornerRadius: 2).fill($0.element).frame(height: 4) }
             if bars.count > Self.maxBars { Text("+\(bars.count - Self.maxBars)").font(Theme.label(9)).foregroundStyle(Theme.faint) }
+            ForEach(items) { it in
+                Text(it.shown(lock: false, hideWork: false)).font(.system(size: 10)).lineLimit(2)
+                    .foregroundStyle(it.offline ? Theme.faint : Theme.dim).privacySensitive(hide(it)).padding(.top, 3)
+            }
         }
         .padding(5)
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.field, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(today ? Theme.accent : .clear, lineWidth: 1))
         .accessibilityElement(children: .ignore)

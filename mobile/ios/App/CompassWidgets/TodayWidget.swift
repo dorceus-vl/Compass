@@ -20,7 +20,7 @@ struct TodayEntryView: View {
     var body: some View {
         if let s = entry.snap {
             switch family {
-            case .systemSmall: TodaySmall(s: s)
+            case .systemSmall: TodaySmall(s: s, now: entry.date)
             case .systemLarge: TodayLarge(s: s, now: entry.date)
             default: TodayMedium(s: s, now: entry.date)
             }
@@ -42,9 +42,17 @@ func doneRing(_ t: Snapshot.Today, size: CGFloat = 46) -> some View {
 }
 
 struct TodaySmall: View {
-    let s: Snapshot
+    let s: Snapshot; let now: Date
     var body: some View {
         let t = s.today
+        if s.isStale(now) {
+            VStack(alignment: .leading, spacing: 6) {
+                Head(title: "Today")
+                Spacer(minLength: 0)
+                Text("Open Compass to update").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.dim)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
         VStack(alignment: .leading, spacing: 2) {
             Head(title: "Today")
             Text("\(t.due)").font(.system(size: 34, weight: .heavy)).tracking(-1).foregroundStyle(Theme.text)
@@ -54,10 +62,12 @@ struct TodaySmall: View {
             Text("NEXT").font(Theme.label(10)).foregroundStyle(Theme.faint)
             Text(t.next?.shown(lock: false, hideWork: false) ?? "Nothing else due")
                 .font(.system(size: 12)).foregroundStyle(t.next?.offline == true ? Theme.dim : Theme.text).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                .privacySensitive(t.next.map(s.hides) ?? false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Today: \(t.due) due, \(t.late) late. Next: \(t.next?.shown(lock: false, hideWork: false) ?? "nothing")")
+        }
     }
 }
 
@@ -67,9 +77,9 @@ struct TodayMedium: View {
         VStack(alignment: .leading, spacing: 8) {
             Head(title: todayHead(s, now))
             HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     if s.items.isEmpty { Text("Nothing due. The day is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim) }
-                    ForEach(s.items.prefix(3)) { TaskRow(item: $0) }
+                    ForEach(s.items.prefix(3)) { TaskRow(item: $0, hide: s.hides($0), height: 32) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(spacing: 4) {
@@ -98,7 +108,7 @@ struct TodayLarge: View {
             if groups.isEmpty && s.blocked == 0 { Text("Nothing due. The day is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim).padding(.top, 6) }
             ForEach(groups, id: \.0) { name, list in
                 GroupLabel(text: name)
-                ForEach(list) { TaskRow(item: $0) }
+                ForEach(list) { TaskRow(item: $0, hide: s.hides($0)) }
             }
             if s.blocked > 0 {
                 GroupLabel(text: "Blocked (\(s.blocked))")
@@ -110,11 +120,12 @@ struct TodayLarge: View {
                 .accessibilityElement(children: .ignore).accessibilityLabel("Blocked: \(s.blocked) waiting on other tasks")
             }
             Spacer(minLength: 0)
-            if let m = s.footerMilestone?.milestone {
+            if let f = s.footerMilestone {
+                let m = f.milestone
                 Divider().overlay(Theme.border)
                 Text("NEXT MILESTONE").font(Theme.label(10)).foregroundStyle(Theme.faint)
                 (Text(m.name ?? "") + Text(m.lateDays > 0 ? " · " : "") + Text(m.lateDays > 0 ? "\(m.lateDays) day\(m.lateDays == 1 ? "" : "s") late" : "").foregroundColor(Theme.warn))
-                    .font(.system(size: 12)).foregroundStyle(Theme.text).lineLimit(1)
+                    .font(.system(size: 12)).foregroundStyle(Theme.text).lineLimit(1).privacySensitive(s.hides(f.project))
             }
         }
     }
