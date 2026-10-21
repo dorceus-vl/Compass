@@ -15,17 +15,19 @@ import type { BaselineInfo } from './baselines.ts';
 const DEBOUNCE_MS = 2000;
 type WidgetSettings = { tz: string; hide_work_on_lock: boolean };
 
+const validTz = (tz: string) => { try { new Intl.DateTimeFormat('en-CA', { timeZone: tz }); return true; } catch { return false; } }; // a bad zone would make every write throw
+
 async function readSettings(): Promise<WidgetSettings> {
   if (online()) {
     try {
       const s = await api<Settings>('/settings');
-      const w = { tz: s.tz, hide_work_on_lock: s.widgets?.hide_work_on_lock !== false };
+      const w = { tz: validTz(s.tz) ? s.tz : DEFAULT_SETTINGS.tz, hide_work_on_lock: s.widgets?.hide_work_on_lock !== false };
       await idb.put('meta', { id: 'widget-settings', ...w }).catch(() => {});
       return w;
     } catch { /* offline or signed out: the copy below */ }
   }
   const c = await idb.get<WidgetSettings>('meta', 'widget-settings').catch(() => undefined);
-  return { tz: c?.tz ?? DEFAULT_SETTINGS.tz, hide_work_on_lock: c?.hide_work_on_lock ?? true }; // hiding is the safe default
+  return { tz: c?.tz && validTz(c.tz) ? c.tz : DEFAULT_SETTINGS.tz, hide_work_on_lock: c?.hide_work_on_lock ?? true }; // hiding is the safe default
 }
 
 /** What the device already holds: cached RAID per project, and the latest baseline's snapshot per project. Never a network call. */
@@ -44,13 +46,15 @@ async function readCaches(projects: Project[]) {
 }
 
 let lastJson = '';
+let gen = 0; // bumped by clearWidgets and by stopping, so a write already in flight doesn't land after them
 /** Builds and sends the snapshot now. Skipped when nothing but the time changed. */
 export async function writeWidgets(): Promise<void> {
   if (!inIosShell()) return;
+  const mine = gen;
   const [tasks, projects, milestones, s] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones'), readSettings()]);
   const snap = buildWidgetSnapshot({ tasks, projects, milestones, ...(await readCaches(projects)), tz: s.tz, hide_work_on_lock: s.hide_work_on_lock, now: new Date() });
   const same = JSON.stringify({ ...snap, at: '' });
-  if (same === lastJson) return;
+  if (same === lastJson || mine !== gen) return;
   if (await updateWidgets(JSON.stringify(snap))) lastJson = same;
 }
 
@@ -71,12 +75,12 @@ export function startWidgetWriter(): () => void {
   const off = onChange(soon);
   document.addEventListener('visibilitychange', front);
   front();
-  return () => { clearTimeout(timer); off(); document.removeEventListener('visibilitychange', front); };
+  return () => { gen++; clearTimeout(timer); off(); document.removeEventListener('visibilitychange', front); };
 }
 
 /** Signed out: the widgets go back to "Open Compass once", and the tick token goes with the session. */
 export async function clearWidgets(): Promise<void> {
-  lastJson = '';
+  lastJson = ''; gen++;
   await updateWidgets('');
   await setWidgetToken(null).catch(() => {});
 }

@@ -58,8 +58,9 @@ export function buildWidgetSnapshot(i: WidgetInput): WidgetSnapshot {
   const byProject = new Map(liveProjects.map((p) => [p.id, p]));
   const top = i.tasks.filter((t) => !t.deleted_at && !t.parent_id);
   const blocked = blockedIds(i.tasks);
-  // A task whose project is Offline-only is only ever a count. (A trashed project's tasks leave the device with it.)
-  const offlineTask = (t: Task) => !!t.project_id && byProject.get(t.project_id)?.data_boundary === 'offline';
+  // Fail closed: a task is named only when it has no project, or its project is on the device, live and Cloud. An Offline-only project, a trashed one
+  // (trashing a project leaves its tasks in the mirror) and one not pulled yet all give "counted, never named". Today still lists such tasks, so they stay in the counts.
+  const offlineTask = (t: Task) => !!t.project_id && byProject.get(t.project_id)?.data_boundary !== 'cloud';
   const item = (t: Task): WidgetItem => {
     const off = offlineTask(t), due = t.due_at?.slice(0, 10) ?? null;
     return { id: t.id, title: off ? null : t.title.slice(0, TITLE_CHARS), due_label: dueLabel(due, today), late: !!due && due < today, horizon: t.horizon, work: t.kind === 'work', offline: off, project: t.project_id };
@@ -81,15 +82,15 @@ export function buildWidgetSnapshot(i: WidgetInput): WidgetSnapshot {
   });
 
   const projects = liveProjects.filter((p) => p.status !== 'closed').sort((a, b) => a.sort - b.sort || (a.created_at < b.created_at ? -1 : 1)).slice(0, MAX_PROJECTS).map((p): WidgetProject => {
-    const off = p.data_boundary === 'offline';
+    const off = p.data_boundary !== 'cloud';
     const mine = top.filter((t) => t.project_id === p.id);
     const doneN = mine.filter((t) => t.status === 'done').length;
     const m = i.milestones.filter((x) => x.project_id === p.id && !x.deleted_at && !x.done_at && x.due_at).sort((a, b) => (a.due_at! < b.due_at! ? -1 : 1))[0];
     const raid = i.raid?.[p.id], base = i.baselines?.[p.id];
     const metrics = dashboardMetrics({ tasks: mine, raid: raid ?? [], project: p, today, tz });
     return {
-      id: p.id, name: off ? null : p.name, rag: p.rag, pct: mine.length ? Math.round((100 * doneN) / mine.length) : 0,
-      next_milestone: m ? { name: off ? null : m.name, late_days: Math.max(0, daysBetweenYmd(m.due_at!.slice(0, 10), today)) } : null,
+      id: p.id, name: off ? null : p.name.slice(0, TITLE_CHARS), rag: p.rag, pct: mine.length ? Math.round((100 * doneN) / mine.length) : 0,
+      next_milestone: m ? { name: off ? null : m.name.slice(0, TITLE_CHARS), late_days: Math.max(0, daysBetweenYmd(m.due_at!.slice(0, 10), today)) } : null,
       slip_days: base ? slip(base, i.tasks.filter((t) => t.project_id === p.id), i.milestones.filter((x) => x.project_id === p.id), p).summary.max_late : null,
       high_risks: raid ? riskMatrix(raid).high : null, overdue: metrics.overdue_now, work: p.kind === 'work', offline: off,
     };

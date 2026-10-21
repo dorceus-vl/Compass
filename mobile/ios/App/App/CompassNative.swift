@@ -112,10 +112,13 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
 
     // MARK: widgets (v2.3)
 
+    /// One serial queue for every widget file and Keychain call, so a clear (sign-out) can't be overtaken by an earlier write.
+    private static let widgetQueue = DispatchQueue(label: "com.knocturnlabs.compass.widgets", qos: .utility)
+
     @objc func updateWidgets(_ call: CAPPluginCall) {
         guard let json = call.getString("json") else { return call.reject("No snapshot.", "invalid_request") }
         guard let dir = WidgetStore.container() else { return call.reject("The widgets' storage isn't available.", "no_container") }
-        DispatchQueue.global(qos: .utility).async {
+        Self.widgetQueue.async {
             do {
                 try WidgetStore.write(json, in: dir)
                 WidgetCenter.shared.reloadAllTimelines()
@@ -132,7 +135,7 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
 
     @objc func setWidgetToken(_ call: CAPPluginCall) {
         let token = call.getString("token") // nil or null deletes
-        DispatchQueue.global(qos: .utility).async {
+        Self.widgetQueue.async {
             do {
                 try WidgetStore.setToken(token)
                 call.resolve()
@@ -146,7 +149,7 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
 
     @objc func takeWidgetTicks(_ call: CAPPluginCall) {
         guard let dir = WidgetStore.container() else { return call.resolve(["ticks": []]) }
-        DispatchQueue.global(qos: .utility).async { call.resolve(["ticks": WidgetStore.takeTicks(in: dir)]) }
+        Self.widgetQueue.async { call.resolve(["ticks": WidgetStore.takeTicks(in: dir)]) }
     }
 
     /// Every navigation of the web view comes here first (Capacitor's WebViewDelegationHandler). nil leaves it to Capacitor.

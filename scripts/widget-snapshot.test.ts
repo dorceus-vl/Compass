@@ -81,6 +81,16 @@ assert.deepEqual([pj.wk.name, pj.wk.next_milestone, pj.wk.work], ['Work cloud', 
 // No notes, checklists or people leave the device, whatever the rows hold.
 assert.ok(!/SECRET/.test(JSON.stringify(priv)));
 
+// Fail closed: a task whose project is trashed (its tasks stay in the mirror) or not on the device is counted but never named; a trashed project is not listed.
+const gone = build({
+  projects: [project('trashed', { data_boundary: 'offline', name: 'TRASHED NAME', deleted_at: '2026-10-20T00:00:00Z' }), project('trashed-cloud', { name: 'TRASHED CLOUD NAME', deleted_at: '2026-10-20T00:00:00Z' })],
+  tasks: [task('g1', { project_id: 'trashed', title: 'TRASHED OFFLINE TITLE', due_at: '2026-10-21' }), task('g2', { project_id: 'nowhere', title: 'MISSING PROJECT TITLE', due_at: '2026-10-21' }),
+    task('g3', { project_id: 'trashed-cloud', title: 'TRASHED CLOUD TITLE', due_at: '2026-10-21' }), task('g4', { title: 'No project', due_at: '2026-10-21' })],
+});
+assert.deepEqual(gone.items.map((x) => [x.id, x.title, x.offline]), [['g1', null, true], ['g2', null, true], ['g3', null, true], ['g4', 'No project', false]]);
+assert.equal(gone.today.due, 4, 'Today lists them, so they are counted');
+assert.ok(!/TRASHED|MISSING/.test(JSON.stringify(gone)) && gone.projects.length === 0);
+
 // hide_work comes from the setting.
 assert.deepEqual(build({ hide_work_on_lock: false }).lock, { hide_work: false });
 assert.deepEqual(build().lock, { hide_work: true });
