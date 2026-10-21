@@ -162,4 +162,6 @@ export interface ExportBundle {
   knowledge_collections: Raw; knowledge_items: Raw; knowledge_chunks: Raw;
   /** v2.1 */
   templates: Raw; meeting_series: Raw;
+  /** v2.2 */
+  baselines: Raw; stakeholders: Raw;
 }

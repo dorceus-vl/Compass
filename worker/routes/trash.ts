@@ -5,9 +5,10 @@ import { open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { remove } from '../lib/vectors.ts';
+import { MAX_BASELINES } from '../../shared/baseline.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
-const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates' } as const;
+const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines' } as const;
 // Phase 3 rows show "name · project": the list query joins the project (name, enc_v) and this opens it.
 const PM_TABLES = ['raid_items', 'change_requests', 'decisions', 'lessons', 'documents', 'ai_threads'] as const;
 const TRASH_DAYS = 30, AUDIT_DAYS = 90, SESSION_DAYS = 30;
@@ -35,6 +36,10 @@ trash.get('/', async (c) => {
   // v2.1: a deleted template, by name only (the body never leaves the server).
   const tp = await c.env.DB.prepare('SELECT id, name, kind, scope, deleted_at, enc_v FROM templates WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all<{ enc_v: number }>();
   pm.templates = await openAll(c.env, 'templates', tp.results);
+  // v2.2: a deleted baseline, by name and project (the snapshot never leaves the server).
+  const bl = await c.env.DB.prepare('SELECT x.id, x.project_id, x.name, x.task_count, x.milestone_count, x.taken_at, x.deleted_at, x.enc_v, p.name AS project_name, p.enc_v AS project_enc_v FROM baselines x LEFT JOIN projects p ON p.id = x.project_id WHERE x.deleted_at IS NOT NULL ORDER BY x.deleted_at DESC')
+    .all<{ project_name: string | null; project_enc_v: number; enc_v: number }>();
+  pm.baselines = await Promise.all((await openAll(c.env, 'baselines', bl.results)).map(async ({ project_enc_v, ...r }) => ({ ...r, project_name: r.project_name === null ? null : (await open(c.env, 'projects', { name: r.project_name, enc_v: project_enc_v })).name })));
   return c.json({ tasks: await openAll(c.env, 'tasks', t.results), projects: await openAll(c.env, 'projects', p.results), milestones: await openAll(c.env, 'milestones', m.results), ...pm, purge_after_days: TRASH_DAYS });
 });
 
@@ -43,6 +48,11 @@ trash.post('/:table/:id/restore', async (c) => {
   if (!Object.hasOwn(TABLES, table)) return c.json({ error: 'Not found' }, 404);
   const id = c.req.param('id');
   // A task's source_ref is unique among live tasks: if a newer task took it while this one was in Trash, the restored one lets go of it (restore never fails).
+  // v2.2: a project keeps 20 live baselines; a restore past that is refused rather than quietly allowed.
+  if (table === 'baselines') {
+    const n = await c.env.DB.prepare('SELECT (SELECT COUNT(*) FROM baselines o WHERE o.project_id = b.project_id AND o.deleted_at IS NULL) AS n FROM baselines b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL').bind(id).first<{ n: number }>();
+    if (n && n.n >= MAX_BASELINES) return c.json({ error: 'baseline_limit', message: `A project keeps ${MAX_BASELINES} baselines at most` }, 409);
+  }
   let r;
   try {
     [, r] = await c.env.DB.batch([
@@ -74,7 +84,7 @@ trash.post('/empty', async (c) => {
  * Cron: rows in Trash for 30 days are deleted (all = everything in Trash, for Empty Trash).
  * Order respects the foreign keys: knowledge passages and items first (KN17), events, task parents, tasks, copilot messages then threads, library imports then documents,
  * knowledge collections (before the documents their items came from),
- * project logs (RAID, changes, lessons, decisions), milestones, project links (tasks, meeting reviews), projects.
+ * project logs (RAID, changes, lessons, decisions), baselines and stakeholders (v2.2), milestones, project links (tasks, meeting reviews), projects.
  */
 export async function purgeTrash(env: Env, all = false): Promise<Record<string, number>> {
   const cutoff = all ? '9999' : daysAgo(TRASH_DAYS);
@@ -93,7 +103,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, milestones, , , , projects, clips] = await env.DB.batch([
+  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , projects, clips] = await env.DB.batch([
     q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // first, while tasks and reviews still name their project; their vectors go below
     q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
@@ -110,6 +120,8 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`DELETE FROM change_requests WHERE ${goneRows}`),
     q(`DELETE FROM lessons WHERE ${goneRows}`),
     q(`DELETE FROM decisions WHERE ${goneRows}`), // a project's decisions go with it (FK)
+    q(`DELETE FROM baselines WHERE ${goneRows}`), // v2.2: baselines and stakeholders point at their project (FK), so they go first
+    q(`DELETE FROM stakeholders WHERE ${goneRows}`),
     q(`DELETE FROM milestones WHERE ${goneRows}`),
     q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
     q(`UPDATE meeting_reviews SET project_id = NULL, series_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK); the next list puts it in an unfiled series
@@ -128,7 +140,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   return {
     task_events: events.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
     raid_items: raid.meta.changes, change_requests: changes.meta.changes, lessons: lessons.meta.changes, decisions: decisions.meta.changes,
-    milestones: milestones.meta.changes, projects: projects.meta.changes, athena_clips: clips.results.length,
+    baselines: baselines.meta.changes, stakeholders: stakeholders.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes, athena_clips: clips.results.length,
     knowledge_chunks: kchunks.results.length, knowledge_items: kitems.meta.changes, knowledge_collections: kcolls.meta.changes,
   };
 }

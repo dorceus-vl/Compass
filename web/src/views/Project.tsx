@@ -16,6 +16,7 @@ import { ProjectCopilot } from './project/ProjectCopilot.tsx';
 import { ProjectMeetings } from './project/ProjectMeetings.tsx';
 import { Documents } from './project/Documents.tsx';
 import { Report } from './project/Report.tsx';
+import { Baselines } from './project/Baselines.tsx';
 import { fmtDue, today } from '../dates.ts';
 import { MilestonePath } from '../ui/MilestonePath.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
@@ -133,6 +134,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
                 <label className="tap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}><input type="checkbox" checked={newMs.gate} onChange={(e) => setNewMs({ ...newMs, gate: e.target.checked })} style={{ accentColor: 'var(--accent)' }} />Gate</label>
                 <button className="btn primary">Add</button></div></form></div>
         </div>
+        <Baselines project={p} />
         <section><SectionHead eyebrow="Record" title="Project details" />
           <div className="qgrid">
             <div className="qcard"><h3>Status</h3>{inp('rag_reason', 'RAG reason')}{inp('sponsor', 'Sponsor')}{inp('phase', 'Phase')}</div>

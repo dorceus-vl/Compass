@@ -1428,6 +1428,73 @@ curl "${H[@]}" $B/api/meetings/series | js "!!d.series.find(x=>x.project_id===nu
 [ "$(D1X "SELECT count(*) AS n FROM meeting_reviews WHERE id='$V1' AND series_id IS NOT NULL" | js d[0].results[0].n)" = 1 ] || fail "v4: backfill"
 D1X "DELETE FROM meeting_reviews WHERE recording_id LIKE 'ser_$R'; DELETE FROM meeting_series WHERE created_at >= '$T0' AND id NOT IN (SELECT series_id FROM meeting_reviews WHERE series_id IS NOT NULL); DELETE FROM inbox_items WHERE ref LIKE 'sonarflow:recording:ser_$R'" >/dev/null
 echo "smoke: (v4) series: two dated titles -> one unfiled series; accepted into a project -> the project's series (source_ref meeting:<id>:<n>, 3 actions, 2 decisions, 1 question); finishing a task ticks it and drops the open count; an old task matches by url; answering a question is sealed and reversible; key is a hash and name ciphertext; a move by hand (new series, existing series, other project 400) survives accept; Empty Trash with a project that has series succeeds and a later list puts the reviews back"
+# (p0) v2.2 Task 0: baselines. Save one (counts, no titles in the snapshot), move two dates and read the slip (+n, -m) with the same shared/baseline.ts the device uses, a work baseline is ciphertext in D1
+# (a personal one plain), rename keeps it sealed, the 20-baseline and 1,000-task caps, Trash lists and restores it, Empty Trash removes a project's baselines and stakeholders, export opens both tables.
+bpost() { curl "${H[@]}" -w '\n%{http_code}' -X POST "$B/api/projects/$1/baselines" -d "$2"; }
+slipjs() { SNAP="$1" CUR="$2" node --experimental-strip-types --no-warnings --input-type=module -e 'const { slip } = await import(process.cwd() + "/shared/baseline.ts"); const s = JSON.parse(process.env.SNAP), c = JSON.parse(process.env.CUR); const r = slip(s, c.tasks, c.milestones, c.project); console.log(r.rows.map(x => x.id + ":" + x.due_delta).join(",") + "|" + r.summary.late + "/" + r.summary.early + "/" + r.summary.max_late)'; }
+BW=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke baseline work","kind":"work","start_at":"2026-03-01","end_at":"2026-06-30"}' | js d.project.id)
+BPP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke baseline own","kind":"personal"}' | js d.project.id)
+BT1=$(dt "$(node -pe 'JSON.stringify({title:"Smoke bl one '$R'",project_id:process.argv[1],due_at:"2026-03-10"})' "$BW")")
+BT2=$(dt "$(node -pe 'JSON.stringify({title:"Smoke bl two '$R'",project_id:process.argv[1],start_at:"2026-03-15",due_at:"2026-03-20"})' "$BW")")
+BT3=$(dt "$(node -pe 'JSON.stringify({title:"Smoke bl three '$R'",project_id:process.argv[1]})' "$BW")")
+BM=$(curl "${H[@]}" -X POST $B/api/projects/$BW/milestones -d '{"name":"Smoke bl milestone","due_at":"2026-04-01"}' | js d.milestone.id)
+BO=$(bpost $BW "{\"name\":\"Smoke baseline $R\"}"); [ "$(kst "$BO")" = 201 ] || fail "p0: save baseline: $BO"
+BID=$(kbody "$BO" | js d.baseline.id)
+[ "$(kbody "$BO" | js "d.baseline.task_count+'/'+d.baseline.milestone_count+'/'+d.baseline.name")" = "3/1/Smoke baseline $R" ] || fail "p0: counts or name: $BO"
+BL=$(curl "${H[@]}" $B/api/projects/$BW/baselines)
+echo "$BL" | js "d.baselines.length+'/'+d.baselines[0].name+'/'+('snapshot' in d.baselines[0])" | grep -qx "1/Smoke baseline $R/false" || fail "p0: list: $BL"
+BG=$(curl "${H[@]}" $B/api/baselines/$BID)
+echo "$BG" | js "d.baseline.snapshot.tasks.length+'/'+d.baseline.snapshot.milestones.length+'/'+d.baseline.snapshot.project.end_at" | grep -qx '3/1/2026-06-30' || fail "p0: opened snapshot: $BG"
+echo "$BG" | grep -q "Smoke bl" && fail "p0: the snapshot carries a title"
+BSNAP=$(echo "$BG" | js 'JSON.stringify(d.baseline.snapshot)')
+# move two dates: one task +4 days, one -2 days (and the milestone +5); the slip, from the live rows, shows +4, -2 and the milestone
+curl "${H[@]}" -X PATCH $B/api/tasks/$BT1 -d '{"due_at":"2026-03-14"}' >/dev/null; curl "${H[@]}" -X PATCH $B/api/tasks/$BT2 -d '{"start_at":"2026-03-13","due_at":"2026-03-18"}' >/dev/null
+curl "${H[@]}" -X PATCH $B/api/milestones/$BM -d '{"due_at":"2026-04-06"}' >/dev/null
+BCUR=$(curl "${H[@]}" "$B/api/tasks?status=all&project=$BW" | js "JSON.stringify({tasks:d.tasks,milestones:[{id:'$BM',due_at:'2026-04-06'}],project:{start_at:'2026-03-01',end_at:'2026-06-30'}})")
+[ "$(slipjs "$BSNAP" "$BCUR")" = "$BM:5,$BT1:4,$BT2:-2|2/1/5" ] || fail "p0: slip: $(slipjs "$BSNAP" "$BCUR")"
+# a work baseline is ciphertext at rest; a personal one is plain JSON
+RAWB=$(D1X "SELECT name AS n, snapshot AS s, enc_v AS e FROM baselines WHERE id='$BID'" | js 'd[0].results[0].n+"|"+d[0].results[0].s+"|"+d[0].results[0].e')
+case "$RAWB" in *"Smoke baseline"*|*'"due_at"'*|*'"tasks"'*) fail "p0: a work baseline is not sealed in D1: $RAWB";; esac
+[ "${RAWB##*|}" = 2 ] || fail "p0: a work baseline's enc_v is not 2: $RAWB"
+BPO=$(bpost $BPP "{\"name\":\"Smoke baseline own $R\"}"); [ "$(kst "$BPO")" = 201 ] || fail "p0: personal baseline"
+BPID=$(kbody "$BPO" | js d.baseline.id)
+RAWP=$(D1X "SELECT name AS n, snapshot AS s, enc_v AS e FROM baselines WHERE id='$BPID'" | js 'd[0].results[0].n+"|"+d[0].results[0].s+"|"+d[0].results[0].e')
+case "$RAWP" in "Smoke baseline own $R|{\"tasks\":[]"*"|0") ;; *) fail "p0: a personal baseline is not plain: $RAWP";; esac
+# rename (still sealed, still opens), bad requests
+RN=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/baselines/$BID -d "{\"name\":\"Smoke renamed $R\"}"); [ "$(kst "$RN")" = 200 ] || fail "p0: rename: $RN"
+D1X "SELECT name AS n FROM baselines WHERE id='$BID'" | js 'd[0].results[0].n' | grep -q "Smoke renamed" && fail "p0: a renamed work baseline is plain"
+curl "${H[@]}" $B/api/baselines/$BID | js "d.baseline.name+'/'+d.baseline.snapshot.tasks.length" | grep -qx "Smoke renamed $R/3" || fail "p0: rename lost the snapshot"
+[ "$(kst "$(bpost $BW '{"name":"  "}')")" = 400 ] && [ "$(kst "$(bpost $BW "{\"name\":\"$(printf 'x%.0s' $(seq 201))\"}")")" = 400 ] || fail "p0: a blank or 201-character name is not 400"
+[ "$(kst "$(bpost nope '{"name":"x"}')")" = 404 ] && [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/baselines/nope)" = 404 ] && [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/baselines/nope -d '{"name":"x"}')" = 404 ] || fail "p0: unknown project or baseline is not 404"
+# the caps: 20 live baselines a project (the 21st is 409), 1,000 tasks (1,001 is 409 baseline_too_big)
+for i in $(seq 2 20); do [ "$(kst "$(bpost $BPP "{\"name\":\"Smoke cap $i\"}")")" = 201 ] || fail "p0: baseline $i was refused"; done
+CAP=$(bpost $BPP '{"name":"one too many"}'); [ "$(kst "$CAP")" = 409 ] && kbody "$CAP" | grep -q baseline_limit || fail "p0: the 21st baseline: $CAP"
+curl "${H[@]}" $B/api/projects/$BPP/baselines | js d.baselines.length | grep -qx 20 || fail "p0: list of 20"
+BBIG=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke baseline big","kind":"personal"}' | js d.project.id)
+D1X "INSERT INTO tasks (id, project_id, title, kind, created_at, updated_at) WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM c WHERE i<1000) SELECT 'smkbl-$R-'||i, '$BBIG', 'bulk', 'personal', '$TS', '$TS' FROM c" >/dev/null
+BIGO=$(bpost $BBIG '{"name":"exactly 1000"}'); [ "$(kst "$BIGO")" = 201 ] && [ "$(kbody "$BIGO" | js d.baseline.task_count)" = 1000 ] || fail "p0: 1,000 tasks: $BIGO"
+D1X "INSERT INTO tasks (id, project_id, title, kind, created_at, updated_at) VALUES ('smkbl-$R-x', '$BBIG', 'bulk', 'personal', '$TS', '$TS')" >/dev/null
+BIGO=$(bpost $BBIG '{"name":"1001"}'); [ "$(kst "$BIGO")" = 409 ] && kbody "$BIGO" | grep -q baseline_too_big || fail "p0: 1,001 tasks: $BIGO"
+D1X "DELETE FROM baselines WHERE project_id='$BBIG'; DELETE FROM tasks WHERE project_id='$BBIG'; DELETE FROM projects WHERE id='$BBIG'" >/dev/null
+# Trash lists a deleted baseline by name (opened, no snapshot) and project, and restore brings it back
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/baselines/$BID)" = 200 ] || fail "p0: delete"
+curl "${H[@]}" $B/api/projects/$BW/baselines | js d.baselines.length | grep -qx 0 || fail "p0: a deleted baseline is still listed"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/baselines/$BID)" = 404 ] || fail "p0: a deleted baseline still opens"
+curl "${H[@]}" $B/api/trash | js "const b=d.baselines.find(x=>x.id==='$BID'); !!b&&b.name==='Smoke renamed $R'&&b.project_name==='Smoke baseline work'&&!('snapshot' in b)" | grep -qx true || fail "p0: Trash does not list the baseline by name and project"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/baselines/$BID/restore)" = 200 ] || fail "p0: restore"
+curl "${H[@]}" $B/api/projects/$BW/baselines | js "d.baselines.map(b=>b.name).join()" | grep -qx "Smoke renamed $R" || fail "p0: a restored baseline is not listed"
+# the audit rows hold no content
+D1X "SELECT group_concat(action||':'||ifnull(detail,''),'|') AS a FROM audit_log WHERE target IN ('$BID')" | js 'd[0].results[0].a' | grep -q "Smoke" && fail "p0: an audit row carries the name"
+# export opens both tables (a stakeholder row is put in by SQL: its routes come in Task 2)
+BS=$(date +%s)$RANDOM; D1X "INSERT INTO stakeholders (id, project_id, name, created_at, updated_at, enc_v) VALUES ('smkst-$BS', '$BW', 'Smoke stakeholder', '$TS', '$TS', 0)" >/dev/null
+curl "${H[@]}" $B/api/export | js "d.baselines.some(b=>b.id==='$BID'&&b.name==='Smoke renamed $R'&&JSON.parse(b.snapshot).tasks.length===3)&&d.stakeholders.some(x=>x.id==='smkst-$BS'&&x.name==='Smoke stakeholder')" | grep -qx true || fail "p0: export did not open baselines and stakeholders"
+# Empty Trash after the project goes to Trash: baselines (live and deleted) and stakeholders go before the project (FK)
+curl "${H[@]}" -X DELETE $B/api/baselines/$BPID >/dev/null
+for x in $BT1 $BT2 $BT3; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+curl "${H[@]}" -X DELETE $B/api/projects/$BW >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$BPP >/dev/null
+BE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$BE")" = 200 ] || fail "p0: Empty Trash with baselines and stakeholders: $BE"
+[ "$(D1X "SELECT (SELECT count(*) FROM baselines WHERE project_id IN ('$BW','$BPP'))+(SELECT count(*) FROM stakeholders WHERE project_id='$BW')+(SELECT count(*) FROM projects WHERE id IN ('$BW','$BPP')) AS n" | js 'd[0].results[0].n')" = 0 ] || fail "p0: baselines, stakeholders or the project survived Empty Trash"
+echo "smoke: (p0) baselines: saved (3 tasks, 1 milestone, no titles in the snapshot); two moved dates read +4 and -2 (milestone +5; 2 late, 1 early, max 5); work baseline and its rename are ciphertext in D1, a personal one plain; blank/long name 400, unknown 404; 21st baseline 409, 1,000 tasks fine and 1,001 409; Trash lists and restores it; export opens baselines and stakeholders; Empty Trash removes a project's baselines and stakeholders"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

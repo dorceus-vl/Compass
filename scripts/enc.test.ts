@@ -28,6 +28,8 @@ for (const [table, row] of [
   ['knowledge_collections', { id: 'k1', name: 'Acme programme', enc_v: 0 }],
   ['knowledge_items', { id: 'ki1', title: 'Steering minutes.docx', enc_v: 0 }],
   ['knowledge_chunks', { id: 'kc1', locator: '§ Budget risks', text: 'The vendor will slip.', embedded: 0, enc_v: 0 }],
+  ['baselines', { id: 'b1', project_id: 'p1', name: 'Kickoff plan', snapshot: '{"tasks":[],"milestones":[],"project":{"start_at":null,"end_at":null}}', task_count: 0, enc_v: 0 }],
+  ['stakeholders', { id: 's1', project_id: 'p1', name: 'Dana Whitfield', role: 'Sponsor, Finance', channel: 'Weekly call', notes: 'Wary of the budget', power: 'high', enc_v: 0 }],
   ['ai_messages', { id: 'a1', content: 'Plan looks tight', proposals: '{"tasks":[]}', citations: '[]', enc_v: 0 }],
 ] as const) {
   const w = await seal(env, table, { ...row }, 'work') as any;

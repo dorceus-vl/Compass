@@ -23,6 +23,9 @@ export const ENC_COLS = {
   // v2.1. A series' `key` is a hash for work (see 0014_v2_pm.sql), so only the name and the answered list are sealed.
   templates: ['name', 'body'],
   meeting_series: ['name', 'answered'],
+  // v2.2. A baseline's snapshot holds ids and dates only, but it is sealed with the name so a work plan's shape is not readable at rest.
+  baselines: ['name', 'snapshot'],
+  stakeholders: ['name', 'role', 'channel', 'notes'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string | null }; // typed rows (Project, Milestone) have no index signature
