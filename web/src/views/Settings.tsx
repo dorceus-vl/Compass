@@ -101,7 +101,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   );
 }
 
-const PUSH_LABELS: [PushType, string][] = [['digest', 'Daily digest'], ['overdue', 'Overdue'], ['nudge', 'Waiting-on nudges'], ['milestone', 'Milestones in a week'], ['weekly_review', 'Weekly review'], ['app_task', 'Tasks added by your apps'], ['meeting', 'Meeting notes ready']];
+const PUSH_LABELS: [PushType, string][] = [['digest', 'Daily digest'], ['overdue', 'Overdue'], ['nudge', 'Waiting-on nudges'], ['milestone', 'Milestones in a week'], ['weekly_review', 'Weekly review'], ['app_task', 'Tasks added by your apps'], ['meeting', 'Meeting notes ready'], ['unblocked', 'A task is unblocked']];
 const STATUS_TEXT: Record<PushState, string> = {
   on: 'On for this device.', off: 'Off for this device.', blocked: 'Blocked by the browser. Allow notifications for Compass in the browser or system settings, then come back.',
   'home-screen': 'Add Compass to your Home Screen, then turn notifications on here.', unsupported: 'This browser can\'t receive notifications.',

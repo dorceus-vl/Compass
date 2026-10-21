@@ -7,6 +7,7 @@ import { parseQuery, applyQuery } from '../query.ts';
 import { today } from '../dates.ts';
 import { api } from '../api.ts';
 import { toast } from '../ui/dialogs.tsx';
+import { blockedIds } from '../../../shared/deps.ts';
 
 type Sort = 'due' | 'priority' | 'title' | 'updated';
 type Group = 'none' | 'project' | 'horizon' | 'status';
@@ -28,6 +29,7 @@ export function List() {
   const pq = parseQuery(q), cmp = (a: Task, b: Task) =>
     sort === 'due' ? (a.due_at ?? '9').localeCompare(b.due_at ?? '9') : sort === 'priority' ? b.priority - a.priority : sort === 'title' ? a.title.localeCompare(b.title) : b.updated_at.localeCompare(a.updated_at);
   const top = tasks.filter((t) => !t.parent_id);
+  const blocked = blockedIds(tasks);
   const live = applyQuery(top, pq, projects, today()).sort(cmp);
   // what was finished from this list during this visit stays, struck through, after the open ones (as on the other lists), whatever the status filter says
   const struck = applyQuery(top.filter((t) => t.status === 'done' && finished.has(t.id)), { ...pq, status: 'all' }, projects, today()).filter((t) => !live.includes(t)).sort(cmp);
@@ -56,7 +58,7 @@ export function List() {
         </div>
       </div>
       {views.length > 0 && <div className="row">{views.map((v) => <button type="button" key={v.name} className="chip" onClick={() => setQ(v.query)}>{v.name}</button>)}</div>}
-      {groups.map((g) => { const xs = rows.filter((t) => key(t) === g); return <div className="hz lgroup" key={g || 'all'}><div className="hh"><b>{g || 'All tasks'}</b><small>{xs.length}</small></div>{xs.map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} onFinish={onFinish} />)}</div>; })}
+      {groups.map((g) => { const xs = rows.filter((t) => key(t) === g); return <div className="hz lgroup" key={g || 'all'}><div className="hh"><b>{g || 'All tasks'}</b><small>{xs.length}</small></div>{xs.map((t) => <TaskCard key={t.id} task={t} projects={projects} onOpen={setOpen} onFinish={onFinish} blocked={blocked.has(t.id)} />)}</div>; })}
       <dialog ref={dlg}>
         <form onSubmit={saveView}>
           <p style={{ marginTop: 0 }}>Name this view</p>

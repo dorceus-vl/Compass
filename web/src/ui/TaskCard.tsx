@@ -6,6 +6,7 @@ import { confetti, useLens } from '../motion.ts';
 import { useSwipe } from './useSwipe.ts';
 import { taskColor, projectColor } from './colors.ts';
 import { appLabel, appGlyph } from './sources.ts';
+import { BlockedChip } from './BlockedChip.tsx';
 
 /** The icon tile's glyph: the source app's mark, else the project's initial. */
 export function iconFor(task: Task, project?: Project): string {
@@ -19,9 +20,9 @@ export function useFinished(): [ReadonlySet<string>, (id: string) => void] {
   return [finished, (id) => set((s) => new Set(s).add(id))];
 }
 
-type CardProps = { task: Task; projects: Project[]; onOpen: (id: string) => void; onFinish?: (id: string) => void };
+type CardProps = { task: Task; projects: Project[]; onOpen: (id: string) => void; onFinish?: (id: string) => void; blocked?: boolean };
 
-export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
+export function TaskCard({ task, projects, onOpen, onFinish, blocked }: CardProps) {
   const done = task.status === 'done';
   const due = fmtDue(task.due_at), tone = done ? '' : due.tone; // a finished task is not late
   const color = taskColor(task, projects);
@@ -49,6 +50,7 @@ export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
         <div className="tx">
           <button type="button" className="t" onClick={() => onOpen(task.id)}>{task.title}</button>
           <div className="m">
+            {blocked && <BlockedChip />}
             {project && <span className="chip" style={{ ['--sc' as string]: projectColor(project) }}><i />{project.name}</span>}
             {task.source_app !== 'manual' && <span className="chip" style={{ ['--sc' as string]: color }}><i />{appLabel(task.source_app)}</span>}
             {task.kind === 'work' && <span className="chip" style={{ ['--sc' as string]: 'var(--accent)' }}><i />Work</span>}
@@ -68,8 +70,8 @@ export function TaskCard({ task, projects, onOpen, onFinish }: CardProps) {
 }
 
 /** A vertical list of task cards with the lens effect. */
-export function TaskList({ tasks, ...card }: Omit<CardProps, 'task'> & { tasks: Task[] }) {
+export function TaskList({ tasks, blocked, ...card }: Omit<CardProps, 'task' | 'blocked'> & { tasks: Task[]; blocked?: ReadonlySet<string> }) {
   const ref = useRef<HTMLDivElement>(null);
   useLens(ref, ':scope > .tcard');
-  return <div className="tlist" ref={ref}>{tasks.map((t) => <TaskCard key={t.id} task={t} {...card} />)}</div>;
+  return <div className="tlist" ref={ref}>{tasks.map((t) => <TaskCard key={t.id} task={t} blocked={blocked?.has(t.id)} {...card} />)}</div>;
 }

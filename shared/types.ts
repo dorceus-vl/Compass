@@ -25,6 +25,8 @@ export interface Task {
   status: Status; priority: number; start_at: string | null; due_at: string | null; done_at: string | null; estimate_minutes: number | null;
   waiting_on: string | null; waiting_since: string | null; nudge_every_days: number | null; recur: string | null;
   source_app: SourceApp; source_kind: string | null; source_ref: string | null; source_url: string | null;
+  /** v2.1: JSON array of task ids this one waits on (shared/deps.ts); JSON array of { id, text, done } (Task 1). Both null when empty. */
+  blocked_by: string | null; checklist: string | null;
   sort_in_column: number; tags: string; enc_v: number; created_at: string; updated_at: string; deleted_at: string | null;
 }
 export interface TaskEvent { id: string; task_id: string; at: string; actor: 'you' | 'rule' | 'kelly' | 'meeting'; type: 'created' | 'moved' | 'edited' | 'comment' | 'nudged' | 'done'; data: string | null; enc_v: number }
@@ -45,7 +47,7 @@ export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
   wip_limits: { new: null, progress: 5, hold: null, waiting: null, done: null }, saved_views: [], tz: 'America/Toronto',
-  push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true },
+  push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true, unblocked: true },
   work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
   kelly: { enabled: false, scopes: [] },
   athena: { voice_id: null, speak_answers: false, portrait_id: null },
@@ -74,7 +76,7 @@ export interface MeetingReview {
   project_id: string | null; state: 'new' | 'reviewed'; received_at: string; reviewed_at: string | null;
 }
 export interface Decision { id: string; project_id: string | null; text: string; decided_at: string; from_meeting_id: string | null; at_ref: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
-export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting';
+export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting' | 'unblocked';
 
 export type RaidType = 'risk' | 'assumption' | 'issue' | 'dependency';
 export interface RaidItem {
@@ -157,4 +159,6 @@ export interface ExportBundle {
   raid_items: Omit<RaidItem, 'enc_v'>[]; change_requests: Omit<ChangeRequest, 'enc_v'>[]; decisions: Omit<Decision, 'enc_v'>[]; lessons: Omit<Lesson, 'enc_v'>[];
   meeting_reviews: Raw; inbox_items: Raw; rules: Raw; documents: Raw; library_pages: Raw; ai_threads: Raw; ai_messages: Raw;
   knowledge_collections: Raw; knowledge_items: Raw; knowledge_chunks: Raw;
+  /** v2.1 */
+  templates: Raw; meeting_series: Raw;
 }

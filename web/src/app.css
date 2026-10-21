@@ -938,3 +938,32 @@ dialog.kn-dlg{max-width:520px}
 .ath-kn-save{background:none;border:0;padding:0 2px;font:inherit;font-size:12px;color:var(--accent-bright);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .ath-kn-save:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 @media (max-width:760px),(pointer:coarse){.ath-kn-save{min-height:44px}.chip.cite{min-height:44px}}
+
+/* v2.1 dependencies: the Blocked chip (icon + word), the Today group, Timeline arrows, the task sheet's Blocked by field */
+.chip.blocked{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.chip.blocked svg{flex:none;fill:currentColor;stroke:currentColor;stroke-width:1.4;stroke-linecap:round}
+.chip.blocked svg path{fill:none}
+.blocked-group{border:1px solid var(--border-soft);border-radius:14px;background:var(--card);padding:0 14px}
+.blocked-group[open]{padding-bottom:14px}
+.blocked-group summary{display:flex;align-items:baseline;gap:10px;min-height:44px;align-items:center;cursor:pointer;font-weight:650;font-size:14px;list-style:none}
+.blocked-group summary::-webkit-details-marker{display:none}
+.blocked-group summary::before{content:"";width:7px;height:7px;border-right:1.5px solid var(--text-dim);border-bottom:1.5px solid var(--text-dim);transform:rotate(-45deg);flex:none;transition:transform var(--dur-quick) var(--ease-out)}
+.blocked-group[open] summary::before{transform:rotate(45deg)}
+.blocked-group summary small{color:var(--text-faint);font-weight:400;font-size:12px}
+.blocked-group summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+.tl-arrows path{fill:none;stroke:var(--text-dim);stroke-width:1;opacity:.75}
+.tl-arrowhead{fill:var(--text-dim)}
+@media (prefers-reduced-motion: reduce){.tl-arrows{display:none}} /* v2.1 brief: no arrows under reduced motion */
+.deps{display:grid;gap:8px;margin-top:12px}
+.deps .dl{display:flex;flex-wrap:wrap;gap:6px}
+.dep{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--field-border);background:var(--field);border-radius:999px;font-size:13px}
+.dep button{background:none;border:0;color:inherit;font:inherit;cursor:pointer;min-height:36px;padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dep button.x{padding:0 10px;color:var(--text-faint);border-left:1px solid var(--field-border)}
+.dep button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:999px}
+.dep.done button:first-child{text-decoration:line-through;color:var(--text-faint)}
+.dep-find{position:relative}
+.dep-hits{display:grid;gap:4px;margin-top:6px}
+.dep-hits button{text-align:left;min-height:44px;padding:0 12px;border-radius:12px;border:1px solid var(--field-border);background:var(--field);color:var(--text);font:inherit;font-size:13.5px;cursor:pointer;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.dep-hits button small{color:var(--text-faint);font-size:11.5px;flex:none}
+.dep-hits button:focus-visible,.dep-hits button:hover{border-color:var(--accent)}
+@media (max-width:760px),(pointer:coarse){.dep button{min-height:44px}}

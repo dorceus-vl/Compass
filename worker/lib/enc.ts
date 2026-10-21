@@ -5,7 +5,7 @@ import { encryptString, decryptString } from './crypto-box.js';
 export const ENC_COLS = {
   projects: ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria'],
   milestones: ['name'],
-  tasks: ['title', 'notes', 'waiting_on'],
+  tasks: ['title', 'notes', 'waiting_on', 'checklist'],
   task_events: ['data'],
   inbox_items: ['title', 'body', 'payload'],
   meeting_reviews: ['title', 'summary', 'decisions', 'action_items', 'open_questions', 'important_notes'],
@@ -20,6 +20,9 @@ export const ENC_COLS = {
   knowledge_collections: ['name'],
   knowledge_items: ['title'],
   knowledge_chunks: ['text', 'locator'],
+  // v2.1. A series' `key` is a hash for work (see 0014_v2_pm.sql), so only the name and the answered list are sealed.
+  templates: ['name', 'body'],
+  meeting_series: ['name', 'answered'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string | null }; // typed rows (Project, Milestone) have no index signature

@@ -1141,6 +1141,65 @@ curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$K5P >/dev/null
 echo "smoke: (k5) Kelly knowledge search: scope off -> 403; on -> personal passages only in the agreed shape (a work Cloud AI collection, a Locked one and a collections= parameter never reach her), q and limit validated, audited with counts and no query text, a trashed collection leaves"
 D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null; kset '{"enabled":false,"scopes":[]}'
 for x in $K5W $K5L; do curl "${H[@]}" -X DELETE $B/api/knowledge/collections/$x >/dev/null; done
+# (v1) v2.1 Task 0: dependencies. Link; a loop is 409; another kind is 400; a bad list is 400; completing the last blocker pushes once ("A task is unblocked" for
+# work, the title for personal, the deep link opens the task); Kelly completing a blocker does the same; the agent task shape did not grow. Local D1 only.
+Q0=$(curl "${H[@]}" $B/api/settings | js '[d.quiet_from,d.quiet_to].join()'); curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null # never quiet while this runs
+dwp=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke deps work","kind":"work"}' | js d.project.id)
+dt() { curl "${H[@]}" -X POST $B/api/tasks -d "$1" | js d.task.id; }
+DW1=$(dt "{\"title\":\"Smoke dep work A $R\",\"project_id\":\"$dwp\"}"); DW2=$(dt "{\"title\":\"Smoke dep work B $R\",\"project_id\":\"$dwp\"}")
+DW3=$(dt "{\"title\":\"Smoke dep work C $R\",\"project_id\":\"$dwp\"}"); DP1=$(dt "{\"title\":\"Smoke dep own A $R\"}"); DP2=$(dt "{\"title\":\"Smoke dep own B $R\"}")
+bb() { node -pe 'JSON.stringify({blocked_by:JSON.stringify(process.argv.slice(1))})' "$@"; } # a PATCH body linking the given ids
+dpatch() { curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/tasks/$1 -d "$2"; }
+[ "$(kst "$(dpatch $DW2 "{\"blocked_by\":\"[\\\"$DW1\\\"]\"}")")" = 200 ] || fail "v1: linking B to A"
+[ "$(task $DW2 blocked_by)" = "[\"$DW1\"]" ] || fail "v1: blocked_by was not stored"
+[ "$(D1X "SELECT blocked_by AS b FROM tasks WHERE id='$DW2'" | js 'd[0].results[0].b')" = "[\"$DW1\"]" ] || fail "v1: blocked_by is not what the row holds"
+# a loop (A waits on B waits on A) and a longer one (C waits on B; A on C)
+D=$(dpatch $DW1 "{\"blocked_by\":\"[\\\"$DW2\\\"]\"}"); [ "$(kst "$D")" = 409 ] && kbody "$D" | grep -q dependency_cycle || fail "v1: a direct loop was not 409 dependency_cycle: $D"
+[ "$(kst "$(dpatch $DW3 "{\"blocked_by\":\"[\\\"$DW2\\\"]\"}")")" = 200 ] || fail "v1: linking C to B"
+D=$(dpatch $DW1 "{\"blocked_by\":\"[\\\"$DW3\\\"]\"}"); [ "$(kst "$D")" = 409 ] || fail "v1: a loop of three was not refused: $D"
+D=$(dpatch $DW1 "{\"blocked_by\":\"[\\\"$DW1\\\"]\"}"); [ "$(kst "$D")" = 400 ] && kbody "$D" | grep -q bad_dependency || fail "v1: a task blocking itself was not 400 bad_dependency: $D"
+# other kind, a missing task, a trashed one, a bad list, a duplicate, and a kind change while linked: all 400
+D=$(dpatch $DW1 "{\"blocked_by\":\"[\\\"$DP1\\\"]\"}"); [ "$(kst "$D")" = 400 ] && kbody "$D" | grep -q bad_dependency || fail "v1: a personal blocker for a work task was not 400: $D"
+[ "$(kst "$(dpatch $DP1 "{\"blocked_by\":\"[\\\"$DW1\\\"]\"}")")" = 400 ] || fail "v1: a work blocker for a personal task was not 400"
+[ "$(kst "$(dpatch $DP1 '{"blocked_by":"[\"no-such-task\"]"}')")" = 400 ] || fail "v1: a missing blocker was not 400"
+[ "$(kst "$(dpatch $DP1 '{"blocked_by":"nope"}')")" = 400 ] && [ "$(kst "$(dpatch $DP1 "$(bb $DP2 $DP2)")")" = 400 ] || fail "v1: a malformed or duplicate list was not 400"
+DT=$(dt "{\"title\":\"Smoke dep trashed $R\"}"); curl "${H[@]}" -X DELETE $B/api/tasks/$DT >/dev/null
+[ "$(kst "$(dpatch $DP1 "{\"blocked_by\":\"[\\\"$DT\\\"]\"}")")" = 400 ] || fail "v1: a trashed blocker was accepted"
+D=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/tasks -d "{\"title\":\"Smoke dep bad create $R\",\"blocked_by\":\"[\\\"$DW1\\\"]\"}"); [ "$(kst "$D")" = 400 ] || fail "v1: creating a personal task blocked by a work one was not 400"
+[ "$(kst "$(dpatch $DP2 '{"kind":"work"}')")" = 200 ] && [ "$(kst "$(dpatch $DP2 '{"kind":"personal"}')")" = 200 ] || fail "v1: setup for the kind-change check"
+[ "$(kst "$(dpatch $DP2 "{\"blocked_by\":\"[\\\"$DP1\\\"]\"}")")" = 200 ] || fail "v1: linking personal B to personal A"
+curl "${H[@]}" -X PATCH $B/api/tasks/$DP2 -d '{"project_id":"'$dwp'"}' | grep -q '"error":"bad_dependency"' || fail "v1: a linked task moved to a work project (kind change) was not refused"
+# work: completing A (the last blocker of B) pushes once and generically; the deep link opens B
+SINCE=$(node -pe 'new Date(Date.now()-1000).toISOString()')
+curl "${H[@]}" -X POST $B/api/tasks/$DW1/done | grep -q '"status":"done"' || fail "v1: completing the blocker"
+UBW=$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "JSON.stringify(d.items.filter(i=>i.url==='/?task=$DW2'))")
+[ "$(echo "$UBW" | js d.length)" = 1 ] && echo "$UBW" | js 'd[0].title' | grep -q '^A task is unblocked$' || fail "v1: expected one 'A task is unblocked' push for B: $UBW"
+echo "$UBW" | grep -q "Smoke dep work" && fail "v1: work text reached the push"
+curl "${H[@]}" -X POST $B/api/tasks/$DW1/done >/dev/null # already done: nothing more
+[ "$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.filter(i=>i.url==='/?task=$DW2').length")" = 1 ] || fail "v1: a second 'done' pushed again"
+# B still waits on nothing but C waits on B: completing B unblocks C; the switch off silences it
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"push":{"unblocked":false}}' >/dev/null
+curl "${H[@]}" -X POST $B/api/tasks/$DW2/done >/dev/null
+[ "$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.filter(i=>i.url==='/?task=$DW3').length")" = 0 ] || fail "v1: settings.push.unblocked=false still pushed"
+curl "${H[@]}" -X PATCH $B/api/settings -d '{"push":{"unblocked":true}}' >/dev/null
+# two blockers: only the last one pushes. Personal text names the task. Kelly completing a blocker counts (the one completion path).
+DP3=$(dt "{\"title\":\"Smoke dep own C $R\"}")
+[ "$(kst "$(dpatch $DP3 "$(bb $DP1 $DP2)")")" = 200 ] && [ "$(task $DP3 blocked_by | js 'd.length')" = 2 ] || fail "v1: two blockers"
+kset '{"enabled":true,"scopes":["compass:read.tasks","compass:write.tasks"]}'
+D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null
+SINCE=$(node -pe 'new Date(Date.now()-1000).toISOString()')
+[ "$(agc POST "/tasks/$DP1/done")" = 200 ] || fail "v1: Kelly could not complete a personal task"
+[ "$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.filter(i=>i.url==='/?task=$DP3').length")" = 0 ] || fail "v1: pushed while another blocker was still open"
+[ "$(agc POST "/tasks/$DP2/done")" = 200 ] || fail "v1: Kelly could not complete the second blocker"
+[ "$(curl "${H[@]}" "$B/api/push/outbox?since=$SINCE" | js "d.items.filter(i=>i.url==='/?task=$DP3'&&i.title==='Smoke dep own C $R is unblocked').length")" = 1 ] || fail "v1: Kelly completing the last blocker did not push '<title> is unblocked' once"
+# the agent task shape did not grow
+[ "$(agb GET "/tasks/$DP3" | js 'Object.keys(d.task).sort().join()')" = "due_at,horizon,id,priority,project,status,title" ] || fail "v1: the agent task shape changed"
+D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/null; kset '{"enabled":false,"scopes":[]}'
+# a checklist column exists and a work task's is not plain (sealed by the shared seal path; Task 1 writes it)
+[ "$(D1X "SELECT count(*) AS n FROM pragma_table_info('tasks') WHERE name IN ('blocked_by','checklist')" | js 'd[0].results[0].n')" = 2 ] || fail "v1: migration 0014 task columns"
+curl "${H[@]}" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${Q0%,*}\",\"quiet_to\":\"${Q0#*,}\"}" >/dev/null
+for x in $DW1 $DW2 $DW3 $DP1 $DP2 $DP3; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$dwp >/dev/null
+echo "smoke: (v1) dependencies: link ok; loops 409 (direct and of three); self, other kind, missing, trashed, malformed, duplicate and a kind change while linked 400; completing the last blocker pushed once ('A task is unblocked' for work, '<title> is unblocked' for personal via Kelly), the switch silences it, the deep link is /?task=<id>; the agent task keys are unchanged"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

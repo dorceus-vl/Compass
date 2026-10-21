@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { AGENT_SCOPES, allowed, shared, parseNewTask, overLimit } from '../worker/lib/agent.ts';
 
 // allowed: switched on and the scope listed.
@@ -44,5 +45,13 @@ assert.equal(overLimit(10, 30, true), null);
 assert.equal(overLimit(10, 31, true), 'writes');
 assert.equal(overLimit(10, 99, false), null); // reads ignore the write cap
 assert.equal(overLimit(61, 31, true), 'rate');
+
+// v2.1: Kelly's task shape does not grow (blocked_by and checklist stay on the device). The type and the object agentTask() builds list the same seven keys.
+const src = readFileSync(new URL('../worker/routes/agent.ts', import.meta.url), 'utf8');
+const KEYS = ['id', 'title', 'due_at', 'horizon', 'status', 'project', 'priority'];
+assert.deepEqual([...(/type AgentTask = \{([^}]*)\}/.exec(src)![1]).matchAll(/(\w+):/g)].map((m) => m[1]), KEYS);
+const built = /return \{ (id: t\.id[^\n]*) \};/.exec(src)![1];
+assert.deepEqual([...built.matchAll(/(?:^|, )(\w+): /g)].map((m) => m[1]), KEYS);
+assert.ok(!/blocked_by|checklist/.test(src), 'the agent route never mentions the v2.1 task columns');
 
 console.log('agent: ok');

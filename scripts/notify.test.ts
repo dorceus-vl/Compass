@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/notify.test.ts
 import assert from 'node:assert/strict';
-import { ingestMessage } from '../worker/lib/notify.ts';
+import { ingestMessage, unblockedMessage } from '../worker/lib/notify.ts';
 
 const item = (work: number) => ({ work }) as never;
 const personal = ingestMessage({ item: item(0), task: { id: 't1', title: 'Renew passport', kind: 'personal' } as never, created: true }, 'health')!;
@@ -11,4 +11,10 @@ assert.equal(ingestMessage({ item: item(0), task: { id: 't3', title: 'Secret', k
 const meeting = ingestMessage({ item: item(1), review: { id: 'r1', title: 'Acme budget review' } as never, created: true }, 'sonarflow')!;
 assert.deepEqual([meeting.type, meeting.key, meeting.message.title, meeting.message.body, meeting.message.url], ['meeting', 'meeting:r1', 'Meeting notes ready', 'Open Compass to read', '/meetings/r1']);
 assert.equal(ingestMessage({ item: item(0), task: { id: 't1', title: 'x', kind: 'personal' } as never, created: false }, 'health'), null); // updates never push
+// v2.1 V3: a work task's unblock push carries nothing of the task; a personal one names it; both open the task.
+const ubWork = unblockedMessage({ id: 'w1', title: 'Acme cutover plan', kind: 'work' });
+assert.deepEqual([ubWork.title, ubWork.url], ['A task is unblocked', '/?task=w1']);
+assert.ok(!JSON.stringify(ubWork).includes('Acme'));
+const ubOwn = unblockedMessage({ id: 'p1', title: 'Book dentist', kind: 'personal' });
+assert.deepEqual([ubOwn.title, ubOwn.url], ['Book dentist is unblocked', '/?task=p1']);
 console.log('notify ok');

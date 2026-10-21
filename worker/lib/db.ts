@@ -10,7 +10,8 @@ export async function audit(env: Env, actor: string, action: string, target: str
 
 export async function getSettings(env: Env): Promise<Settings> {
   const row = await env.DB.prepare('SELECT json FROM settings WHERE id = 1').first<{ json: string }>();
-  return { ...DEFAULT_SETTINGS, ...(row ? JSON.parse(row.json) : {}) };
+  const stored = row ? JSON.parse(row.json) : {};
+  return { ...DEFAULT_SETTINGS, ...stored, push: { ...DEFAULT_SETTINGS.push, ...stored.push } }; // a push type added later is on until switched off
 }
 
 export async function patchSettings(env: Env, patch: Partial<Settings>): Promise<Settings> {

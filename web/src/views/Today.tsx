@@ -17,6 +17,7 @@ import { HorizonDial, HORIZONS, HORIZON_LABEL, cap } from '../ui/HorizonDial.tsx
 import { HorizonRing } from '../ui/HorizonRing.tsx';
 import { MilestonePath } from '../ui/MilestonePath.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
+import { blockedIds } from '../../../shared/deps.ts';
 
 const FEED_LIMIT = 12;
 
@@ -46,7 +47,10 @@ export function Today() {
   if (!ready) return null;
   const live = tasks.filter((x) => !x.deleted_at && !x.parent_id && (kind === 'all' || x.kind === kind));
   // the lists also keep, after the open ones, what was finished from a card during this visit, so its check can undo it
-  const byDue = [...live].sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : 1);
+  const blocked = blockedIds(tasks);
+  const sorted = [...live].sort((a, b) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : 1);
+  const blockedList = sorted.filter((x) => blocked.has(x.id)); // v2.1: a blocked task waits in its own group, outside the horizons and Overdue
+  const byDue = sorted.filter((x) => !blocked.has(x.id));
   const openTasks = byDue.filter((x) => x.status !== 'done');
   const overdueList = arrange(byDue.filter((x) => x.due_at && x.due_at < t), finished);
   const byHz = Object.fromEntries(HORIZONS.map((h) => [h, openTasks.filter((x) => x.horizon === h)])) as Record<Horizon, Task[]>;
@@ -112,6 +116,12 @@ export function Today() {
         <TaskList tasks={feed.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} />
         {feed.open > FEED_LIMIT && <Link to="/list" className="chip more">+{feed.open - FEED_LIMIT} more in List</Link>}
       </section>
+      {blockedList.length > 0 && (
+        <details className="blocked-group">
+          <summary><span>Blocked ({blockedList.length})</span><small>waiting on another task</small></summary>
+          <TaskList tasks={blockedList} projects={projects} onOpen={setOpen} onFinish={onFinish} blocked={blocked} />
+        </details>
+      )}
       {lineMs && lineProject && (
         <section aria-labelledby="ms-h">
           <SectionHead id="ms-h" eyebrow="Milestones" title={<Link to={`/projects/${lineProject.id}`}>{lineProject.name}</Link>}>

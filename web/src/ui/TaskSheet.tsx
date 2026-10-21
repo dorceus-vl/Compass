@@ -6,11 +6,19 @@ import { confirmAction, toast } from './dialogs.tsx';
 import { api } from '../api.ts';
 import { SplitSheet } from './SplitSheet.tsx';
 import type { InboxItem } from '../../../shared/types.ts';
+import { parseBlockedBy, wouldCycle, blocksOf, blockedIds } from '../../../shared/deps.ts';
+import { BlockedChip } from './BlockedChip.tsx';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
   ['{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}', 'Weekdays'], ['{"freq":"monthly","interval":1}', 'Every month'], ['{"freq":"weekly","interval":2,"after_completion":true}', 'Two weeks after done']];
 
+/** The sheet follows links to other tasks (a blocker, a task it blocks) in place: the inner sheet is keyed by the id, so its fields start afresh. */
 export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+  const [cur, setCur] = useState(taskId);
+  return <TaskSheetFor key={cur} taskId={cur} onClose={onClose} onOpenTask={setCur} />;
+}
+
+function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose: () => void; onOpenTask: (id: string) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const { tasks, projects, ready } = useStore();
   const [realId, setRealId] = useState<string | null>(null); // a tmp- id swapped for the server's after sync
@@ -22,6 +30,7 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
   const has = !!task;
   const [mail, setMail] = useState<InboxItem | null>(null); // the forwarded email this task came from, if any
   const [splitting, setSplitting] = useState(false);
+  const [depQ, setDepQ] = useState('');
   const fromMail = task?.source_kind === 'email';
   useEffect(() => {
     if (!fromMail || !navigator.onLine) return;
@@ -42,6 +51,18 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
   }, [ready, has, taskId]);
   if (!task) return null;
   const v = { ...task, ...draft } as Task;
+  // Dependencies (V1 to V3). Candidates are open, live tasks of the same kind that would not close a loop.
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const linked = parseBlockedBy(v.blocked_by) ?? [];
+  const blockers = linked.map((id) => byId.get(id) ?? null);
+  const blocks = blocksOf(task.id, tasks);
+  const stillBlocked = blockedIds(tasks).has(task.id);
+  const graph = new Map(tasks.filter((t) => !t.deleted_at && t.blocked_by).map((t) => [t.id, parseBlockedBy(t.blocked_by) ?? []]));
+  graph.delete(task.id);
+  const hits = depQ.trim() ? tasks.filter((t) => t.id !== task.id && !t.deleted_at && t.status !== 'done' && t.kind === v.kind && !linked.includes(t.id)
+    && t.title.toLowerCase().includes(depQ.trim().toLowerCase()) && !wouldCycle(graph, task.id, t.id)).slice(0, 6) : [];
+  const setLinks = (ids: string[]) => save({ blocked_by: ids.length ? JSON.stringify(ids) : null });
+  const goto = (id: string) => { flush(); onOpenTask(id); };
   const save = (patch: Partial<Task>) => { setDraft((d) => ({ ...d, ...patch })); void updateTask(task.id, patch); };
   // Save any edit still sitting in a focused field; Escape and Done close the dialog without a blur.
   const flush = () => {
@@ -62,8 +83,12 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
     <dialog ref={ref} onClose={() => { flush(); onClose(); }} style={{ maxWidth: 640 }}>
       <input className="field" style={{ fontSize: 18, fontWeight: 600 }} value={v.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={(e) => e.target.value.trim() && save({ title: e.target.value.trim() })} aria-label="Title" />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-        {field('Project', <select className="field" value={v.project_id ?? ''} onChange={(e) => save({ project_id: e.target.value || null })}><option value="">None</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>)}
-        {field('Kind', <select className="field" value={v.kind} disabled={!!v.project_id} onChange={(e) => save({ kind: e.target.value as Task['kind'] })}><option value="personal">Personal</option><option value="work">Work</option></select>)}
+        {field('Project', <select className="field" value={v.project_id ?? ''} onChange={(e) => {
+          const to = projects.find((p) => p.id === e.target.value)?.kind ?? v.kind; // a task with links keeps its kind (work and personal never link)
+          if (to !== v.kind && (blockers.length || blocks.length)) { toast('Remove its dependencies first: work and personal tasks cannot depend on each other'); return; }
+          save({ project_id: e.target.value || null });
+        }}><option value="">None</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>)}
+        {field('Kind', <select className="field" value={v.kind} disabled={!!v.project_id || blockers.length > 0 || blocks.length > 0} title={blockers.length || blocks.length ? 'Remove its dependencies to change the kind' : undefined} onChange={(e) => save({ kind: e.target.value as Task['kind'] })}><option value="personal">Personal</option><option value="work">Work</option></select>)}
         {field('Horizon', <select className="field" value={v.horizon} onChange={(e) => save({ horizon: e.target.value as Horizon })}><option value="short">Short · this week</option><option value="medium">Medium · this quarter</option><option value="long">Long · this year</option></select>)}
         {field('Status', <select className="field" value={v.status} onChange={(e) => save({ status: e.target.value as Status })}>{(['new', 'progress', 'hold', 'waiting', 'done'] as const).map((s) => <option key={s} value={s}>{s}</option>)}</select>)}
         {field('Start', <input className="field" type="date" value={v.start_at ?? ''} onChange={(e) => save({ start_at: e.target.value || null })} />)}
@@ -81,6 +106,29 @@ export function TaskSheet({ taskId, onClose }: { taskId: string; onClose: () => 
         }} />)}
         {field('Tags (comma separated)', <input ref={tagsRef} className="field" defaultValue={JSON.parse(v.tags || '[]').join(', ')} onBlur={(e) => save({ tags: JSON.stringify(e.target.value.split(',').map((s) => s.trim()).filter(Boolean)) })} />)}
       </div>
+      <section className="deps" aria-label="Dependencies">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Blocked by</span>
+          {stillBlocked && <BlockedChip />}
+        </div>
+        {linked.length > 0 && <div className="dl">{linked.map((id, i) => { const b = blockers[i]; const resolved = !b || b.deleted_at || b.status === 'done'; return (
+          <span key={id} className={`dep${resolved ? ' done' : ''}`}>
+            <button type="button" disabled={!b} onClick={() => goto(id)}>{b ? b.title : 'A task that is gone'}{resolved ? ' (done)' : ''}</button>
+            <button type="button" className="x" aria-label={`Remove blocker: ${b?.title ?? 'a task that is gone'}`} onClick={() => setLinks(linked.filter((x) => x !== id))}>×</button>
+          </span>); })}</div>}
+        <div className="dep-find">
+          <input className="field" value={depQ} placeholder={linked.length >= 20 ? 'Twenty blockers at most' : `Find a ${v.kind} task this waits on`} disabled={linked.length >= 20} aria-label="Find a blocking task"
+            onChange={(e) => setDepQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && hits[0]) { e.preventDefault(); setLinks([...linked, hits[0].id]); setDepQ(''); } }} />
+          {hits.length > 0 && <div className="dep-hits">{hits.map((h) => (
+            <button type="button" key={h.id} onClick={() => { setLinks([...linked, h.id]); setDepQ(''); }}>{h.title}<small>{h.status}</small></button>))}</div>}
+          {depQ.trim() && hits.length === 0 && <p className="hint" style={{ margin: '6px 0 0' }}>No open {v.kind} task matches.</p>}
+        </div>
+        {blocks.length > 0 && <>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Blocks</span>
+          <div className="dl">{blocks.map((b) => <span key={b.id} className={`dep${b.status === 'done' ? ' done' : ''}`}><button type="button" onClick={() => goto(b.id)}>{b.title}</button></span>)}</div>
+        </>}
+      </section>
       {field('Notes', <textarea ref={notesRef} className="field" rows={5} defaultValue={v.notes ?? ''} onBlur={(e) => save({ notes: e.target.value || null })} />)}
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>

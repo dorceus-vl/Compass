@@ -7,11 +7,13 @@ import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { startOfWeek, today } from '../dates.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { positionBetween } from '../../../shared/position.ts';
+import { blockedIds } from '../../../shared/deps.ts';
 
 const COLS: [Status, string, string][] = [['new', 'New', 'var(--text-faint)'], ['progress', 'In progress', 'var(--accent)'], ['hold', 'On hold', 'var(--warn)'], ['waiting', 'Waiting on', 'var(--h-long)'], ['done', 'Done', 'var(--ok)']];
 
 export function Board() {
   const { tasks, projects, ready } = useStore();
+  const blocked = blockedIds(tasks);
   const [open, setOpen] = useState<string | null>(null);
   const [kind, setKind] = useState<'all' | 'personal' | 'work'>(() => (localStorage.getItem('compass.board.kind') as 'all') || 'all');
   const [project, setProject] = useState('');
@@ -116,7 +118,7 @@ export function Board() {
       <div className="col" data-col={s} data-wip={state} key={`${s}-${pid ?? ''}`} style={{ ['--c' as string]: colour }}>
         <div className="ch"><i /><b>{label}</b><small>{xs.length}{limit ? ` / ${limit}` : ''}</small></div>
         {limit && s !== 'done' ? <div className="wip" aria-hidden="true" style={{ ['--w' as string]: Math.min(1, xs.length / limit) }}><i /></div> : null}
-        {xs.map((t) => <Card key={t.id} task={t} project={projects.find((p) => p.id === t.project_id)} projects={projects} landed={landed === t.id} subtasks={subs(t.id)} onOpen={(i) => Date.now() - lastDrag.current > 300 && setOpen(i)} dragging={dragId === t.id} onPointerDown={onPointerDown} />)}
+        {xs.map((t) => <Card key={t.id} task={t} project={projects.find((p) => p.id === t.project_id)} projects={projects} landed={landed === t.id} subtasks={subs(t.id)} blocked={blocked.has(t.id)} onOpen={(i) => Date.now() - lastDrag.current > 300 && setOpen(i)} dragging={dragId === t.id} onPointerDown={onPointerDown} />)}
       </div>
     );
   };

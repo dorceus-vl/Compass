@@ -25,6 +25,7 @@ import { KnowledgeView } from './views/Knowledge.tsx';
 import { dropLocked } from './knowledge-search.ts';
 import { KellyLog } from './views/KellyLog.tsx';
 import { Palette } from './ui/Palette.tsx';
+import { TaskSheet } from './ui/TaskSheet.tsx';
 import { startSync, replay } from './store/sync.ts';
 import { shell, startShell, sharedToQuickAdd, closeQuickAdd, stepUpInBrowser, openExternal } from './native.ts';
 import { enablePush, thisDeviceId } from './push.ts';
@@ -43,10 +44,18 @@ export function App() {
   const { path, params } = useRoute();
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking');
   const [palette, setPalette] = useState(false);
+  const [deepTask, setDeepTask] = useState<string | null>(null); // `/?task=<id>` (an "unblocked" push): opens that task's sheet, then the URL is cleaned
+  const taskParam = new URLSearchParams(location.search).get('task');
   const [shared, setShared] = useState<{ n: number; title: string; notes: string | null } | null>(null);
   useEffect(() => {
     api('/auth/me').then(() => setAuth('in')).catch((e) => setAuth(e instanceof SignedOut ? 'out' : 'in'));
   }, []);
+  useEffect(() => {
+    if (auth !== 'in' || !taskParam) return;
+    setDeepTask(taskParam);
+    const q = new URLSearchParams(location.search); q.delete('task');
+    history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
+  }, [auth, taskParam]);
   useEffect(() => { if (auth === 'out') dropLocked(); }, [auth]); // Locked passages live in memory only: gone with the session
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
   // In an app shell: shared text opens quick add prefilled, links and notification taps move inside Compass, and the push token is kept fresh.
@@ -70,6 +79,7 @@ export function App() {
   return (
     <>
       <Shell onPalette={() => setPalette(true)}>{view}</Shell>
+      {deepTask && <TaskSheet key={deepTask} taskId={deepTask} onClose={() => setDeepTask(null)} />}
       {palette && <Palette key={shared?.n ?? 0} prefill={shared ?? undefined} onClose={() => { setPalette(false); setShared(null); }} />}
       <Toasts /><ConfirmDialog />
     </>

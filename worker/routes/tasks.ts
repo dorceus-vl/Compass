@@ -10,20 +10,27 @@ import { threadAccess } from '../lib/project-context.ts';
 import { unembedStale } from '../lib/vectors.ts';
 import { parseRecur, nextOccurrence } from '../lib/recur.ts';
 import { positionBetween } from '../../shared/position.ts';
+import { parseBlockedBy, wouldCycle } from '../../shared/deps.ts';
+import { notifyUnblocked } from '../lib/notify.ts';
 
 const tasks = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+/** blocked_by: a list of up to 20 unique task ids (shape only; the live, same-kind and no-loop checks need the database, see checkDependencies). Stored as JSON text; empty is null. */
+const blockedBy: Check = (v, f) => {
+  const ids = parseBlockedBy(v);
+  return ids ? { value: ids.length ? JSON.stringify(ids) : null } : { error: `${f} must be a list of at most 20 different task ids` };
+};
 const CHECKS: Record<string, Check> = {
   title: text(300), notes: text(20000), project_id: text(40), parent_id: text(40), kind: oneOf('personal', 'work'),
   horizon: oneOf('short', 'medium', 'long'), status: oneOf('new', 'progress', 'hold', 'waiting', 'done'), priority: num(0, 3, { integer: true, nullable: false }),
   start_at: date(), due_at: date(), estimate_minutes: num(0, 100000, { integer: true }), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
-  recur: text(300), source_url: httpsUrl(2048), tags: text(1000),
+  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy,
 };
 const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','status','priority','start_at','due_at','done_at','estimate_minutes','waiting_on','waiting_since',
-  'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
+  'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','blocked_by','checklist','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
 // Text columns that are ciphertext on a work row. Every update rewrites them, so a task that changes kind
 // (via its project) is never left half-encrypted.
-const TEXT_COLS = ['title', 'notes', 'waiting_on'];
+const TEXT_COLS = ['title', 'notes', 'waiting_on', 'checklist'];
 
 // Both helpers seal a copy (never the caller's task) and set task.enc_v to what is stored, so responses say how the row is held.
 export async function insertTaskStmt(env: Env, task: Task): Promise<D1PreparedStatement> {
@@ -66,7 +73,7 @@ export async function buildTaskFromSource(env: Env, f: Partial<Task> & { title: 
   const task: Task = {
     parent_id: null, notes: null, horizon: 'short', priority: 0, start_at: null, due_at: null, done_at: null, estimate_minutes: null, waiting_on: null,
     waiting_since: status === 'waiting' ? t : null, nudge_every_days: null, recur: null, source_app: 'manual', source_kind: null, source_ref: null, source_url: null,
-    tags: '[]', enc_v: 0, ...f, id: crypto.randomUUID(), project_id, kind, status, sort_in_column: positionBetween(last?.m ?? null, null),
+    tags: '[]', blocked_by: null, checklist: null, enc_v: 0, ...f, id: crypto.randomUUID(), project_id, kind, status, sort_in_column: positionBetween(last?.m ?? null, null),
     created_at: t, updated_at: t, deleted_at: null,
   };
   return task;
@@ -86,6 +93,32 @@ async function resolveKind(env: Env, projectId: string | null, given: unknown): 
   return given === 'work' ? 'work' : 'personal';
 }
 
+type DepError = { error: 'bad_dependency' | 'dependency_cycle'; status: 400 | 409 };
+/**
+ * V2: every id in `ids` is a live task of the same kind as `taskId` (null for a task being created), not the task itself, and adding the links makes no loop.
+ * Null when fine. The whole dependency graph is read in one query (only tasks that have blockers); ponytail: fine for one person's tasks, walk it from the new links if it ever grows past thousands.
+ */
+export async function checkDependencies(env: Env, taskId: string | null, kind: Kind, ids: string[]): Promise<DepError | null> {
+  if (!ids.length) return null;
+  if (ids.length > 20 || (taskId && ids.includes(taskId))) return { error: 'bad_dependency', status: 400 };
+  const { results } = await env.DB.prepare(`SELECT id, kind FROM tasks WHERE deleted_at IS NULL AND id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`).bind(...ids).all<{ id: string; kind: Kind }>();
+  if (results.length !== ids.length || results.some((r) => r.kind !== kind)) return { error: 'bad_dependency', status: 400 };
+  if (!taskId) return null; // a new task is not anyone's blocker yet, so it cannot close a loop
+  const g = await env.DB.prepare('SELECT id, blocked_by FROM tasks WHERE deleted_at IS NULL AND blocked_by IS NOT NULL').all<{ id: string; blocked_by: string }>();
+  const graph = new Map(g.results.map((r) => [r.id, parseBlockedBy(r.blocked_by) ?? []]));
+  graph.delete(taskId); // its old links are being replaced by `ids`
+  return ids.some((to) => wouldCycle(graph, taskId, to)) ? { error: 'dependency_cycle', status: 409 } : null;
+}
+/** A task that changes kind (its project moved it) may not keep links to, or from, tasks of the other kind. */
+async function crossKindLinks(env: Env, task: Task, kind: Kind): Promise<boolean> {
+  const own = parseBlockedBy(task.blocked_by) ?? [];
+  if (own.length) {
+    const r = await env.DB.prepare(`SELECT 1 AS x FROM tasks WHERE deleted_at IS NULL AND kind != ?1 AND id IN (${own.map((_, i) => `?${i + 2}`).join(',')})`).bind(kind, ...own).first();
+    if (r) return true;
+  }
+  return !!(await env.DB.prepare('SELECT 1 AS x FROM tasks WHERE deleted_at IS NULL AND kind != ?1 AND instr(blocked_by, ?2) > 0').bind(kind, task.id).first());
+}
+
 /**
  * The one way a task becomes done: marks it done, writes the 'done' event and, for a recurring task, creates
  * the next occurrence (counted from the user's local date). `task` is the already-edited task; `fields` are its extra changed columns.
@@ -95,6 +128,7 @@ export async function completeTask(env: Env, task: Task, fields: string[] = [], 
   const done: Task = { ...task, status: 'done', done_at: t, updated_at: t };
   await updateTask(env, done, ['status', 'done_at', ...fields]);
   await addEvent(env, done, actor, 'done');
+  await notifyUnblocked(env, done); // V3: also when Kelly completes it (the one path)
   const rule = parseRecur(done.recur);
   if (!rule) return { task: done };
   const today = localDate((await getSettings(env)).tz);
@@ -141,13 +175,15 @@ tasks.post('/', async (c) => {
   }
   const kind = await resolveKind(c.env, (r.values.project_id as string) ?? null, r.values.kind);
   if (!kind) return c.json({ error: 'project not found' }, 404);
+  const dep = await checkDependencies(c.env, null, kind, parseBlockedBy(r.values.blocked_by) ?? []);
+  if (dep) return c.json({ error: dep.error }, dep.status);
   const status = (r.values.status as Status) ?? 'new';
   const last = await c.env.DB.prepare('SELECT MAX(sort_in_column) AS m FROM tasks WHERE status = ?1 AND deleted_at IS NULL').bind(status).first<{ m: number | null }>();
   const t = now();
   const task: Task = {
     id: crypto.randomUUID(), project_id: null, parent_id: null, notes: null, horizon: 'short', priority: 0, start_at: null, due_at: null, done_at: null,
     estimate_minutes: null, waiting_on: null, waiting_since: null, nudge_every_days: null, recur: null, source_app: 'manual', source_kind: null,
-    source_ref: null, source_url: null, tags: '[]', enc_v: 0, ...(r.values as Partial<Task>), title: String(r.values.title), kind, status,
+    source_ref: null, source_url: null, tags: '[]', blocked_by: null, checklist: null, enc_v: 0, ...(r.values as Partial<Task>), title: String(r.values.title), kind, status,
     sort_in_column: positionBetween(last?.m ?? null, null), created_at: t, updated_at: t, deleted_at: null,
   };
   if (task.tags === null) task.tags = '[]';
@@ -199,6 +235,11 @@ tasks.patch('/:id', async (c) => {
     } else next.kind = task.kind;
   }
   fields.push('kind');
+  // V2: links are re-checked when they change, and a task may not change kind while it is linked to the other kind.
+  if ('blocked_by' in r.values || next.kind !== task.kind) {
+    if (next.kind !== task.kind && await crossKindLinks(c.env, task, next.kind)) return c.json({ error: 'bad_dependency' }, 400);
+    if ('blocked_by' in r.values) { const dep = await checkDependencies(c.env, task.id, next.kind, parseBlockedBy(next.blocked_by) ?? []); if (dep) return c.json({ error: dep.error }, dep.status); }
+  }
   if (next.status === 'waiting' && task.status !== 'waiting') { next.waiting_since = next.updated_at; fields.push('waiting_since'); }
   if (next.status !== 'done' && task.status === 'done') { next.done_at = null; fields.push('done_at'); }
   // KN22: a task moved into a project takes its email's saved knowledge copy with it (work: sealed in place; Offline only: its vectors go) now, not at the next cron.

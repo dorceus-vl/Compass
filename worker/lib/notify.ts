@@ -5,6 +5,7 @@ import { inQuietHours } from './schedule.ts';
 import { sendPush, type PushMessage, type Sent } from './webpush.ts';
 import { sendApns } from './apns.ts';
 import { sendFcm } from './fcm.ts';
+import { parseBlockedBy, isBlocked } from '../../shared/deps.ts';
 
 const MAX_FAILS = 10;
 type Sub = { id: string; kind: 'web' | 'apns' | 'fcm'; endpoint: string; env: string | null; p256dh: string | null; auth: string | null };
@@ -78,5 +79,32 @@ export async function notifyIngest(env: Env, result: Ingested, app: string): Pro
     if (m) await pushAll(env, m.type, m.key, m.message);
   } catch (e) {
     console.error(`[push] notifyIngest failed: ${(e as Error).name}`); // a push problem never fails the ingest
+  }
+}
+
+/** V3: "unblocked" for a task whose last live blocker was just finished. Work text carries nothing of the task (Q8); a personal one names it. */
+export function unblockedMessage(task: Pick<Task, 'id' | 'title' | 'kind'>): PushMessage {
+  return { title: task.kind === 'work' ? 'A task is unblocked' : `${task.title} is unblocked`, body: 'Ready to start', url: '/?task=' + task.id };
+}
+
+/**
+ * After `done` was finished (by you, a rule or Kelly): one push for each open task that waited on it and now waits on nothing else.
+ * Honours settings.push.unblocked and quiet hours through pushAll. The key holds the finish time, so a retry sends once and a task
+ * finished again later can push again. Never throws: a push problem never fails the completion.
+ */
+export async function notifyUnblocked(env: Env, done: Task): Promise<void> {
+  try {
+    const { results } = await env.DB.prepare(`SELECT id, title, kind, status, blocked_by FROM tasks WHERE deleted_at IS NULL AND status != 'done' AND blocked_by IS NOT NULL AND instr(blocked_by, ?1) > 0`).bind(done.id).all<Task>();
+    for (const t of results) {
+      const ids = parseBlockedBy(t.blocked_by);
+      if (!ids?.includes(done.id)) continue;
+      const others = ids.filter((id) => id !== done.id);
+      const rows = others.length ? (await env.DB.prepare(`SELECT id, status, deleted_at FROM tasks WHERE id IN (${others.map((_, i) => `?${i + 1}`).join(',')})`).bind(...others).all<{ id: string; status: string; deleted_at: string | null }>()).results : [];
+      if (isBlocked(t, new Map(rows.map((r) => [r.id, r])))) continue; // still waiting on another
+      // Personal titles are plain in D1; a work title is sealed and never used.
+      await pushAll(env, 'unblocked', `unblocked:${t.id}:${done.id}:${done.done_at}`, unblockedMessage(t));
+    }
+  } catch (e) {
+    console.error(`[push] notifyUnblocked failed: ${(e as Error).name}`);
   }
 }

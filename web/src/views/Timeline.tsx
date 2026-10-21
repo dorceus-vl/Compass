@@ -4,6 +4,7 @@ import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { layout, dayIndex, shiftDates } from '../timeline-math.ts';
 import { today, addDays } from '../dates.ts';
 import { taskColor, projectColor } from '../ui/colors.ts';
+import { parseBlockedBy } from '../../../shared/deps.ts';
 
 const ZOOM = { day: 48, week: 18, month: 6 } as const;
 const LEFT = 220;
@@ -51,11 +52,23 @@ export function Timeline() {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cancel);
   };
 
+  // Where a bar sits now (a dragged bar moves with the pointer); a due-only task is a 16px diamond. Arrows run from a blocker's right end to the blocked bar's left end.
+  const span = (rid: string) => {
+    const r = rows.find((q) => q.id === rid)!, d = drag?.id === rid ? drag.dx * px : 0;
+    if (r.due) { const c = LEFT + r.x + px / 2 + (drag?.edge ? 0 : d); return { l: c - 8, r: c + 8, y: r.y + 24 + ROW / 2 }; }
+    const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === rid ? d : 0), px);
+    return { l: x, r: x + w, y: r.y + 24 + ROW / 2 };
+  };
+  const shown = new Set(rows.map((r) => r.id));
+  const arrows = live.flatMap((t) => (parseBlockedBy(t.blocked_by) ?? []).filter((b) => shown.has(b) && shown.has(t.id)).map((b) => {
+    const from = span(b), to = span(t.id), x1 = from.r, x2 = to.l, bend = Math.max(12, Math.min(48, Math.abs(x2 - x1) / 2));
+    return { key: `${b}>${t.id}`, d: `M${x1} ${from.y} C${x1 + bend} ${from.y} ${x2 - bend} ${to.y} ${x2 - 3} ${to.y}` };
+  }));
   const ticks = Array.from({ length: Math.ceil(days / (zoom === 'day' ? 1 : 7)) }, (_, i) => addDays(from, i * (zoom === 'day' ? 1 : 7)));
   return (
     <>
       <div className="head">
-        <div><div className="eyebrow">Timeline</div><h1 style={{ marginTop: 6 }}>What's <b>ahead</b></h1><div className="sub">{rows.length} scheduled · drag a bar to move it, its edge to change the due date</div></div>
+        <div><div className="eyebrow">Timeline</div><h1 style={{ marginTop: 6 }}>What's <b>ahead</b></h1><div className="sub">{rows.length} scheduled · drag a bar to move it, its edge to change the due date{arrows.length > 0 ? ' · arrows run from a blocker to the task it blocks' : ''}</div></div>
         <div className="row">
           <div className="seg">{(['day', 'week', 'month'] as const).map((z) => <button type="button" key={z} className={zoom === z ? 'on' : ''} aria-pressed={zoom === z} onClick={() => setZoom(z)}>{z[0].toUpperCase() + z.slice(1)}</button>)}</div>
           <select className="field" style={{ width: 'auto' }} value={project} onChange={(e) => setProject(e.target.value)}><option value="">All projects</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
@@ -65,6 +78,8 @@ export function Timeline() {
         <svg width={LEFT + days * px} height={height} style={{ display: 'block', fontFamily: 'var(--font)', fontSize: 12 }} aria-label="Timeline">
           {ticks.map((d) => <g key={d}><line x1={LEFT + dayIndex(d, from) * px} y1={0} x2={LEFT + dayIndex(d, from) * px} y2={height} stroke="rgba(255,255,255,.06)" /><text x={LEFT + dayIndex(d, from) * px + 4} y={14} fill="var(--text-faint)" className="mono" fontSize={10}>{label(d)}</text></g>)}
           <line className="tl-today" x1={LEFT + dayIndex(t, from) * px} y1={0} x2={LEFT + dayIndex(t, from) * px} y2={height} />
+          <defs><marker id="tl-arrowhead" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path className="tl-arrowhead" d="M0 0 L8 4 L0 8 z" /></marker></defs>
+          {arrows.length > 0 && <g className="tl-arrows" aria-hidden="true">{arrows.map((a) => <path key={a.key} d={a.d} markerEnd="url(#tl-arrowhead)" />)}</g>}
           {rows.map((r) => { const task = live.find((x) => x.id === r.id)!, tc = taskColor(task, projects); const d = drag?.id === r.id ? drag.dx * px : 0; const x = LEFT + r.x + (drag?.edge ? 0 : d), w = Math.max(r.w + (drag?.edge && drag.id === r.id ? d : 0), px); return (
             <g key={r.id} className={`tl-row${drag?.id === r.id ? ' lifted' : ''}`} style={{ ['--tc' as string]: tc }} transform={`translate(0, ${r.y + 24})`}>
               <circle cx={12} cy={ROW / 2} r={4} fill={pcolor(task.project_id)} />
