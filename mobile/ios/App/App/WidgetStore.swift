@@ -2,8 +2,8 @@ import Foundation
 import Security
 
 /// The widgets' side of the App Group (v2.3): the snapshot file the page writes, the ticks a widget couldn't send, and the tick token's Keychain item.
-/// Plain Foundation and Security, so `mobile/test-swift.sh` checks it with the Swift compiler alone. CompassNative.swift is the only caller in the app;
-/// the widget extension (Task 1) reads the same files and the same Keychain item.
+/// Plain Foundation and Security, so `mobile/test-swift.sh` checks it with the Swift compiler alone. Compiled into both targets: CompassNative.swift is
+/// the only caller in the app; the widget extension (CompassWidgets) reads the same files and the same Keychain item, and appends ticks.
 enum WidgetStore {
     static let group = "group.com.knocturnlabs.compass"
     static let snapshotName = "widget-snapshot.json"
@@ -16,6 +16,10 @@ enum WidgetStore {
     static let keychainAccount = "tick-token"
 
     enum Failure: Error, Equatable { case tooBig, notJSON, badToken, keychain(OSStatus) }
+
+    /// One serial queue for every widget file and Keychain call in a process, so a clear (sign-out) can't be overtaken by an earlier write.
+    /// The app and the extension are separate processes: between them, atomic writes and `takeTicks`' rename keep each file whole.
+    static let queue = DispatchQueue(label: "com.knocturnlabs.compass.widgets", qos: .utility)
 
     /// Atomic, and readable only after the first unlock since boot (the widgets must still refresh when the phone is locked).
     static let writeOptions: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
@@ -43,6 +47,18 @@ enum WidgetStore {
             guard let id = t["id"] as? String, let at = t["at"] as? String, !id.isEmpty, id.count <= 64, at.count <= 40 else { return nil }
             return ["id": id, "at": at]
         }
+    }
+
+    /// A tick from a widget, kept for the app to send (`takeTicks`). The same task twice is kept once; past `maxTicks` new ones are dropped,
+    /// as `takeTicks` would. If the app takes the file meanwhile, this write starts a new one: a tick may then be sent twice, which is harmless
+    /// (the app skips tasks already done).
+    static func appendTick(_ id: String, at: String, in dir: URL) throws {
+        guard !id.isEmpty, id.count <= 64, at.count <= 40 else { return }
+        let file = dir.appendingPathComponent(ticksName)
+        var list = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        guard list.count < maxTicks, !list.contains(where: { $0["id"] as? String == id }) else { return }
+        list.append(["id": id, "at": at])
+        try JSONSerialization.data(withJSONObject: list).write(to: file, options: writeOptions)
     }
 
     // MARK: Keychain (W6)

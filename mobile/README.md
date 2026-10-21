@@ -23,6 +23,12 @@ under the key `sharedText`, says "Added to Compass quick add — open Compass to
 comes to the front and sends it to the page once, which opens quick add prefilled. `build:sim` signs ad hoc so the simulator applies the
 app group (an unsigned build gives the extension and the app separate stores).
 
+Widgets (v2.3): the `CompassWidgets` extension (`ios/App/CompassWidgets/`, bundle id `com.knocturnlabs.compass.widgets`, iOS 17, WidgetKit
+and App Intents) draws Today, Quick add, Project pulse, the Lock Screen widgets and the iPad's This week from the snapshot the page writes
+into the app group (`widget-snapshot.json`); it never reads the network. Its tick circles mark the task done in that file at once and queue
+the tick in `pending-ticks.json`, which the app sends when it next opens. `WidgetStore.swift` (in `ios/App/App/`) is compiled into both
+targets. Taps are `https://compass.knocturnlabs.com/...` links, routed in-app by the scene delegate and `CompassLink`.
+
 ## Android
 
 | File | What |
@@ -69,7 +75,7 @@ K948BT44PM; a device build needs your Apple account in Xcode (Settings, Accounts
 
 iPhone or iPad (Debug build, so the push token is a development one):
 1. `npm install && npm run open` (syncs the production URL, opens Xcode).
-2. Xcode, Settings, Accounts: sign in with the Apple account of team K948BT44PM. Select the `App` target and `ShareExtension`: "Automatically manage signing" is on; Xcode registers `com.knocturnlabs.compass` and `com.knocturnlabs.compass.ShareExtension` and the app group `group.com.knocturnlabs.compass` the first time.
+2. Xcode, Settings, Accounts: sign in with the Apple account of team K948BT44PM. Select the `App` target and `ShareExtension`: "Automatically manage signing" is on; Xcode registers `com.knocturnlabs.compass` and `com.knocturnlabs.compass.ShareExtension` and the app group `group.com.knocturnlabs.compass` the first time. Do the same for `CompassWidgets` (`com.knocturnlabs.compass.widgets`): in Apple Developer its App ID needs the App Group `group.com.knocturnlabs.compass` (as for the Share Extension), and the app and the widgets share the Keychain group `K948BT44PM.com.knocturnlabs.compass.shared` (Keychain Sharing, already in both entitlements files).
 3. Pick the device (trust the Mac on it, turn on Developer Mode), press Run. Distribute with Product, Archive, not a Release run.
 
 Android (USB debugging on; `~/Library/Android/sdk/platform-tools/adb devices` lists the phone):

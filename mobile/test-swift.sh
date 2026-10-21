@@ -139,3 +139,65 @@ print("WidgetStore: all checks passed")
 SWIFT
 swiftc -o "$out/widgets" ios/App/App/WidgetStore.swift "$out/w/main.swift"
 "$out/widgets"
+
+# The widget extension's snapshot (v2.3, W1 and the optimistic tick): the fixture decodes, a tick moves the right counts and is queued once,
+# titles follow the Offline and Lock Screen rules, taps stay on the Compass host, and a bad file is the placeholder.
+mkdir "$out/x"; cat > "$out/x/main.swift" <<'SWIFT'
+import Foundation
+func check(_ ok: Bool, _ what: String) { if !ok { print("FAIL: \(what)"); exit(1) } }
+let fm = FileManager.default
+let fixture = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
+guard let s = Snapshot.decode(fixture) else { print("FAIL: fixture decodes"); exit(1) }
+check(s.today.due == 3 && s.today.late == 1 && s.today.done == 1 && s.today.total == 4 && s.today.next?.id == "t-vendor", "today")
+check(s.items.count == 6 && s.projects.count == 4 && s.week.count == 7 && s.blocked == 1 && s.lock.hideWork, "lists")
+check(Snapshot.decode(Data(s.encoded()!.utf8)) == s, "round trip")
+check(Snapshot.decode(Data("{\"v\":2}".utf8)) == nil && Snapshot.decode(Data("garbage".utf8)) == nil, "bad file is the placeholder")
+check(Snapshot.decode(Data(s.encoded()!.replacingOccurrences(of: "\"v\":1", with: "\"v\":2").utf8)) == nil, "another version is the placeholder")
+
+// Titles: Offline never named, work hidden only on the Lock Screen while hide_work is on.
+let secret = s.items.first { $0.id == "t-secret" }!, vendor = s.items.first { $0.id == "t-vendor" }!, dentist = s.items.first { $0.id == "t-dentist" }!
+check(secret.shown(lock: false, hideWork: false) == "Offline-only task" && secret.shown(lock: true, hideWork: true) == "Offline-only task", "offline never named")
+check(vendor.shown(lock: false, hideWork: true) == "Call the vendor about the test env", "home screen shows work")
+check(vendor.shown(lock: true, hideWork: true) == "Work task" && vendor.shown(lock: true, hideWork: false) == "Call the vendor about the test env", "lock rule")
+check(dentist.shown(lock: true, hideWork: true) == "Book the dentist", "personal shown on lock")
+check(s.projects.first { $0.id == "p-secret" }!.shownName == "Offline-only project", "offline project unnamed")
+check(s.footerMilestone?.milestone.name == "Pilot site live", "footer milestone")
+
+// Ticking a late task: due, late, overdue and its day move; done grows; total stays.
+let a = s.markingDone("t-status")
+check(a.today.due == 2 && a.today.late == 0 && a.today.done == 2 && a.today.total == 4, "late tick counts")
+check(!a.items.contains { $0.id == "t-status" } && !a.horizons.medium.contains { $0.id == "t-status" }, "late tick leaves the lists")
+check(a.projects.first { $0.id == "p-branch" }!.overdue == 0 && a.week.first { $0.day == "2026-10-20" }!.medium == 0, "overdue and yesterday")
+// Ticking the next task: the next due today takes its place; a weekday task moves its day; an unknown id changes nothing.
+let b = s.markingDone("t-vendor")
+check(b.today.next?.id == "t-secret" && b.today.due == 2 && b.today.late == 1 && b.week.first { $0.day == "2026-10-21" }!.short == 1, "next tick")
+check(s.markingDone("t-sow").week.first { $0.day == "2026-10-23" }!.short == 0 && s.markingDone("t-sow").today == s.today, "Fri tick")
+check(s.markingDone("nope") == s, "unknown id")
+check(Snapshot.dayOffset("3d late", today: "2026-10-21") == -3 && Snapshot.dayOffset("Mon", today: "2026-10-21") == 5 && Snapshot.dayOffset("Oct 30", today: "2026-10-21") == nil, "day offsets")
+check(Snapshot.addDays("2026-10-31", 1) == "2026-11-01" && Snapshot.weekday("2026-10-21") == "Wed", "dates")
+check(s.isStale(Snapshot.date("2026-10-22T05:00:00Z")!) && !s.isStale(Snapshot.date("2026-10-22T03:59:00Z")!), "stale at Toronto midnight")
+
+// The tick on disk: the snapshot is rewritten (protected), the tick is queued once, and takeTicks hands it to the app.
+let dir = fm.temporaryDirectory.appendingPathComponent("widgettick-\(UUID().uuidString)")
+try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+defer { try? fm.removeItem(at: dir) }
+try fixture.write(to: dir.appendingPathComponent(WidgetStore.snapshotName))
+WidgetStore.tick("t-status", at: Snapshot.date("2026-10-21T15:05:00.000Z")!, in: dir)
+WidgetStore.tick("t-status", in: dir)
+check(Snapshot.load(from: dir) == a, "file rewritten")
+check((try fm.attributesOfItem(atPath: dir.appendingPathComponent(WidgetStore.snapshotName).path)[.protectionKey] as? FileProtectionType) == .completeUntilFirstUserAuthentication, "rewritten file protected")
+check(WidgetStore.takeTicks(in: dir) == [["id": "t-status", "at": "2026-10-21T15:05:00.000Z"]], "tick queued once")
+try fm.removeItem(at: dir.appendingPathComponent(WidgetStore.snapshotName))
+WidgetStore.tick("t-x", in: dir)
+check(Snapshot.load(from: dir) == nil && WidgetStore.takeTicks(in: dir).first?["id"] == "t-x", "no snapshot: the tick is still queued")
+
+// Taps: the Compass host only, ids encoded.
+check(CompassURL.task("t-1").absoluteString == "https://compass.knocturnlabs.com/?task=t-1", "task link")
+check(CompassURL.task("a&b=c#d").host == "compass.knocturnlabs.com" && URLComponents(url: CompassURL.task("a&b=c#d"), resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "a&b=c#d", "task id encoded")
+check(CompassURL.dashboard("p-1").absoluteString == "https://compass.knocturnlabs.com/projects/p-1/dashboard", "dashboard link")
+check(CompassURL.dashboard("../x?y").absoluteString == "https://compass.knocturnlabs.com/projects/%2E%2E%2Fx%3Fy/dashboard", "dashboard id encoded")
+for u in [CompassURL.today, CompassURL.quickAdd, CompassURL.athena] { check(u.scheme == "https" && u.host == "compass.knocturnlabs.com", "host: \(u)") }
+print("Widget snapshot: all checks passed")
+SWIFT
+swiftc -o "$out/snap" ios/App/App/WidgetStore.swift ios/App/CompassWidgets/Snapshot.swift "$out/x/main.swift"
+"$out/snap" ../scripts/fixtures/widget-snapshot.sample.json
