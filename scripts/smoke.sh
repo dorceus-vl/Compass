@@ -1214,6 +1214,41 @@ D1X "DELETE FROM audit_log WHERE actor='kelly' AND action LIKE 'agent.%'" >/dev/
 [ "$(D1X "SELECT count(*) AS n FROM pragma_table_info('tasks') WHERE name IN ('blocked_by','checklist')" | js 'd[0].results[0].n')" = 2 ] || fail "v1: migration 0014 task columns"
 for x in $DW1 $DW2 $DW3 $DP1 $DP2 $DP3; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$dwp >/dev/null
 echo "smoke: (v1) dependencies: link ok; loops 409 (direct and of three); self, other kind, missing, trashed, malformed, duplicate and a kind change while linked 400; completing the last blocker pushed once ('A task is unblocked' for work, '<title> is unblocked' for personal via Kelly), the switch silences it, the deep link is /?task=<id>; the agent task keys are unchanged"
+# (v2) v2.1 Task 1: checklists. Create with one, tick through PATCH, a work task's raw D1 value is ciphertext (a personal one is plain JSON), a recurring task's next
+# occurrence carries the checklist unticked, and a bad list (51 items, an item over 200 characters, empty text, a repeated id, done not a boolean) is 400.
+ckp=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke checklist work","kind":"work"}' | js d.project.id)
+CL='[{"id":"c1","text":"Smoke step one '$R'","done":false},{"id":"c2","text":"Smoke step two '$R'","done":true}]'
+cpost() { curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/tasks -d "$1"; }
+CW=$(dt "$(node -pe 'JSON.stringify({title:"Smoke checklist work '$R'",project_id:process.argv[1],checklist:process.argv[2]})' "$ckp" "$CL")"); [ -n "$CW" ] && [ "$CW" != null ] || fail "v2: create with a checklist"
+[ "$(task $CW checklist)" = "$CL" ] || fail "v2: the checklist did not come back as sent: $(task $CW checklist)"
+RAW=$(D1X "SELECT checklist AS c, enc_v AS e FROM tasks WHERE id='$CW'" | js 'd[0].results[0].c+"|"+d[0].results[0].e')
+case "$RAW" in *"Smoke step"*|\[*) fail "v2: a work task's checklist is not sealed in D1: $RAW";; esac
+[ "${RAW##*|}" != 0 ] || fail "v2: a work task's enc_v is 0"
+TICK=$(echo "$CL" | js 'JSON.stringify(d.map(i=>({...i,done:true})))')
+[ "$(kst "$(dpatch $CW "$(node -pe 'JSON.stringify({checklist:process.argv[1]})' "$TICK")")")" = 200 ] && [ "$(task $CW checklist)" = "$TICK" ] || fail "v2: ticking through PATCH"
+D1X "SELECT checklist AS c FROM tasks WHERE id='$CW'" | js 'd[0].results[0].c' | grep -q "Smoke step" && fail "v2: the ticked work checklist was stored plain"
+[ "$(kst "$(dpatch $CW '{"checklist":null}')")" = 200 ] && [ "$(task $CW checklist)" = null ] || fail "v2: clearing the checklist"
+CP=$(dt "$(node -pe 'JSON.stringify({title:"Smoke checklist own '$R'",checklist:process.argv[1]})' "$CL")")
+[ "$(D1X "SELECT checklist AS c FROM tasks WHERE id='$CP'" | js 'd[0].results[0].c')" = "$CL" ] || fail "v2: a personal checklist is plain JSON in D1"
+# bad lists are 400
+bad() { local D; D=$(dpatch $CP "$(node -pe 'JSON.stringify({checklist:process.argv[1]})' "$1")"); [ "$(kst "$D")" = 400 ] || fail "v2: $2 was not 400: $D"; }
+bad "$(node -pe 'JSON.stringify(Array.from({length:51},(_,i)=>({id:"i"+i,text:"x",done:false})))')" "51 items"
+bad "$(node -pe 'JSON.stringify([{id:"a",text:"x".repeat(201),done:false}])')" "an item of 201 characters"
+bad '[{"id":"a","text":"","done":false}]' "an empty item"
+bad '[{"id":"a","text":"x","done":false},{"id":"a","text":"y","done":false}]' "a repeated id"
+bad '[{"id":"a","text":"x","done":"yes"}]' "done not a boolean"
+bad 'not json' "text that is not JSON"
+[ "$(kst "$(dpatch $CP "$(node -pe 'JSON.stringify({checklist:JSON.stringify(Array.from({length:50},(_,i)=>({id:"i"+i,text:"x".repeat(200),done:false})))})')")")" = 200 ] || fail "v2: 50 items of 200 characters was refused"
+[ "$(kst "$(cpost "$(node -pe 'JSON.stringify({title:"Smoke bad create '$R'",checklist:"[{}]"})')")")" = 400 ] || fail "v2: a bad checklist on create was not 400"
+# recurrence: done makes the next occurrence with the same items, every one unticked
+RULE='{"freq":"daily","interval":1}'
+RC=$(dt "$(node -pe 'JSON.stringify({title:"Smoke checklist recur '$R'",project_id:process.argv[1],due_at:"2026-01-01",recur:process.argv[3],checklist:process.argv[2]})' "$ckp" "$CL" "$RULE")")
+curl "${H[@]}" -X POST $B/api/tasks/$RC/done | grep -q '"status":"done"' || fail "v2: recurring task done"
+RN=$(curl "${H[@]}" "$B/api/tasks?status=all" | js '(d.tasks.find(t=>t.title==="Smoke checklist recur '$R'"&&t.id!=="'$RC'"&&t.status==="new")||{}).id'); [ -n "$RN" ] && [ "$RN" != undefined ] || fail "v2: no next occurrence"
+[ "$(task $RN checklist)" = "$(echo "$CL" | js 'JSON.stringify(d.map(i=>({...i,done:false})))')" ] || fail "v2: the next occurrence's checklist is not the same items unticked: $(task $RN checklist)"
+D1X "SELECT checklist AS c FROM tasks WHERE id='$RN'" | js 'd[0].results[0].c' | grep -q "Smoke step" && fail "v2: the next occurrence's work checklist was stored plain"
+for x in $CW $CP $RC $RN; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$ckp >/dev/null
+echo "smoke: (v2) checklists: create and tick ok; a work checklist is ciphertext in D1, a personal one plain; 51 items, 201 characters, empty text, a repeated id, done not a boolean and bad JSON are 400 (50 x 200 is fine); the next occurrence of a recurring task carries the items unticked"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

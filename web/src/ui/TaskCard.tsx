@@ -7,6 +7,7 @@ import { useSwipe } from './useSwipe.ts';
 import { taskColor, projectColor } from './colors.ts';
 import { appLabel, appGlyph } from './sources.ts';
 import { BlockedChip } from './BlockedChip.tsx';
+import { ChecklistChip } from './ChecklistChip.tsx';
 
 /** The icon tile's glyph: the source app's mark, else the project's initial. */
 export function iconFor(task: Task, project?: Project): string {
@@ -51,6 +52,7 @@ export function TaskCard({ task, projects, onOpen, onFinish, blocked }: CardProp
           <button type="button" className="t" onClick={() => onOpen(task.id)}>{task.title}</button>
           <div className="m">
             {blocked && <BlockedChip />}
+            <ChecklistChip checklist={task.checklist} />
             {project && <span className="chip" style={{ ['--sc' as string]: projectColor(project) }}><i />{project.name}</span>}
             {task.source_app !== 'manual' && <span className="chip" style={{ ['--sc' as string]: color }}><i />{appLabel(task.source_app)}</span>}
             {task.kind === 'work' && <span className="chip" style={{ ['--sc' as string]: 'var(--accent)' }}><i />Work</span>}

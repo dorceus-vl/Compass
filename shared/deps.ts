@@ -47,3 +47,37 @@ export function blockedIds(tasks: readonly ({ id: string; blocked_by: string | n
   const byId = new Map(tasks.map((t) => [t.id, t]));
   return new Set(tasks.filter((t) => !t.deleted_at && t.blocked_by && isBlocked(t, byId)).map((t) => t.id));
 }
+
+// Checklists (v2.1, ruling V1, V4). `tasks.checklist` is a JSON array of { id, text, done }.
+export const MAX_CHECKLIST = 50;
+export const MAX_CHECKLIST_TEXT = 200;
+export type ChecklistItem = { id: string; text: string; done: boolean };
+
+/** The items in a `checklist` value (JSON text, an array or empty): [] when none, null when it is not valid (more than 50 items, text empty or over 200 characters, a repeated id, `done` not a boolean). */
+export function parseChecklist(v: unknown): ChecklistItem[] | null {
+  if (v === null || v === undefined || v === '') return [];
+  let a: unknown = v;
+  if (typeof v === 'string') { try { a = JSON.parse(v); } catch { return null; } }
+  if (!Array.isArray(a) || a.length > MAX_CHECKLIST) return null;
+  const ids = new Set<string>();
+  for (const x of a) {
+    if (!x || typeof x !== 'object') return null;
+    const { id, text, done } = x as Record<string, unknown>;
+    if (typeof id !== 'string' || id === '' || id.length > 64 || ids.has(id)) return null;
+    if (typeof text !== 'string' || text.trim() === '' || text.length > MAX_CHECKLIST_TEXT || typeof done !== 'boolean') return null;
+    ids.add(id);
+  }
+  return a.map((x) => { const { id, text, done } = x as ChecklistItem; return { id, text, done }; });
+}
+
+/** "3/5" for a card: null when the task has no (valid) checklist. */
+export function checklistProgress(v: unknown): { done: number; total: number } | null {
+  const items = parseChecklist(v);
+  return items && items.length ? { done: items.filter((i) => i.done).length, total: items.length } : null;
+}
+
+/** The same checklist with every item unticked (a recurring task's next occurrence, V4); null stays null. */
+export function untickChecklist(v: string | null): string | null {
+  const items = parseChecklist(v);
+  return items && items.length ? JSON.stringify(items.map((i) => ({ ...i, done: false }))) : null;
+}

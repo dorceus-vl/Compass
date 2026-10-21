@@ -10,7 +10,7 @@ import { threadAccess } from '../lib/project-context.ts';
 import { unembedStale } from '../lib/vectors.ts';
 import { parseRecur, nextOccurrence } from '../lib/recur.ts';
 import { positionBetween } from '../../shared/position.ts';
-import { parseBlockedBy, wouldCycle } from '../../shared/deps.ts';
+import { parseBlockedBy, parseChecklist, untickChecklist, wouldCycle } from '../../shared/deps.ts';
 import { notifyUnblocked } from '../lib/notify.ts';
 
 const tasks = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -20,11 +20,16 @@ const blockedBy: Check = (v, f) => {
   const ids = parseBlockedBy(v);
   return ids ? { value: ids.length ? JSON.stringify(ids) : null } : { error: `${f} must be a list of at most 20 different task ids` };
 };
+/** checklist: up to 50 items of { id, text 1 to 200, done }, stored as JSON text; empty is null. */
+const checklist: Check = (v, f) => {
+  const items = parseChecklist(v);
+  return items ? { value: items.length ? JSON.stringify(items) : null } : { error: `${f} must be a list of at most 50 items, each with an id, text of 1 to 200 characters and done true or false` };
+};
 const CHECKS: Record<string, Check> = {
   title: text(300), notes: text(20000), project_id: text(40), parent_id: text(40), kind: oneOf('personal', 'work'),
   horizon: oneOf('short', 'medium', 'long'), status: oneOf('new', 'progress', 'hold', 'waiting', 'done'), priority: num(0, 3, { integer: true, nullable: false }),
   start_at: date(), due_at: date(), estimate_minutes: num(0, 100000, { integer: true }), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
-  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy,
+  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy, checklist,
 };
 const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','status','priority','start_at','due_at','done_at','estimate_minutes','waiting_on','waiting_since',
   'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','blocked_by','checklist','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
@@ -134,7 +139,7 @@ export async function completeTask(env: Env, task: Task, fields: string[] = [], 
   const today = localDate((await getSettings(env)).tz);
   const due = nextOccurrence(done.due_at ?? today, rule, today);
   if (!due) return { task: done };
-  const next: Task = { ...done, id: crypto.randomUUID(), status: 'new', due_at: due, done_at: null, created_at: t, updated_at: t, sort_in_column: 0, source_ref: null };
+  const next: Task = { ...done, id: crypto.randomUUID(), status: 'new', due_at: due, done_at: null, created_at: t, updated_at: t, sort_in_column: 0, source_ref: null, checklist: untickChecklist(done.checklist) }; // V4: the checklist comes along, every item unticked
   await insertTask(env, next);
   await addEvent(env, next, actor, 'created', { recurred_from: done.id });
   return { task: done, next };

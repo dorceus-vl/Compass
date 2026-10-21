@@ -5,6 +5,7 @@ import { taskColor, HORIZON_COLOR } from './colors.ts';
 import { iconFor } from './TaskCard.tsx';
 import { appLabel } from './sources.ts';
 import { BlockedChip } from './BlockedChip.tsx';
+import { ChecklistChip } from './ChecklistChip.tsx';
 
 const HZ = { short: 'Short', medium: 'Medium', long: 'Long' };
 const TONE = { over: 'var(--danger)', due: 'var(--accent)', '': 'var(--text-dim)' };
@@ -32,6 +33,7 @@ export function Card({ task, project, projects, subtasks, onOpen, dragging, land
       {subtasks.length > 0 && <div className="prog" style={{ ['--w' as string]: `${Math.round((100 * done) / subtasks.length)}%` }}><i /></div>}
       <div className="ft">
         {blocked && <BlockedChip />}
+        <ChecklistChip checklist={task.checklist} />
         {task.source_app !== 'manual' && <span className="chip" style={dot(color)}><i />{appLabel(task.source_app)}</span>}
         {task.kind === 'work' && <span className="chip" style={dot('var(--accent)')}><i />Work</span>}
         <span className="chip" style={dot(HORIZON_COLOR[task.horizon])}><i />{HZ[task.horizon]}</span>

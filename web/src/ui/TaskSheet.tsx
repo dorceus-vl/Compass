@@ -8,6 +8,7 @@ import { SplitSheet } from './SplitSheet.tsx';
 import type { InboxItem } from '../../../shared/types.ts';
 import { parseBlockedBy, wouldCycle, blocksOf, blockedIds } from '../../../shared/deps.ts';
 import { BlockedChip } from './BlockedChip.tsx';
+import { Checklist } from './Checklist.tsx';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
   ['{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}', 'Weekdays'], ['{"freq":"monthly","interval":1}', 'Every month'], ['{"freq":"weekly","interval":2,"after_completion":true}', 'Two weeks after done']];
@@ -137,6 +138,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
           <div className="dl">{blocks.map((b) => <span key={b.id} className={`dep${b.status === 'done' ? ' done' : ''}`}><button type="button" onClick={() => goto(b.id)}>{b.title}</button></span>)}</div>
         </>}
       </section>
+      <Checklist task={task} />
       {field('Notes', <textarea ref={notesRef} className="field" rows={5} defaultValue={v.notes ?? ''} onBlur={(e) => save({ notes: e.target.value || null })} />)}
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>

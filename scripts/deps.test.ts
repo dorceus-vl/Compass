@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/deps.test.ts
 import assert from 'node:assert/strict';
-import { wouldCycle, isBlocked, parseBlockedBy, blockedIds, openBlockers, blocksOf, MAX_BLOCKERS } from '../shared/deps.ts';
+import { wouldCycle, isBlocked, parseBlockedBy, blockedIds, openBlockers, blocksOf, MAX_BLOCKERS, parseChecklist, checklistProgress, untickChecklist } from '../shared/deps.ts';
 
 // wouldCycle(graph, from, to): would "from is blocked by to" close a loop? graph maps a task to the ids it waits on.
 const g = (o: Record<string, string[]>) => new Map(Object.entries(o));
@@ -54,4 +54,34 @@ const list = [
 assert.deepEqual([...blockedIds(list)], ['a'], 'a waits on open b; d only on done c; trashed e is not listed');
 assert.deepEqual(openBlockers(list[0], new Map(list.map((t) => [t.id, t]))).map((t) => t.id), ['b']);
 assert.deepEqual(blocksOf('b', list).map((t) => t.id), ['a'], 'a trashed task is not listed');
+// parseChecklist: at most 50 items, text 1 to 200, unique ids, done a boolean.
+const item = (i: number, o: object = {}) => ({ id: `i${i}`, text: `step ${i}`, done: false, ...o });
+const many = (n: number) => Array.from({ length: n }, (_, i) => item(i));
+assert.deepEqual(parseChecklist(null), []);
+assert.deepEqual(parseChecklist(''), []);
+assert.deepEqual(parseChecklist([]), []);
+assert.deepEqual(parseChecklist(JSON.stringify([item(1, { done: true })])), [item(1, { done: true })], 'JSON text or an array');
+assert.equal(parseChecklist(many(50))?.length, 50, '50 items is the cap');
+assert.equal(parseChecklist(many(51)), null, '51 items');
+assert.notEqual(parseChecklist([item(1, { text: 'x' })]), null, 'text of 1');
+assert.notEqual(parseChecklist([item(1, { text: 'x'.repeat(200) })]), null, 'text of 200');
+assert.equal(parseChecklist([item(1, { text: 'x'.repeat(201) })]), null, 'text of 201');
+assert.equal(parseChecklist([item(1, { text: '' })]), null, 'empty text');
+assert.equal(parseChecklist([item(1, { text: '   ' })]), null, 'blank text');
+assert.equal(parseChecklist([item(1), item(1)]), null, 'repeated id');
+assert.equal(parseChecklist([item(1, { id: '' })]), null, 'empty id');
+assert.equal(parseChecklist([item(1, { done: 'yes' })]), null, 'done must be a boolean');
+assert.equal(parseChecklist([item(1, { done: 1 })]), null, 'done 1 is not a boolean');
+assert.equal(parseChecklist([{ id: 'a', text: 'b' }]), null, 'done missing');
+assert.equal(parseChecklist(['x']), null, 'not objects');
+assert.equal(parseChecklist('not json'), null);
+assert.equal(parseChecklist('{"a":1}'), null, 'not an array');
+assert.deepEqual(parseChecklist([{ ...item(1), extra: 1 }]), [item(1)], 'unknown keys are dropped');
+
+assert.deepEqual(checklistProgress(JSON.stringify([item(1, { done: true }), item(2), item(3, { done: true }), item(4), item(5)])), { done: 2, total: 5 });
+assert.equal(checklistProgress(null), null);
+assert.equal(checklistProgress('[]'), null);
+assert.equal(checklistProgress('nonsense'), null);
+assert.equal(untickChecklist(JSON.stringify([item(1, { done: true }), item(2)])), JSON.stringify([item(1), item(2)]), 'every item unticked, ids and order kept');
+assert.equal(untickChecklist(null), null);
 console.log('deps: ok');
