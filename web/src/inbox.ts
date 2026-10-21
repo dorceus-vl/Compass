@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import type { InboxItem, MeetingReview, Task } from '../../shared/types.ts';
+import type { SeriesSummary } from '../../shared/series.ts';
 import { api, SignedOut } from './api.ts';
 import { idb } from './store/db.ts';
 import { pull } from './store/sync.ts';
@@ -83,6 +84,19 @@ export async function loadMeetings(): Promise<{ meetings: MeetingReview[]; offli
     if (e instanceof SignedOut) throw e;
     const c = await idb.get<{ meetings: MeetingReview[] }>('meta', 'cache:meetings').catch(() => undefined);
     return { meetings: c?.meetings ?? [], offline: true, known: !!c };
+  }
+}
+
+/** The meeting series, same shape and cache as loadMeetings (`cache:series`). */
+export async function loadSeries(): Promise<{ series: SeriesSummary[]; offline: boolean; known: boolean }> {
+  try {
+    const { series } = await api<{ series: SeriesSummary[] }>('/meetings/series');
+    await idb.put('meta', { id: 'cache:series', series, at: new Date().toISOString() }).catch(() => {});
+    return { series, offline: false, known: true };
+  } catch (e) {
+    if (e instanceof SignedOut) throw e;
+    const c = await idb.get<{ series: SeriesSummary[] }>('meta', 'cache:series').catch(() => undefined);
+    return { series: c?.series ?? [], offline: true, known: !!c };
   }
 }
 

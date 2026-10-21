@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { MeetingReview } from '../../../shared/types.ts';
-import { loadMeetings } from '../inbox.ts';
+import type { SeriesSummary } from '../../../shared/series.ts';
+import { loadMeetings, loadSeries } from '../inbox.ts';
 import { Link } from '../router.ts';
 import { SignedOut } from '../api.ts';
 import { accent } from '../ui/colors.ts';
@@ -23,17 +24,37 @@ function Row({ m }: { m: MeetingReview }) {
   );
 }
 
+/** A series: its name, how many meetings, the last one's date and the actions still open. */
+function SeriesCard({ s }: { s: SeriesSummary }) {
+  return (
+    <Link to={`/meetings/series/${s.id}`} className="acard mtg" style={accent('var(--src-meeting)')}>
+      <div className="ico" aria-hidden="true">{appGlyph('sonarflow')}</div>
+      <div className="tx">
+        <h3>{s.name}</h3>
+        <p>{n(s.meetings, 'meeting')} · last {s.last_at ? when(s.last_at) : '-'} · {n(s.open_actions, 'open action')}</p>
+      </div>
+      {s.new_meetings > 0 && <span className="chip" style={{ color: 'var(--src-meeting)', borderColor: 'color-mix(in srgb,var(--src-meeting) 40%,transparent)' }}>{s.new_meetings} new</span>}
+    </Link>
+  );
+}
+
 export function MeetingsView() {
   const [s, set] = useState<{ meetings: MeetingReview[]; offline: boolean; known: boolean } | null>(null);
-  useEffect(() => { loadMeetings().then(set).catch((e) => { if (!(e instanceof SignedOut)) throw e; }); }, []);
+  const [ser, setSer] = useState<SeriesSummary[] | null>(null); // null: not read yet or unreachable; the reviewed meetings then show as a flat list
+  useEffect(() => {
+    loadMeetings().then(set).catch((e) => { if (!(e instanceof SignedOut)) throw e; });
+    loadSeries().then((r) => setSer(r.known ? r.series : null)).catch(() => {});
+  }, []);
   const fresh = s?.meetings.filter((m) => m.state === 'new') ?? [], done = s?.meetings.filter((m) => m.state !== 'new') ?? [];
+  const grouped = !!ser && ser.length > 0;
   return (
     <>
       <div className="head"><div><div className="eyebrow">Meetings</div><h1 style={{ marginTop: 6 }}>Meeting <b>notes</b></h1>
         <div className="sub">{s?.offline ? 'Offline: showing the last list. Reviewing needs a connection.' : `${fresh.length} to review`}</div></div></div>
       {s && !s.meetings.length && <div className="card"><p style={{ margin: 0 }}>{s.known ? 'No meetings yet.' : "Can't reach your meetings right now."}</p></div>}
       {fresh.length > 0 && <><h2 style={{ fontSize: 16, margin: '18px 0 10px' }}>To review</h2><div className="grid3">{fresh.map((m) => <Row key={m.id} m={m} />)}</div></>}
-      {done.length > 0 && <><h2 style={{ fontSize: 16, margin: '18px 0 10px' }}>Reviewed</h2><div className="grid3">{done.map((m) => <Row key={m.id} m={m} />)}</div></>}
+      {grouped && <><h2 style={{ fontSize: 16, margin: '18px 0 10px' }}>Series</h2><div className="grid3">{ser!.map((x) => <SeriesCard key={x.id} s={x} />)}</div></>}
+      {!grouped && done.length > 0 && <><h2 style={{ fontSize: 16, margin: '18px 0 10px' }}>Reviewed</h2><div className="grid3">{done.map((m) => <Row key={m.id} m={m} />)}</div></>}
     </>
   );
 }

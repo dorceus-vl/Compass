@@ -1006,3 +1006,21 @@ section.chk{display:grid;gap:8px;margin-top:12px}
 .tpl-name{min-width:0;overflow-wrap:anywhere}
 @media (max-width:760px),(pointer:coarse){.tpl-dlg .field,.tpl-dlg .btn,.pctl .btn{min-height:44px}}
 @media (max-width:520px){.tpl-set{grid-template-columns:minmax(0,1fr) auto}.tpl-set small{grid-column:1/-1;order:3}}
+/* v2.1 meeting series: the series page, the agenda dialog and a meeting's "Series: X · Move" line */
+.sr-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;min-width:0;color:inherit;font:inherit;text-align:left}
+.sr-row>.txt{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+button.sr-act{width:100%;cursor:pointer;min-height:44px}
+.sr-act .txt{display:grid;gap:2px}
+.sr-tick{flex:none;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--field-border);display:grid;place-items:center;font-size:14px;line-height:1;color:var(--bg)}
+.sr-tick.on{background:var(--ok);border-color:var(--ok)}
+.sr-done{color:var(--text-dim);text-decoration:line-through}
+.sr-ans{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);min-height:44px}
+.sr-more{margin-top:10px}.sr-more summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--text-dim);font-size:13px}.sr-more .mlist{margin-top:6px}
+dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
+.sr-pre{margin:12px 0;padding:12px 14px;max-height:42vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:500 12.5px/1.6 var(--mono);background:var(--field);border:1px solid var(--field-border);border-radius:12px}
+.sr-pre:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.sr-btns{flex-wrap:wrap;gap:8px}
+.sr-line{gap:10px;margin-top:10px;font-size:14px}.sr-line .btn{min-height:44px}.sr-line a{padding:12px 0}
+.kn-opt .field{width:100%;margin-top:6px}
+@media (max-width:760px),(pointer:coarse){.sr-btns .btn{min-height:44px}.sr-tick{width:24px;height:24px}}
+.sr-set{grid-auto-rows:max-content;align-content:start;max-height:min(46vh,380px);overflow-y:auto;padding:2px}

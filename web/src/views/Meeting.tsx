@@ -12,6 +12,8 @@ import { accent } from '../ui/colors.ts';
 import { useReducedMotion } from '../motion.ts';
 import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
 import { SaveToKnowledge } from '../ui/KnowledgePick.tsx';
+import { MoveToSeries } from './MeetingSeries.tsx';
+import { createPortal } from 'react-dom';
 
 interface Act { on: boolean; text: string; owner: string; due: string; at: string }
 interface Pick { on: boolean; text: string; at: string }
@@ -34,6 +36,8 @@ export function MeetingView({ id }: { id: string }) {
   const [project, setProject] = useState('');
   const [flags, setFlags] = useState<Record<string, 'risk' | 'issue'>>({}); // q<i> / n<i> → what to log in RAID
   const [busy, setBusy] = useState(false);
+  const [ser, setSer] = useState<{ id: string; name: string } | null>(null); // v2.1: the meeting's series
+  const [moving, setMoving] = useState(false);
   const [out, setOut] = useState(false); // accepted: the checked cards slide away before we leave
   const alive = useRef(true);
   const reduce = useReducedMotion();
@@ -48,7 +52,7 @@ export function MeetingView({ id }: { id: string }) {
     let live = true;
     (async () => {
       let found: MeetingReview | null = null, off = false;
-      try { found = (await api<{ meeting: MeetingReview }>(`/meetings/${id}`)).meeting; }
+      try { const r = await api<{ meeting: MeetingReview; series: { id: string; name: string } | null }>(`/meetings/${id}`); found = r.meeting; if (live) setSer(r.series); }
       catch (e) {
         if (e instanceof SignedOut) return;
         const l = await loadMeetings().catch(() => null); // network trouble: the cached list carries every review in full
@@ -138,6 +142,10 @@ export function MeetingView({ id }: { id: string }) {
       <div className="head"><div><div className="eyebrow"><Link to="/meetings">Meetings</Link></div><h1 style={{ marginTop: 6, overflowWrap: 'anywhere' }}>{m.title}</h1>
         <div className="sub">{new Date(m.received_at).toLocaleDateString(undefined, { dateStyle: 'long' })}{!open && ' · Reviewed'}{offline && ' · Offline: reviewing needs a connection'}</div></div>
         {link && <a className="btn" href={link} target="_blank" rel="noopener noreferrer">Open transcript ↗</a>}</div>
+      {ser && <div className="row sr-line"><span>Series: <Link to={`/meetings/series/${ser.id}`}>{ser.name}</Link></span>
+        <button type="button" className="btn" disabled={off || busy} title={tip} onClick={() => setMoving(true)}>Move</button>
+        {open && project && <small className="sub">Accepting it into this project puts it in the project's series.</small>}</div>}
+      {moving && createPortal(<MoveToSeries meeting={m} current={ser?.id ?? null} onMoved={(s) => setSer(s)} onClose={() => setMoving(false)} />, document.body)}
       {m.summary && <div className="acard" style={{ ...accent('var(--src-meeting)'), marginTop: 14 }}><p style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.summary}</p></div>}
 
       <h2 style={h2}>Action items</h2>

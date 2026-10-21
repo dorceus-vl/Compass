@@ -257,9 +257,11 @@ type Err = { message: string; again: 'send' | Provider };
 type Run = { message: string; preset?: PresetId; docs: Att[]; shorter?: boolean };
 /** The project picker's "No project (work)": a project-less thread created as work (KN2). */
 const WORK = 'work:none';
+export const WORK_SEED = 'work'; // the URL's word for it (`/athena?agenda=work`)
 /** KN11: what the Knowledge screen's "Ask Athena about this" hands over: `?knowledge=<collection id|all>`, and the question in sessionStorage (ASK_KEY), never the URL. */
 export const ASK_KEY = 'athena:ask';
-export type Seed = { knowledge: string; q: string };
+/** `project` (series agenda): a live project's id, or 'work' for "No project (work)". */
+export type Seed = { knowledge: string; q: string; project?: string };
 type Picked = null | 'all' | string[];
 
 function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSent, onBusy, onMic }: {
@@ -280,7 +282,10 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
     return () => window.removeEventListener(ASK, take);
   }, []);
   const [preset, setPreset] = useState<PresetId | null>(null);
-  const [sel, setSel] = useState('');
+  // A series agenda's project (or "No project (work)") is preselected; the store may not be loaded yet, so a project that never turns up is dropped below.
+  const [sel, setSel] = useState(() => (seed?.project === WORK_SEED ? WORK : seed?.project ?? ''));
+  const unknown = sel !== '' && sel !== WORK && projects.length > 0 && !projects.some((p) => p.id === sel && !p.deleted_at);
+  useEffect(() => { if (unknown) setSel(''); }, [unknown]);
   const [provider, setProvider] = useState<Provider>('claude');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<{ text: string; docs: Att[] } | null>(null);
@@ -598,14 +603,14 @@ export function AthenaView({ id }: { id?: string }) {
   // The question rides in sessionStorage, so its words never land in the address bar, history or a request log.
   const [seed] = useState<Seed | undefined>(() => {
     const p = new URLSearchParams(location.search);
-    if (!p.has('knowledge')) return undefined;
+    if (!p.has('knowledge') && !p.has('agenda')) return undefined; // `agenda=<project id|work>`: a meeting series' agenda, with its project preselected
     let q = ''; try { q = sessionStorage.getItem(ASK_KEY) ?? ''; } catch { /* storage off: the box starts empty */ }
-    return { knowledge: p.get('knowledge') ?? '', q: q.slice(0, 8000) };
+    return { knowledge: p.get('knowledge') ?? '', q: q.slice(0, 8000), project: p.get('agenda') ?? undefined };
   });
   useEffect(() => {
     if (!seed) return;
     try { sessionStorage.removeItem(ASK_KEY); } catch { /* nothing kept */ }
-    const p = new URLSearchParams(location.search); p.delete('knowledge');
+    const p = new URLSearchParams(location.search); p.delete('knowledge'); p.delete('agenda');
     history.replaceState(history.state, '', location.pathname + (p.size ? `?${p}` : ''));
   }, [seed]);
   return (

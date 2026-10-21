@@ -13,6 +13,7 @@ import { AiRefused, runAi } from '../lib/ai.ts';
 import { buildSplitSystem, fence } from '../lib/prompt.ts';
 import { projectAccess } from '../lib/project-context.ts';
 import { unembedStale } from '../lib/vectors.ts';
+import { seriesForTitle } from '../lib/series.ts';
 import { parseSplit, splitRefusal, MAX_PROPOSALS, type SplitRefusal } from '../lib/split.ts';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
@@ -81,11 +82,17 @@ async function ingestMeeting(env: Env, post: InboxPost): Promise<{ item: InboxIt
     writes.push(env.DB.prepare(`UPDATE meeting_reviews SET title=?2, summary=?3, decisions=?4, action_items=?5, open_questions=?6, important_notes=?7, url=?8, updated_at=?9, enc_v=?10 WHERE id=?1 AND state = 'new'`)
       .bind(old.id, s.title, s.summary, s.decisions, s.action_items, s.open_questions, s.important_notes, s.url, s.updated_at, s.enc_v));
     review = asReview({ ...old, ...f, url: post.url, updated_at: t });
+    if (!old.series_id) { // a review from before series (a manual move is never undone: only an unassigned one is keyed)
+      const ser = await seriesForTitle(env, post.title, old.project_id as string | null);
+      writes.push(ser.stmt, env.DB.prepare('UPDATE meeting_reviews SET series_id = ?2 WHERE id = ?1').bind(old.id, ser.id));
+      review.series_id = ser.id;
+    }
   } else {
-    const row = { id: crypto.randomUUID(), recording_id: rid, url: post.url, ...f, project_id: null, state: 'new', received_at: t, reviewed_at: null, updated_at: t, enc_v: 0 };
+    const ser = await seriesForTitle(env, post.title, null, 'work'); // v2.1: an unfiled review joins the unfiled series for its title (accepting it into a project moves it)
+    const row = { id: crypto.randomUUID(), recording_id: rid, url: post.url, ...f, project_id: null, state: 'new', received_at: t, reviewed_at: null, updated_at: t, series_id: ser.id, enc_v: 0 };
     const s = await seal(env, 'meeting_reviews', { ...row }, 'work');
-    writes.push(env.DB.prepare('INSERT INTO meeting_reviews (id, recording_id, url, title, summary, decisions, action_items, open_questions, important_notes, project_id, state, received_at, reviewed_at, updated_at, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)')
-      .bind(s.id, s.recording_id, s.url, s.title, s.summary, s.decisions, s.action_items, s.open_questions, s.important_notes, s.project_id, s.state, s.received_at, s.reviewed_at, s.updated_at, s.enc_v));
+    writes.push(ser.stmt, env.DB.prepare('INSERT INTO meeting_reviews (id, recording_id, url, title, summary, decisions, action_items, open_questions, important_notes, project_id, state, received_at, reviewed_at, updated_at, series_id, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)')
+      .bind(s.id, s.recording_id, s.url, s.title, s.summary, s.decisions, s.action_items, s.open_questions, s.important_notes, s.project_id, s.state, s.received_at, s.reviewed_at, s.updated_at, s.series_id, s.enc_v));
     review = asReview(row);
     created = true;
   }

@@ -1345,6 +1345,65 @@ want 404 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"name\
 D1X "DELETE FROM templates WHERE id IN ('$TPL','$WTPL','$PTPL')" >/dev/null # the rows deleted above would wait for the 30-day purge; local D1 only
 for x in $SP $NP $NP2 $WP $PBP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
 echo "smoke: (v3) templates: a project of 3 tasks and 1 milestone saved and applied twice with new starts (dates shifted, no blocked_by, checklist unticked, parent kept, events say template); built-ins listed; a built-in as work is sealed (project, milestones, tasks, events) and Offline only; a work task template is sealed in D1, listed opened, and into a personal project, or told to be personal, is 400 template_kind; bad start, scope, source and name are refused; rename and delete work"
+# (v4) v2.1 Task 3, meeting series: dated titles land in one series; accepting into a project moves the series with the project; actions (source_ref), done ticks,
+# questions answered (sealed list), a move by hand that survives accept, V13 (key is a hash, name sealed), and the project purge clearing the series (FK).
+RL=$(printf '%s' "$R" | tr '0-9' 'a-j') # the series key drops digits, so a rerun needs letters of its own
+mnotes() { printf '{"app":"sonarflow","kind":"meeting","title":"%s","url":"https://sonarflow.example/rec/ser%s","ref":"sonarflow:recording:ser%s","payload":{"title":"x","summary":"s","decisions":[{"text":"Ship in Q4","at":"00:01"}],"action_items":[],"important_notes":[{"text":"Budget is tight","at":"00:02"}],"open_questions":[{"text":"Who owns the budget?","at":"00:03"}]}}' "$1" "$2$R" "$2$R"; }
+mid() { curl "${H[@]}" $B/api/meetings | js "d.meetings.find(m=>m.recording_id==='ser$1$R').id"; }
+mser() { curl "${H[@]}" $B/api/meetings/$1 | js d.meeting.series_id; }
+post "$IDS" "$(mnotes "Smoke$RL weekly sync – Acme – Oct 14" 1)" | grep -q '"state":"added"' || fail "v4: meeting 1"
+post "$IDS" "$(mnotes "Smoke$RL Weekly Sync - ACME (2026-10-21)" 2)" | grep -q '"state":"added"' || fail "v4: meeting 2"
+V1=$(mid 1); V2=$(mid 2); VS=$(mser $V1)
+[ -n "$VS" ] && [ "$VS" != null ] && [ "$(mser $V2)" = "$VS" ] || fail "v4: two dated titles did not land in one series"
+curl "${H[@]}" $B/api/meetings/series | js "const s=d.series.find(x=>x.id==='$VS'); !!s&&s.meetings===2&&s.project_id===null&&s.kind==='work'&&s.name.startsWith('Smoke$RL weekly sync')" | grep -q true || fail "v4: the series list does not show 2 meetings"
+VP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke series project","kind":"work"}' | js d.project.id)
+A1=$(curl "${H[@]}" -X POST $B/api/meetings/$V1/accept -d "{\"project_id\":\"$VP\",\"tasks\":[{\"text\":\"Send the plan\",\"owner\":\"Sam\"},{\"text\":\"Book the room\"}],\"decisions\":[{\"text\":\"Ship in Q4\"}]}")
+echo "$A1" | js "d.tasks[0].source_ref==='meeting:$V1:0'&&d.tasks[1].source_ref==='meeting:$V1:1'" | grep -q true || fail "v4: accept did not set source_ref meeting:<id>:<index>"
+VA=$(echo "$A1" | js d.tasks[0].id); VB=$(echo "$A1" | js d.tasks[1].id)
+curl "${H[@]}" -X POST $B/api/meetings/$V2/accept -d "{\"project_id\":\"$VP\",\"tasks\":[{\"text\":\"Draft SOW\",\"owner\":\"Alex\"}],\"decisions\":[{\"text\":\"Hire a PM\"}]}" | grep -q '"state":"reviewed"' || fail "v4: accept 2"
+VS2=$(mser $V1); [ -n "$VS2" ] && [ "$VS2" != "$VS" ] && [ "$VS2" = "$(curl "${H[@]}" $B/api/meetings/$V2 | js d.meeting.series_id)" ] || fail "v4: accepting into a project did not move both meetings to the project's series"
+sget() { curl "${H[@]}" $B/api/meetings/series/$1; }
+sget $VS2 | js "d.series.project_id==='$VP'&&d.meetings.length===2&&d.actions.length===3&&d.decisions.length===2&&d.questions.length===1&&!d.questions[0].answered&&d.actions.every(a=>a.status!=='done')" | grep -q true || fail "v4: series page counts (2 meetings, 3 actions, 2 decisions, 1 open question)"
+sget $VS2 | js "d.actions.some(a=>a.title==='Draft SOW'&&a.owner==='Alex')&&d.actions.some(a=>a.title==='Send the plan'&&a.owner==='Sam')" | grep -q true || fail "v4: action titles and owners opened"
+curl "${H[@]}" $B/api/meetings/series | js "!d.series.some(x=>x.id==='$VS')&&d.series.find(x=>x.id==='$VS2').open_actions===3" | grep -q true || fail "v4: the emptied unfiled series should leave the list, the project's show 3 open actions"
+# finishing one task ticks it on the series page and drops the open count
+curl "${H[@]}" -X POST $B/api/tasks/$VA/move -d '{"status":"done"}' | grep -q '"status":"done"' || fail "v4: finish a task"
+sget $VS2 | js "d.actions.find(a=>a.id==='$VA').status==='done'&&d.actions[d.actions.length-1].id==='$VA'" | grep -q true || fail "v4: a finished task is not ticked (and last) on the series page"
+curl "${H[@]}" $B/api/meetings/series | js "d.series.find(x=>x.id==='$VS2').open_actions===2" | grep -q true || fail "v4: open action count after finishing one"
+# V7 fallback: a task from before this phase (no source_ref) still matches by project and the review's url
+D1X "UPDATE tasks SET source_ref = NULL WHERE id = '$VB'" >/dev/null
+sget $VS2 | js "d.actions.length===3&&d.actions.some(a=>a.id==='$VB')" | grep -q true || fail "v4: an old task (no source_ref) is not matched by url"
+# V8: a question stays open until marked answered; the list is sealed
+QH=$(sget $VS2 | js d.questions[0].hash)
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/meetings/series/$VS2 -d '{"answer":{"hash":"nothex","answered":true}}')" = 400 ] || fail "v4: a bad hash"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/meetings/series/$VS2 -d '{}')" = 400 ] || fail "v4: an empty patch"
+curl "${H[@]}" -X PATCH $B/api/meetings/series/$VS2 -d "{\"answer\":{\"hash\":\"$QH\",\"answered\":true}}" | grep -q '"series"' || fail "v4: mark answered"
+sget $VS2 | js "d.questions[0].answered===true" | grep -q true || fail "v4: the question is not answered"
+[ "$(D1X "SELECT enc_v AS e, answered AS a FROM meeting_series WHERE id='$VS2'" | js "const r=d[0].results[0]; r.e+'/'+(r.a.startsWith('[')?'plain':'sealed')")" = "2/sealed" ] || fail "v4: the answered list of a work series is not sealed"
+curl "${H[@]}" -X PATCH $B/api/meetings/series/$VS2 -d "{\"answer\":{\"hash\":\"$QH\",\"answered\":false}}" >/dev/null
+sget $VS2 | js "d.questions[0].answered===false" | grep -q true || fail "v4: un-answering"
+curl "${H[@]}" -X PATCH $B/api/meetings/series/$VS2 -d "{\"answer\":{\"hash\":\"$QH\",\"answered\":true}}" >/dev/null
+# V13: the key is a hash and the name is ciphertext (no title words in a plain column)
+D1X "SELECT key AS k, name AS n, enc_v AS e FROM meeting_series WHERE id='$VS2'" | js "const r=d[0].results[0]; /^[0-9a-f]{64}$/.test(r.k)&&r.e===2&&!/smoke/i.test(r.n)" | grep -q true || fail "v4: V13 key/name"
+# a move by hand: a new series; another project's series is refused; a later accept keeps the series' key
+post "$IDS" "$(mnotes "Smoke$RL other thing" 3)" >/dev/null; post "$IDS" "$(mnotes "Smoke$RL stray talk" 4)" >/dev/null
+V3=$(mid 3); V4=$(mid 4)
+MV=$(curl "${H[@]}" -X POST $B/api/meetings/$V3/series -d "{\"new_name\":\"Smoke$RL moved\"}"); VN=$(echo "$MV" | js d.series.id)
+echo "$MV" | js "d.series.name==='Smoke$RL moved'&&d.meeting.series_id==='$VN'" | grep -q true || fail "v4: move to a new series"
+sget $VN | js "d.meetings.length===1&&d.meetings[0].id==='$V3'" | grep -q true || fail "v4: the moved meeting is not in its new series"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/meetings/$V3/series -d "{\"series_id\":\"$VS2\"}")" = 400 ] || fail "v4: a meeting joined another project's series"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/meetings/$V3/series -d '{"new_name":""}')" = 400 ] && [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/meetings/$V3/series -d '{"series_id":"nope"}')" = 404 ] || fail "v4: move validation"
+curl "${H[@]}" -X POST $B/api/meetings/$V4/series -d "{\"series_id\":\"$VN\"}" | grep -q "\"id\":\"$VN\"" || fail "v4: move into an existing series"
+curl "${H[@]}" -X POST $B/api/meetings/$V4/accept -d "{\"project_id\":\"$VP\",\"tasks\":[],\"decisions\":[{\"text\":\"Stay moved\"}]}" | grep -q '"state":"reviewed"' || fail "v4: accept the moved meeting"
+VS4=$(mser $V4); [ "$VS4" != "$VN" ] && [ "$VS4" != "$VS2" ] && sget $VS4 | js "d.series.name==='Smoke$RL moved'&&d.series.project_id==='$VP'" | grep -q true || fail "v4: a meeting moved by hand did not keep its series when accepted into the project"
+# the purge: a project in Trash takes its series (FK) and the reviews go back to an unfiled series on the next list
+curl "${H[@]}" -X DELETE $B/api/projects/$VP >/dev/null
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/empty)" = 200 ] || fail "v4: Empty Trash with a project that has series"
+[ "$(D1X "SELECT count(*) AS n FROM meeting_series WHERE project_id='$VP'" | js d[0].results[0].n)" = 0 ] && [ "$(D1X "SELECT count(*) AS n FROM meeting_reviews WHERE id='$V1' AND project_id IS NULL AND series_id IS NULL" | js d[0].results[0].n)" = 1 ] || fail "v4: the purge left a series or a stale series_id"
+curl "${H[@]}" $B/api/meetings/series | js "!!d.series.find(x=>x.project_id===null&&x.name.startsWith('Smoke$RL weekly sync'))" | grep -q true || fail "v4: reviews were not put back in an unfiled series"
+[ "$(D1X "SELECT count(*) AS n FROM meeting_reviews WHERE id='$V1' AND series_id IS NOT NULL" | js d[0].results[0].n)" = 1 ] || fail "v4: backfill"
+D1X "DELETE FROM meeting_reviews WHERE recording_id LIKE 'ser_$R'; DELETE FROM meeting_series WHERE created_at >= '$T0' AND id NOT IN (SELECT series_id FROM meeting_reviews WHERE series_id IS NOT NULL); DELETE FROM inbox_items WHERE ref LIKE 'sonarflow:recording:ser_$R'" >/dev/null
+echo "smoke: (v4) series: two dated titles -> one unfiled series; accepted into a project -> the project's series (source_ref meeting:<id>:<n>, 3 actions, 2 decisions, 1 question); finishing a task ticks it and drops the open count; an old task matches by url; answering a question is sealed and reversible; key is a hash and name ciphertext; a move by hand (new series, existing series, other project 400) survives accept; Empty Trash with a project that has series succeeds and a later list puts the reviews back"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

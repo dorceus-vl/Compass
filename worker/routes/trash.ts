@@ -93,7 +93,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, milestones, , , projects, clips] = await env.DB.batch([
+  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, milestones, , , , projects, clips] = await env.DB.batch([
     q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // first, while tasks and reviews still name their project; their vectors go below
     q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
@@ -112,7 +112,8 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`DELETE FROM decisions WHERE ${goneRows}`), // a project's decisions go with it (FK)
     q(`DELETE FROM milestones WHERE ${goneRows}`),
     q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
-    q(`UPDATE meeting_reviews SET project_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK)
+    q(`UPDATE meeting_reviews SET project_id = NULL, series_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK); the next list puts it in an unfiled series
+    q(`DELETE FROM meeting_series WHERE project_id IN (${goneProjects})`), // v2.1: a project's series go with it (FK)
     q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
     q(`DELETE FROM athena_clips WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING r2_key`), // Athena's removed clips and portraits
     q(`DELETE FROM templates WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.1: a deleted template (nothing refers to it)

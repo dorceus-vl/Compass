@@ -74,6 +74,7 @@ export interface MeetingReview {
   id: string; recording_id: string; url: string | null; title: string; summary: string | null; decisions: MeetingNotes['decisions'];
   action_items: MeetingActionItem[]; open_questions: MeetingNotes['open_questions']; important_notes: MeetingNotes['important_notes'];
   project_id: string | null; state: 'new' | 'reviewed'; received_at: string; reviewed_at: string | null;
+  series_id?: string | null; // v2.1: the meeting series (shared/series.ts)
 }
 export interface Decision { id: string; project_id: string | null; text: string; decided_at: string; from_meeting_id: string | null; at_ref: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
 export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting' | 'unblocked';
