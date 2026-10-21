@@ -9,6 +9,7 @@ import type { InboxItem } from '../../../shared/types.ts';
 import { parseBlockedBy, wouldCycle, blocksOf, blockedIds } from '../../../shared/deps.ts';
 import { BlockedChip } from './BlockedChip.tsx';
 import { Checklist } from './Checklist.tsx';
+import { SaveAsTemplate } from './Templates.tsx';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
   ['{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}', 'Weekdays'], ['{"freq":"monthly","interval":1}', 'Every month'], ['{"freq":"weekly","interval":2,"after_completion":true}', 'Two weeks after done']];
@@ -31,6 +32,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
   const has = !!task;
   const [mail, setMail] = useState<InboxItem | null>(null); // the forwarded email this task came from, if any
   const [splitting, setSplitting] = useState(false);
+  const [saveTpl, setSaveTpl] = useState(false);
   const [depQ, setDepQ] = useState('');
   const fromMail = task?.source_kind === 'email';
   useEffect(() => {
@@ -143,11 +145,13 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>
         <span className="row" style={{ gap: 8 }}>
+        <button className="btn" onClick={() => { if (task.id.startsWith('tmp-')) { toast('Wait for the task to sync, then save it'); return; } flush(); setSaveTpl(true); }}>Save as template</button>
         {mail && <button className="btn" disabled={!navigator.onLine} title={navigator.onLine ? undefined : 'Needs a connection'} onClick={() => setSplitting(true)}>Split into tasks</button>}
         <button className="btn" style={{ color: 'var(--danger)' }} onClick={async () => { if (await confirmAction('Move this task to Trash? It stays there 30 days.')) { trashed.current = true; await trashTask(task.id); toast('Moved to Trash'); ref.current?.close(); } }}>Trash</button>
         </span>
         <button className="btn primary" onClick={() => ref.current?.close()}>Done</button>
       </div>
+      {saveTpl && <SaveAsTemplate from={{ task_id: task.id }} defaultName={task.title} onClose={() => setSaveTpl(false)} />}
       {splitting && mail && <SplitSheet item={mail} onClose={() => setSplitting(false)} />}
     </dialog>
   );

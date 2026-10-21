@@ -10,6 +10,7 @@ import { shell, nativeDevice } from '../native.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
 import { AthenaCard } from './AthenaCard.tsx';
+import { TemplatesCard } from './TemplatesCard.tsx';
 import { CardHead } from '../ui/CardHead.tsx';
 import { Icon } from '../ui/Shell.tsx';
 import { Documents } from './project/Documents.tsx';
@@ -78,6 +79,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Ai s={s} save={save} />
       <AthenaCard s={s} save={save} />
       <KellyCard />
+      <TemplatesCard />
       <ExportCard />
       <div className="card">
         <CardHead icon="doc" title="Documents" desc="Unfiled files that are not in a project. Project files live on the project's Documents tab." />

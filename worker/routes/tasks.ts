@@ -56,11 +56,16 @@ export async function updateTask(env: Env, task: Task, fields: string[]): Promis
   await env.DB.prepare(`UPDATE tasks SET ${cols.map((k, i) => `${k} = ?${i + 2}`).join(', ')} WHERE id = ?1`)
     .bind(task.id, ...cols.map((k) => (s as Record<string, unknown>)[k] ?? null)).run();
 }
-export async function addEvent(env: Env, task: Task, actor: TaskEvent['actor'], type: TaskEvent['type'], data?: unknown): Promise<TaskEvent> {
+/** The 'created'/'edited'/... event, sealed with its task, as an unsent statement (to batch with other writes). */
+export async function eventStmt(env: Env, task: Task, actor: TaskEvent['actor'], type: TaskEvent['type'], data?: unknown): Promise<{ ev: TaskEvent; stmt: D1PreparedStatement }> {
   const ev: TaskEvent = { id: crypto.randomUUID(), task_id: task.id, at: now(), actor, type, data: data === undefined ? null : JSON.stringify(data), enc_v: 0 };
   const s = await seal(env, 'task_events', { ...ev }, task.kind);
   ev.enc_v = s.enc_v;
-  await env.DB.prepare('INSERT INTO task_events (id, task_id, at, actor, type, data, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7)').bind(s.id, s.task_id, s.at, s.actor, s.type, s.data, s.enc_v).run();
+  return { ev, stmt: env.DB.prepare('INSERT INTO task_events (id, task_id, at, actor, type, data, enc_v) VALUES (?1,?2,?3,?4,?5,?6,?7)').bind(s.id, s.task_id, s.at, s.actor, s.type, s.data, s.enc_v) };
+}
+export async function addEvent(env: Env, task: Task, actor: TaskEvent['actor'], type: TaskEvent['type'], data?: unknown): Promise<TaskEvent> {
+  const { ev, stmt } = await eventStmt(env, task, actor, type, data);
+  await stmt.run();
   return ev;
 }
 /**

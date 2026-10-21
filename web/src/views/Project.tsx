@@ -22,6 +22,7 @@ import { SectionHead } from '../ui/SectionHead.tsx';
 import { RagPill, Ring } from '../ui/ProjectCard.tsx';
 import { useSlider } from '../ui/Shell.tsx';
 import { projectColor, PROJECT_SWATCHES } from '../ui/colors.ts';
+import { SaveAsTemplate } from '../ui/Templates.tsx';
 
 const TABS = ['overview', 'raid', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
@@ -32,6 +33,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
   const [open, setOpen] = useState<string | null>(null);
   const [newTask, setNewTask] = useState('');
   const [boundaryBusy, setBoundaryBusy] = useState(false);
+  const [saveTpl, setSaveTpl] = useState(false);
   const [newMs, setNewMs] = useState({ name: '', due_at: '', gate: false });
   const [finished, onFinish] = useFinished();
   const p = projects.find((x) => x.id === id);
@@ -95,6 +97,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
             {PROJECT_SWATCHES.map((s, i) => <button type="button" key={s} className="sw" style={{ ['--sw' as string]: s } as CSSProperties} aria-label={`Colour ${SWATCH_NAME[i]}`}
               aria-pressed={color.toLowerCase() === s.toLowerCase()} onClick={() => p.colour !== s && save({ colour: s })}><i /></button>)}
           </div>
+          <button className="btn" onClick={() => { if (p.id.startsWith('tmp-')) { toast('Wait for the project to sync, then save it'); return; } setSaveTpl(true); }}>Save as template</button>
           <button className="btn ptrash" onClick={async () => { if (await confirmAction(`Move "${p.name}" to Trash? Its tasks stay on the board.`, { danger: true })) { await trashProject(p.id); toast('Moved to Trash'); navigate('/projects'); } }}>Trash</button>
         </div>
       </header>
@@ -146,6 +149,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
       </div>}
       </div>
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
+      {saveTpl && <SaveAsTemplate from={{ project_id: p.id }} defaultName={p.name} onClose={() => setSaveTpl(false)} />}
     </>
   );
 }

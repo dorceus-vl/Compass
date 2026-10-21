@@ -1249,6 +1249,97 @@ RN=$(curl "${H[@]}" "$B/api/tasks?status=all" | js '(d.tasks.find(t=>t.title==="
 D1X "SELECT checklist AS c FROM tasks WHERE id='$RN'" | js 'd[0].results[0].c' | grep -q "Smoke step" && fail "v2: the next occurrence's work checklist was stored plain"
 for x in $CW $CP $RC $RN; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done; curl "${H[@]}" -X DELETE $B/api/projects/$ckp >/dev/null
 echo "smoke: (v2) checklists: create and tick ok; a work checklist is ciphertext in D1, a personal one plain; 51 items, 201 characters, empty text, a repeated id, done not a boolean and bad JSON are 400 (50 x 200 is fine); the next occurrence of a recurring task carries the items unticked"
+# (v3) v2.1 Task 2: templates. Save a project (3 tasks, 1 milestone) as a template and apply it with a new start: dates shift, no blocked_by, checklists unticked, parent link kept, events say 'template'.
+# A built-in as work makes sealed rows; a work template into a personal project is 400; rename and delete work.
+tpost() { curl "${H[@]}" -w '\n%{http_code}' -X POST "$B/api/templates$1" -d "$2"; }
+want() { local w=$1 r; shift; r=$(tpost "$@"); [ "$(kst "$r")" = "$w" ]; } # status check without nesting the JSON in $(...) (macOS bash 3.2 splits it on commas)
+tget() { curl "${H[@]}" $B/api/templates; }
+SP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke template source","kind":"personal"}' | js d.project.id)
+TA=$(dt "$(node -pe 'JSON.stringify({title:"Smoke tpl A '$R'",project_id:process.argv[1],start_at:"2026-03-02",due_at:"2026-03-05",priority:2,checklist:JSON.stringify([{id:"a",text:"Smoke tpl step",done:true}])})' "$SP")")
+TB=$(dt "$(node -pe 'JSON.stringify({title:"Smoke tpl B '$R'",project_id:process.argv[1],due_at:"2026-03-10",blocked_by:JSON.stringify([process.argv[2]])})' "$SP" "$TA")")
+TC=$(dt "$(node -pe 'JSON.stringify({title:"Smoke tpl C '$R'",project_id:process.argv[1],parent_id:process.argv[2]})' "$SP" "$TA")")
+curl "${H[@]}" -X POST $B/api/projects/$SP/milestones -d '{"name":"Smoke tpl milestone","due_at":"2026-03-12","gate":1}' | grep -q '"milestone"' || fail "v3: milestone"
+curl "${H[@]}" -X PATCH $B/api/tasks/$TC -d '{"parent_id":"'$TA'"}' >/dev/null
+O=$(tpost "" "{\"name\":\"Smoke tpl $R\",\"from_project_id\":\"$SP\"}"); [ "$(kst "$O")" = 201 ] || fail "v3: save project as template: $O"
+TPL=$(kbody "$O" | js d.template.id)
+[ "$(kbody "$O" | js "d.template.tasks+'/'+d.template.milestones+'/'+d.template.scope+'/'+d.template.kind")" = "3/1/project/personal" ] || fail "v3: template counts: $O"
+tget | js "d.templates.filter(t=>t.builtin).map(t=>t.name).join('|')" | grep -q 'Project kickoff|Vendor onboarding|Change / release' || fail "v3: the three built-ins are listed"
+tget | js "d.templates.some(t=>t.id==='$TPL'&&t.builtin===false&&t.name==='Smoke tpl $R')" | grep -q true || fail "v3: the saved template is listed"
+tget | grep -q 'blocked_by' && fail "v3: a template list carries a body"
+D1X "SELECT body AS b FROM templates WHERE id='$TPL'" | js 'd[0].results[0].b' | grep -q blocked_by && fail "v3: a template carries blocked_by"
+A=$(tpost /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"name\":\"Smoke from template $R\"}"); [ "$(kst "$A")" = 201 ] || fail "v3: apply: $A"
+NP=$(kbody "$A" | js d.project.id)
+curl "${H[@]}" $B/api/projects/$NP | js "d.milestones.map(m=>m.name+':'+m.due_at+':'+m.gate).join()" | grep -qx 'Smoke tpl milestone:2026-06-11:1' || fail "v3: milestone date did not shift"
+NT=$(curl "${H[@]}" "$B/api/tasks?status=all&project=$NP")
+echo "$NT" | js "d.tasks.length+'|'+d.tasks.map(t=>t.title.replace(/ $R/,'')+':'+t.start_at+':'+t.due_at+':'+t.status+':'+t.blocked_by).sort().join()" | grep -qx '3|Smoke tpl A:2026-06-01:2026-06-04:new:null,Smoke tpl B:null:2026-06-09:new:null,Smoke tpl C:null:null:new:null' || fail "v3: applied tasks wrong: $(echo "$NT" | js "d.tasks.map(t=>t.title+':'+t.start_at+':'+t.due_at+':'+t.status+':'+t.blocked_by).join()")"
+NA=$(echo "$NT" | js "d.tasks.find(t=>t.title==='Smoke tpl A $R').id"); NC=$(echo "$NT" | js "d.tasks.find(t=>t.title==='Smoke tpl C $R').id")
+[ "$(task $NC parent_id)" = "$NA" ] || fail "v3: the subtask lost its parent"
+[ "$(task $NA checklist)" = '[{"id":"a","text":"Smoke tpl step","done":false}]' ] || fail "v3: checklist not unticked: $(task $NA checklist)"
+[ "$(task $NA priority)" = 2 ] || fail "v3: priority"
+curl "${H[@]}" $B/api/tasks/$NA | js "d.events.map(e=>e.type+':'+e.data).join()" | grep -qx 'created:{"from":"template"}' || fail "v3: the created event does not say template"
+# a second apply a month later shifts again (offsets, not dates, are stored)
+A2=$(tpost /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-07-15\",\"name\":\"Smoke from template 2 $R\"}"); [ "$(kst "$A2")" = 201 ] || fail "v3: second apply"
+NP2=$(kbody "$A2" | js d.project.id)
+curl "${H[@]}" "$B/api/tasks?status=all&project=$NP2" | js "d.tasks.map(t=>t.due_at).sort().join()" | grep -qx '2026-07-18,2026-07-23,' || fail "v3: second apply dates: $(curl "${H[@]}" "$B/api/tasks?status=all&project=$NP2" | js "d.tasks.map(t=>t.due_at).sort().join()")"
+# bad requests
+want 400 /apply "{\"template_id\":\"$TPL\",\"name\":\"x\"}" || fail "v3: apply without a start date"
+want 400 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-13-40\",\"name\":\"x\"}" || fail "v3: apply with a bad start date"
+want 400 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"project_id\":\"$SP\"}" || fail "v3: a project template into an existing project"
+want 404 /apply "{\"template_id\":\"nope\",\"start_date\":\"2026-06-01\"}" || fail "v3: unknown template"
+want 404 /apply "{\"builtin\":\"builtin:nope\",\"start_date\":\"2026-06-01\"}" || fail "v3: unknown built-in"
+want 400 "" '{"name":"x"}' || fail "v3: save without a source"
+want 400 "" "{\"from_task_id\":\"$TA\",\"from_project_id\":\"$SP\",\"name\":\"x\"}" || fail "v3: save from both"
+want 400 "" "{\"from_task_id\":\"$TA\"}" || fail "v3: save without a name"
+want 404 "" '{"from_task_id":"nope","name":"x"}' || fail "v3: save from a missing task"
+# a built-in as work: sealed rows, Offline only
+W=$(tpost /apply "{\"builtin\":\"builtin:vendor\",\"kind\":\"work\",\"start_date\":\"2026-06-01\",\"name\":\"Smoke vendor work $R\"}"); [ "$(kst "$W")" = 201 ] || fail "v3: built-in as work: $W"
+WP=$(kbody "$W" | js d.project.id)
+[ "$(kbody "$W" | js "d.project.kind+'/'+d.project.data_boundary+'/'+d.tasks.length+'/'+d.milestones.length")" = "work/offline/6/3" ] || fail "v3: built-in work project shape: $W"
+[ "$(D1X "SELECT p.enc_v AS pe, p.name AS pn, (SELECT COUNT(*) FROM tasks WHERE project_id=p.id AND enc_v=2 AND title NOT LIKE '%Agree the NDA%') AS ts, (SELECT COUNT(*) FROM milestones WHERE project_id=p.id AND enc_v=2 AND name NOT LIKE '%Contract%') AS ms, (SELECT COUNT(*) FROM task_events e JOIN tasks t ON t.id=e.task_id WHERE t.project_id=p.id AND e.enc_v=2 AND e.data NOT LIKE '%template%') AS es FROM projects p WHERE p.id='$WP'" | js "const r=d[0].results[0]; r.pe+'/'+(r.pn.includes('Smoke vendor')?'plain':'sealed')+'/'+r.ts+'/'+r.ms+'/'+r.es")" = "2/sealed/6/3/6" ] || fail "v3: a built-in applied as work is not sealed"
+curl "${H[@]}" "$B/api/tasks?status=all&project=$WP" | js "d.tasks.every(t=>t.kind==='work')&&d.tasks.some(t=>t.title.includes('security questionnaire'))" | grep -q true || fail "v3: work tasks read back opened"
+# a built-in is personal unless told otherwise
+PB=$(tpost /apply "{\"builtin\":\"builtin:change\",\"start_date\":\"2026-06-01\",\"name\":\"Smoke change $R\"}"); [ "$(kbody "$PB" | js "d.project.kind+'/'+d.project.data_boundary+'/'+d.tasks.length")" = "personal/cloud/7" ] || fail "v3: built-in default kind: $PB"
+PBP=$(kbody "$PB" | js d.project.id)
+want 400 /apply "{\"builtin\":\"builtin:change\",\"kind\":\"secret\",\"start_date\":\"2026-06-01\",\"name\":\"x\"}" || fail "v3: bad kind"
+want 400 /apply "{\"builtin\":\"builtin:change\",\"start_date\":\"2026-06-01\",\"name\":\"\"}" || fail "v3: blank project name"
+# a work task template: sealed in D1, listed opened, and it only goes to a work destination
+WT=$(dt "$(node -pe 'JSON.stringify({title:"Smoke work tpl task '$R'",project_id:process.argv[1],due_at:"2026-05-01",notes:"Smoke secret notes"})' "$WP")")
+WS=$(dt "$(node -pe 'JSON.stringify({title:"Smoke work tpl sub '$R'",project_id:process.argv[1],due_at:"2026-05-04"})' "$WP")")
+curl "${H[@]}" -X PATCH $B/api/tasks/$WS -d '{"parent_id":"'$WT'"}' >/dev/null
+O=$(tpost "" "{\"name\":\"Smoke work template $R\",\"from_task_id\":\"$WT\"}"); [ "$(kst "$O")" = 201 ] || fail "v3: save a work task as template: $O"
+WTPL=$(kbody "$O" | js d.template.id)
+[ "$(kbody "$O" | js "d.template.kind+'/'+d.template.scope+'/'+d.template.tasks")" = "work/task/2" ] || fail "v3: work task template shape: $O"
+[ "$(D1X "SELECT enc_v AS e, name AS n, body AS b FROM templates WHERE id='$WTPL'" | js "const r=d[0].results[0]; r.e+'/'+(r.n.includes('Smoke work template')||r.b.includes('Smoke secret')||r.b.includes('Smoke work tpl')?'plain':'sealed')")" = "2/sealed" ] || fail "v3: a work template is not sealed in D1"
+tget | js "d.templates.some(t=>t.id==='$WTPL'&&t.name==='Smoke work template $R'&&t.kind==='work')" | grep -q true || fail "v3: the work template's name is not opened in the list"
+# same-kind rule: a work template into a personal project, or told to be personal, is 400; into a work project it works
+E=$(tpost /apply "{\"template_id\":\"$WTPL\",\"start_date\":\"2026-06-01\",\"project_id\":\"$SP\"}"); [ "$(kst "$E")" = 400 ] && [ "$(kbody "$E" | js d.error)" = template_kind ] || fail "v3: a work template into a personal project was not 400 template_kind: $E"
+want 400 /apply "{\"template_id\":\"$WTPL\",\"start_date\":\"2026-06-01\",\"kind\":\"personal\"}" || fail "v3: a work template told to be personal"
+want 400 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"kind\":\"work\",\"name\":\"x\"}" || fail "v3: a personal template told to be work"
+X=$(tpost /apply "{\"template_id\":\"$WTPL\",\"start_date\":\"2026-08-03\",\"project_id\":\"$WP\"}"); [ "$(kst "$X")" = 201 ] || fail "v3: a work task template into a work project: $X"
+[ "$(kbody "$X" | js "d.tasks.length+'|'+d.tasks.map(t=>t.due_at+':'+(t.parent_id?'sub':'top')+':'+t.kind).join()")" = "2|2026-08-03:top:work,2026-08-06:sub:work" ] || fail "v3: the work task template's dates or parent: $X"
+XT=$(kbody "$X" | js "d.tasks[0].id"); [ "$(task $XT notes)" = "Smoke secret notes" ] || fail "v3: notes lost"
+[ "$(D1X "SELECT enc_v AS e FROM tasks WHERE id='$XT'" | js d[0].results[0].e)" = 2 ] || fail "v3: the task made from a work template is not sealed"
+# a personal task template can be standalone or go into a personal project; into a work project is 400
+PT=$(tpost "" "{\"name\":\"Smoke personal task tpl $R\",\"from_task_id\":\"$TA\"}"); PTPL=$(kbody "$PT" | js d.template.id)
+[ "$(kbody "$PT" | js "d.template.kind+'/'+d.template.scope+'/'+d.template.tasks")" = "personal/task/2" ] || fail "v3: personal task template shape: $PT"
+want 201 /apply "{\"template_id\":\"$PTPL\",\"start_date\":\"2026-09-01\"}" || fail "v3: standalone personal task template"
+want 400 /apply "{\"template_id\":\"$PTPL\",\"start_date\":\"2026-09-01\",\"project_id\":\"$WP\"}" || fail "v3: a personal task template into a work project"
+want 404 /apply "{\"template_id\":\"$PTPL\",\"start_date\":\"2026-09-01\",\"project_id\":\"nope\"}" || fail "v3: task template into a missing project"
+# rename and delete
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/templates/$WTPL -d '{"name":"Smoke renamed work '$R'"}')" = 200 ] || fail "v3: rename"
+tget | js "d.templates.some(t=>t.id==='$WTPL'&&t.name==='Smoke renamed work $R')" | grep -q true || fail "v3: renamed name not listed"
+[ "$(D1X "SELECT enc_v AS e, name AS n FROM templates WHERE id='$WTPL'" | js "const r=d[0].results[0]; r.e+'/'+(r.n.includes('renamed')?'plain':'sealed')")" = "2/sealed" ] || fail "v3: a renamed work template is not sealed"
+want 201 /apply "{\"template_id\":\"$WTPL\",\"start_date\":\"2026-08-03\",\"project_id\":\"$WP\"}" || fail "v3: apply after rename (the body survives)"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/templates/$WTPL -d '{"name":""}')" = 400 ] || fail "v3: blank rename"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X PATCH $B/api/templates/builtin:kickoff -d '{"name":"x"}')" = 404 ] || fail "v3: a built-in cannot be renamed"
+for id in $TPL $WTPL $PTPL; do [ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/templates/$id)" = 200 ] || fail "v3: delete $id"; done
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/templates/$TPL)" = 404 ] || fail "v3: delete twice"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/templates/builtin:kickoff)" = 404 ] || fail "v3: a built-in cannot be deleted"
+tget | js "d.templates.filter(t=>!t.builtin&&t.name.includes('$R')).length" | grep -qx 0 || fail "v3: deleted templates still listed"
+want 404 /apply "{\"template_id\":\"$TPL\",\"start_date\":\"2026-06-01\",\"name\":\"x\"}" || fail "v3: apply a deleted template"
+D1X "DELETE FROM templates WHERE id IN ('$TPL','$WTPL','$PTPL')" >/dev/null # the rows deleted above would wait for the 30-day purge; local D1 only
+for x in $SP $NP $NP2 $WP $PBP; do curl "${H[@]}" -X DELETE $B/api/projects/$x >/dev/null; done
+echo "smoke: (v3) templates: a project of 3 tasks and 1 milestone saved and applied twice with new starts (dates shifted, no blocked_by, checklist unticked, parent kept, events say template); built-ins listed; a built-in as work is sealed (project, milestones, tasks, events) and Offline only; a work task template is sealed in D1, listed opened, and into a personal project, or told to be personal, is 400 template_kind; bad start, scope, source and name are refused; rename and delete work"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

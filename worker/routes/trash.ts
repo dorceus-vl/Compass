@@ -112,6 +112,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`UPDATE meeting_reviews SET project_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK)
     q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
     q(`DELETE FROM athena_clips WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING r2_key`), // Athena's removed clips and portraits
+    q(`DELETE FROM templates WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.1: a deleted template (nothing refers to it)
   ]);
   // best effort, only after the rows are gone
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email'))));

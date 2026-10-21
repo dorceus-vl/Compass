@@ -9,6 +9,7 @@ import { useLibrary } from '../library.ts';
 import { useDocs } from '../views/project/Documents.tsx';
 import { askCopilot } from '../views/Athena.tsx';
 import { taskColor, projectColor } from './colors.ts';
+import { NewFromTemplate } from './Templates.tsx';
 
 const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/calendar', 'Calendar'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/library', 'Library'], ['/knowledge', 'Knowledge'], ['/settings', 'Settings'], ['/trash', 'Trash']];
 
@@ -19,6 +20,7 @@ export function Palette({ onClose, prefill, onAdded }: { onClose: () => void; pr
   const [notes, setNotes] = useState(prefill?.notes ?? null); // from a shared text: kept for the next Add only
   const [sel, setSel] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [tpl, setTpl] = useState(false);
   const { find } = useLibrary();
   const { docs } = useDocs(null);
   useEffect(() => { ref.current?.showModal(); }, []);
@@ -30,6 +32,7 @@ export function Palette({ onClose, prefill, onAdded }: { onClose: () => void; pr
     ? JUMPS.filter(([, l]) => l.toLowerCase().includes(needle)).map(([to, l]) => ({ label: l, hint: 'Go', color: 'var(--accent-dim)', run: () => { navigate(to); ref.current?.close(); } }))
     : [
         ...(parsed.title ? [{ label: `Add "${parsed.title}"`, hint, color: 'var(--accent)', run: async () => { setQ(''); setSel(0); await createTask({ ...parsed, notes, tags: JSON.stringify(parsed.tags) }); setNotes(null); toast('Added'); onAdded?.(); } }] : []),
+        ...(!onAdded && (!needle || 'new from template'.includes(needle)) ? [{ label: 'New from template…', hint: 'Template', color: 'var(--accent-dim)', run: () => setTpl(true) }] : []),
         ...projects.filter((p) => needle && p.name.toLowerCase().includes(needle)).slice(0, 3).map((p) => ({ label: p.name, hint: 'Project', color: projectColor(p), run: () => { navigate(`/projects/${p.id}`); ref.current?.close(); } })),
         ...tasks.filter((t) => needle && !t.deleted_at && t.status !== 'done' && t.title.toLowerCase().includes(needle)).slice(0, 6).map((t) => ({ label: t.title, hint: 'Task', color: taskColor(t, projects), run: () => setOpen(t.id) })),
         ...(needle ? find(needle, 5) : []).map(({ page }) => ({ label: `Library · ${page.title}`, hint: 'Library', color: 'var(--accent)', run: () => { navigate(`/library/${page.slug}`); ref.current?.close(); } })),
@@ -51,6 +54,7 @@ export function Palette({ onClose, prefill, onAdded }: { onClose: () => void; pr
           {items.map((it, i) => <div key={i} id={`palette-opt-${i}`} className="pal-row" onMouseDown={(e) => e.preventDefault()} onClick={() => void it.run()} role="option" aria-selected={i === sel}><i className="pal-dot" style={{ '--c': it.color } as CSSProperties} /><div className="tt">{it.label}</div><span className="kind">{it.hint}</span></div>)}
         </div>
       </dialog>
+      {tpl && <NewFromTemplate onClose={() => setTpl(false)} onCreated={() => ref.current?.close()} />}
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
     </>
   );

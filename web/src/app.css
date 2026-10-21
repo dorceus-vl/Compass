@@ -990,3 +990,19 @@ section.chk{display:grid;gap:8px;margin-top:12px}
 .chk-add{justify-self:start;min-height:44px}
 @media (max-width:760px),(pointer:coarse){.chk-act button{min-width:44px}}
 @media (max-width:520px){.chk-list li{flex-wrap:wrap;row-gap:0;padding-bottom:6px;border-bottom:1px solid var(--border-soft)}.chk-list .field{flex:1 1 0}.chk-act{flex:1 0 100%;justify-content:flex-end}}
+/* v2.1 templates: the New from template / Save as template dialogs and Settings → Templates */
+.tpl-dlg{max-width:560px}
+.tpl-form{display:grid;gap:12px}
+.tpl-list{display:grid;gap:8px;max-height:38vh;overflow:auto}
+.tpl-opt{display:flex;gap:12px;align-items:flex-start;padding:12px;min-height:44px;border:1px solid var(--field-border);border-radius:12px;background:var(--field);cursor:pointer}
+.tpl-opt:has(input:checked){border-color:var(--accent)}
+.tpl-opt:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px}
+.tpl-opt input{accent-color:var(--accent);width:20px;height:20px;margin:2px 0 0;flex:none}
+.tpl-opt span{display:grid;gap:2px;min-width:0}
+.tpl-opt small,.tpl-set small{color:var(--text-faint);font-size:12.5px}
+.tpl-fields{display:grid;gap:10px}
+.tpl-set{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border-soft);font-size:14px}
+.tpl-set .btn{min-height:44px}
+.tpl-name{min-width:0;overflow-wrap:anywhere}
+@media (max-width:760px),(pointer:coarse){.tpl-dlg .field,.tpl-dlg .btn,.pctl .btn{min-height:44px}}
+@media (max-width:520px){.tpl-set{grid-template-columns:minmax(0,1fr) auto}.tpl-set small{grid-column:1/-1;order:3}}
