@@ -66,7 +66,7 @@ struct TodaySmall: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Today: \(t.due) due, \(t.late) late. Next: \(t.next?.shown(lock: false, hideWork: false) ?? "nothing")")
+        .accessibilityLabel("Today: \(t.due) due, \(t.late) late. Next: \((t.next.map(s.hides) ?? false) ? "a work task" : (t.next?.shown(lock: false, hideWork: false) ?? "nothing"))")
         }
     }
 }

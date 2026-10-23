@@ -8,6 +8,7 @@ import { onChange } from './store/sync.ts';
 import { completeTask, resolveId } from './store/useStore.ts';
 import { inWidgetShell, nativeDevice, setWidgetToken, takeWidgetTicks, updateWidgets } from './native.ts';
 import { buildWidgetSnapshot } from '../../shared/widget-snapshot.ts';
+import { localDay } from '../../shared/dashboard.ts';
 import { parseSnapshot, type Snapshot } from '../../shared/baseline.ts';
 import { DEFAULT_SETTINGS, type Milestone, type Project, type RaidItem, type Settings, type Task } from '../../shared/types.ts';
 import type { BaselineInfo } from './baselines.ts';
@@ -47,13 +48,13 @@ async function readCaches(projects: Project[]) {
 
 let lastJson = '';
 let gen = 0; // bumped by clearWidgets and by stopping, so a write already in flight doesn't land after them
-/** Builds and sends the snapshot now. Skipped when nothing but the time changed. */
+/** Builds and sends the snapshot now. Skipped when nothing but the time of day changed. */
 export async function writeWidgets(): Promise<void> {
   if (!inWidgetShell()) return;
   const mine = gen;
   const [tasks, projects, milestones, s] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones'), readSettings()]);
   const snap = buildWidgetSnapshot({ tasks, projects, milestones, ...(await readCaches(projects)), tz: s.tz, hide_work_on_lock: s.hide_work_on_lock, now: new Date() });
-  const same = JSON.stringify({ ...snap, at: '' });
+  const same = JSON.stringify({ ...snap, at: localDay(snap.at, s.tz) }); // a new day is a change: the widgets must stop saying "open Compass to update"
   if (same === lastJson || mine !== gen) return;
   if (await updateWidgets(JSON.stringify(snap))) lastJson = same;
 }
@@ -96,4 +97,5 @@ export async function clearWidgets(): Promise<void> {
   lastJson = ''; gen++;
   await updateWidgets('');
   await setWidgetToken(null).catch(() => {});
+  await takeWidgetTicks().catch(() => []); // the queued tick ids go too
 }

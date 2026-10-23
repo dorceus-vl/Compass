@@ -7,7 +7,7 @@ import { Link } from '../router.ts';
 import { idb } from '../store/db.ts';
 import { replay } from '../store/sync.ts';
 import { shell, nativeDevice, setWidgetToken, inWidgetShell } from '../native.ts';
-import { clearWidgets, revokeWidgetToken, widgetDeviceName } from '../widgets.ts';
+import { clearWidgets, revokeWidgetToken, widgetDeviceName, writeWidgets } from '../widgets.ts';
 import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from '../push.ts';
 import { Rules } from './Rules.tsx';
 import { AthenaCard } from './AthenaCard.tsx';
@@ -44,6 +44,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
     try {
       const next = await api<Settings>('/settings', { method: 'PATCH', json: patch });
       if (n === latest.current) { setS(next); toast('Saved'); }
+      if (patch.widgets) void writeWidgets().catch(() => {}); // the privacy switch reaches the widgets now, not at the next foreground
     } catch (e) {
       toast((e as Error).message || 'Settings need a connection');
       if (n === latest.current) api<Settings>('/settings').then(setS).catch(() => {}); // drop the optimistic value

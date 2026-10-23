@@ -72,6 +72,7 @@ struct TaskRow: View {
     var height: CGFloat = 24
     var body: some View {
         let name = item.shown(lock: false, hideWork: false)
+        let spoken = hide ? "Work task" : name // VoiceOver reads this even where the title is redacted
         HStack(spacing: 6) {
             if tick {
                 Button(intent: MarkDoneIntent(taskId: item.id)) {
@@ -84,7 +85,7 @@ struct TaskRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Mark done: \(name)")
+                .accessibilityLabel("Mark done: \(spoken)")
             } else {
                 RoundedRectangle(cornerRadius: 2).fill(Theme.horizon(item.horizon)).frame(width: 3, height: 18).accessibilityHidden(true)
             }
@@ -98,7 +99,7 @@ struct TaskRow: View {
                 .contentShape(Rectangle())
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(name), \(item.late ? "late, " : "")\(item.dueLabel)")
+            .accessibilityLabel("\(spoken), \(item.late ? "late, " : "")\(item.dueLabel)")
         }
         .font(.system(size: 12))
         .frame(height: height)

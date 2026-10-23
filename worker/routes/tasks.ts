@@ -140,6 +140,10 @@ async function crossKindLinks(env: Env, task: Task, own: string[], kind: Kind): 
 export async function completeTask(env: Env, task: Task, fields: string[] = [], actor: TaskEvent['actor'] = 'you', data?: unknown): Promise<{ task: Task; next?: Task }> {
   const t = now();
   const done: Task = { ...task, status: 'done', done_at: t, updated_at: t };
+  // Only one of two concurrent completes (a widget tick racing the app's queued tick) wins this conditional UPDATE; the loser changes nothing:
+  // no second event, unblock push or recurrence.
+  const won = await env.DB.prepare(`UPDATE tasks SET status = 'done', done_at = ?2, updated_at = ?2 WHERE id = ?1 AND status != 'done'`).bind(task.id, t).run();
+  if (!won.meta.changes) return { task: (await loadTask(env, task.id)) ?? done };
   await updateTask(env, done, ['status', 'done_at', ...fields]);
   await addEvent(env, done, actor, 'done', data); // data: e.g. { via: 'widget' }
   await notifyUnblocked(env, done); // V3: also when Kelly completes it (the one path)

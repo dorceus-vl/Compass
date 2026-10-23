@@ -1643,6 +1643,11 @@ D1X "DELETE FROM audit_log WHERE actor='widget'" >/dev/null
 [ "$(wdone "$WTK" no-such-task)" = 404 ] || fail "w: a missing task is not 404"
 [ "$(wdone "$WTK" $WR)" = 200 ] || fail "w: done on a recurring task"
 curl "${H[@]}" "$B/api/tasks?status=all" | js "d.tasks.filter(t=>t.title==='Smoke widget recur'&&t.status!=='done').length===1" | grep -qx true || fail "w: the recurrence did not make the next task"
+# two completes at once (a widget tick racing the app's queued tick): one recurrence, one done event, whichever wins
+WC=$(curl "${H[@]}" -X POST $B/api/tasks -d '{"title":"Smoke widget race","due_at":"2026-01-01","recur":"{\"freq\":\"daily\",\"interval\":1}"}' | js d.task.id)
+RP=(); for i in 1 2 3; do wdone "$WTK" $WC >/dev/null & RP+=($!); curl "${H[@]}" -o /dev/null -X POST $B/api/tasks/$WC/done & RP+=($!); done; wait "${RP[@]}" # not a bare wait: an earlier background job of this script may still run
+curl "${H[@]}" "$B/api/tasks?status=all" | js "d.tasks.filter(t=>t.title==='Smoke widget race'&&t.status!=='done').length===1" | grep -qx true || fail "w: concurrent completes made two recurrences (or none)"
+[ "$(D1X "SELECT count(*) AS n FROM task_events WHERE task_id='$WC' AND type='done'" | js 'd[0].results[0].n')" = 1 ] || fail "w: concurrent completes wrote two done events"
 WTR=$(curl "${H[@]}" -X POST $B/api/tasks -d '{"title":"Smoke widget trashed"}' | js d.task.id); curl "${H[@]}" -X DELETE $B/api/tasks/$WTR >/dev/null
 [ "$(wdone "$WTK" $WTR)" = 404 ] || fail "w: a trashed task is not 404"
 [ "$(D1X "SELECT last_used_at IS NOT NULL AS u FROM widget_tokens WHERE id='$WTID'" | js 'd[0].results[0].u')" = 1 ] || fail "w: last_used_at not set"

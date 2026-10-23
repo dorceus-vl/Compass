@@ -11,6 +11,7 @@ const url = process.env.COMPASS_URL ?? 'https://compass.knocturnlabs.com';
 const config: CapacitorConfig = {
   appId: 'com.knocturnlabs.compass',
   appName: 'Compass',
+  loggingBehavior: 'none', // a debug build would otherwise log every plugin call's options in the web inspector, including setWidgetToken's token
   webDir: 'www',
   server: { url, errorPath: 'offline.html', allowNavigation: [new URL(url).hostname], cleartext: url.startsWith('http:') },
   // 'never': the page pads for the notch and the home bar itself (viewport-fit=cover, env(safe-area-inset-*)).

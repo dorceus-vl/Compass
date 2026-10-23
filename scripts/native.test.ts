@@ -296,5 +296,9 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
   assert.ok(readFileSync('mobile/ios/App/App/App.entitlements', 'utf8').includes('$(AppIdentifierPrefix)com.knocturnlabs.compass.shared'), 'keychain group in the app entitlements');
   assert.ok(readFileSync('mobile/ios/App/App/Info.plist', 'utf8').includes('<key>WidgetKeychainGroup</key>'), 'the app reads its Keychain group from Info.plist');
   assert.ok(!/NSFileProtectionNone|\.noFileProtection/.test(readFileSync('mobile/ios/App/App/WidgetStore.swift', 'utf8')) && readFileSync('mobile/ios/App/App/WidgetStore.swift', 'utf8').includes('.completeFileProtectionUntilFirstUserAuthentication'), 'snapshot file protection');
+  // the hide-work switch must reach the widgets when it is saved (both platforms use this page code), not only at the next foreground
+  const settings = readFileSync('web/src/views/Settings.tsx', 'utf8');
+  assert.ok(/if \(patch\.widgets\) void writeWidgets\(\)/.test(settings) && settings.indexOf("method: 'PATCH', json: patch") < settings.indexOf('writeWidgets().catch'), 'Settings rewrites the widget snapshot right after a widgets setting saves');
+  assert.ok(/export async function writeWidgets/.test(readFileSync('web/src/widgets.ts', 'utf8')), 'the writer is exported');
 }
 console.log('native: ok');
