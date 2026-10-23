@@ -216,8 +216,8 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | --- | --- |
 | Web PWA at compass.knocturnlabs.com, installable, offline | v1 |
 | Mac app (Tauri): menu-bar quick add, global hotkey, notifications, Spotlight-like palette | v1 |
-| iPhone and iPad (Capacitor): push, share sheet, widgets (Today, next task), Siri intents | v1 app, v2 widgets and Siri |
-| Android (Capacitor): push (FCM), share, widget | v1 app, v2 widget |
+| iPhone and iPad (Capacitor): push, share sheet, widgets (Today small, medium and large, Quick add, Ask Athena, Project pulse, Lock Screen, iPad This week), Siri intents | v1 app, v2 widgets (done, v2.3: private, offline, tick a task from the widget with a one-action token; needs the device setup) and Siri |
+| Android (Capacitor): push (FCM), share, widgets (Today, Quick add, Ask Athena, Project pulse, This week; no Lock Screen) | v1 app, v2 widgets (done, v2.3: the same snapshot and tick token, no new library) |
 | Apple Watch complication (next task, done) | later |
 | Aura wall tablet kiosk card | v2 |
 | Keyboard shortcuts everywhere, full accessibility (focus rings, 44px targets, reduced motion) | v1 |

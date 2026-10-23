@@ -119,6 +119,14 @@ iOS only
 - iPad: Today, Report download popover, sign-in sheet.
 - `shouldOverrideLoad` / `window.open` paths in `CompassViewController` (a `target=_blank` Compass link opens in place, others in Safari).
 
+Widgets (v2.3; needs the Worker deployed with migration 0016 for ticking)
+- iPhone and iPad, once: register the App ID `com.knocturnlabs.compass.widgets` in Apple Developer with the App Group `group.com.knocturnlabs.compass` and Keychain Sharing (or let Xcode do it on the first signed build of `CompassWidgets`), then build to the device (Install on a device, above). Open Compass once and sign in so a snapshot exists.
+- Add the widgets: long-press the Home Screen, Edit, Add Widget, Compass: Today (small, medium, large), Quick add, Ask Athena, Project pulse (Edit Widget picks the project); Lock Screen: inline, circular, rectangular; iPad: This week (extra large). Before the first open they say "Open Compass once to fill this widget".
+- Settings, Widgets, "Tick tasks from widgets": turn on, answer the passkey prompt; the device shows under "Devices that can tick". Tick a circle on the medium widget: it fills at once, the task is done in Compass within a few seconds (check the Today screen); in airplane mode it stays ticked and the app sends it when opened. Revoke in Settings and tick again: nothing is sent and the tick waits for the app.
+- Taps: a task opens it in the app, the header opens Today, Quick add opens the palette, Ask Athena opens `/athena`, Project pulse opens that project's Dashboard.
+- Privacy: with "Hide work titles on the Lock Screen" on, a work task shows "Work task" on the Lock Screen widgets and is redacted in StandBy (and on a locked iPhone's Home Screen); an Offline-only project's task never shows a title. Turn the switch off and a work title shows.
+- Android: install the debug build (above), open Compass and sign in, long-press the Home Screen, Widgets, Compass, and add Today (2x2, 4x2, 4x4), Quick add, Ask Athena, Project pulse (pick a project when asked; touch and hold to change) and, on a tablet, This week. Turn on "Tick tasks from widgets" in Settings, Widgets (passkey), tick a circle on the 4x2 Today widget, and check the task is done in Compass. Midnight rollover: leave a device overnight, or change the date and time past midnight; the widgets should read the new day (or say "open Compass to update") without opening the app.
+
 Android only
 - Real Knocturn ID round trip on the Samsung: passkey in the Custom Tab, back at `compass://auth`. Passkeys need `https://knocturnlabs.com/.well-known/assetlinks.json` to name the app (deployed in Task 6 Step 4).
 - App Link verification (`~/Library/Android/sdk/platform-tools/adb shell pm get-app-links com.knocturnlabs.compass` says verified; needs `https://compass.knocturnlabs.com/.well-known/assetlinks.json` deployed (Task 6 Step 4) and the signing key's fingerprint in it).
