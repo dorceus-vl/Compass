@@ -114,7 +114,9 @@ export function replay(onSignedOut?: () => void): Promise<void> {
   return exclusive(async () => {
     try {
       const ops = (await idb.all<QueuedOp>('queue')).sort((a, b) => a.seq! - b.seq!);
+      const dropped = new Set<number>();
       for (const op of ops) {
+        if (dropped.has(op.seq!)) continue;
         // Temporary ids may sit in the path and the body; the map lives in `meta` so ops queued across separate replays resolve.
         const raw = JSON.stringify({ path: op.path, json: op.json });
         const map: Record<string, string> = {};
@@ -136,6 +138,9 @@ export function replay(onSignedOut?: () => void): Promise<void> {
             toast(`Compass couldn't save a change to ${t?.title ?? j?.title ?? 'a task'}: ${why}`);
           }
           if (path.startsWith('/time')) toast(`Compass couldn't save a time entry: ${(e as Error).message}`); // the server's sentence
+          if (op.tempId) for (const o of ops) { // a refused create: its later edits (a stop, a PATCH) name a row that will never exist
+            if (o.seq! > op.seq! && JSON.stringify({ p: o.path, j: o.json }).includes(op.tempId)) { await idb.del('queue', o.seq!); dropped.add(o.seq!); }
+          }
           try { if (op.tempId && op.store) await idb.del(op.store, op.tempId); else await refetch(path); }
           catch (e2) { if (e2 instanceof SignedOut) { onSignedOut?.(); return; } console.error('resync failed', e2); }
           continue;

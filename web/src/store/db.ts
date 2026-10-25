@@ -12,6 +12,7 @@ function openDb(): Promise<IDBDatabase> {
       for (const s of ['tasks', 'projects', 'milestones', 'time', 'meta'] as const) if (!has(s)) db.createObjectStore(s, { keyPath: 'id' });
       if (!has('queue')) db.createObjectStore('queue', { keyPath: 'seq', autoIncrement: true });
     };
+    req.onblocked = () => void import('../ui/dialogs.tsx').then((d) => d.toast('Close other Compass tabs to finish updating')); // a v1 tab has no onversionchange, so it holds the upgrade until closed
     req.onsuccess = () => { const db = req.result; db.onversionchange = () => { db.close(); dbp = null; }; resolve(db); }; // a newer tab's upgrade is never blocked by this one
     req.onerror = () => reject(req.error);
   }));

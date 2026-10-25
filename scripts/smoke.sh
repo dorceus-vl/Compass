@@ -1826,6 +1826,15 @@ X=$(tpost time/$TE1/stop '{}'); [ "$(kst "$X")" = 200 ] || fail "t0: stop: $X"
 TEND=$(kbody "$X" | js d.entry.ended_at); [ "$TEND" != null ] || fail "t0: stop left it running"
 X=$(tpost time/$TE1/stop '{}'); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.entry.ended_at)" = "$TEND" ] || fail "t0: a second stop changed it: $X"
 [ "$(kst "$(tpost time/no-such-entry/stop '{}')")" = 404 ] || fail "t0: stopping a missing entry is not 404"
+# a note edit after a stop never revives the timer; an edit naming the pre-stop version is 409 time_conflict (compare-and-swap)
+X=$(tpost time "{\"task_id\":\"${TT[5]}\"}"); [ "$(kst "$X")" = 201 ] || fail "t0: start for the CAS check: $X"
+TES=$(kbody "$X" | js d.entry.id); TEU=$(kbody "$X" | js d.entry.updated_at)
+[ "$(kst "$(tpost time/$TES/stop '{}')")" = 200 ] || fail "t0: stop for the CAS check"
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/time/$TES -d '{"note":"Smoke after stop"}'); [ "$(kst "$X")" = 200 ] || fail "t0: a note edit after a stop: $X"
+[ "$(D1X "SELECT count(*) AS n FROM time_entries WHERE id='$TES' AND ended_at IS NOT NULL" | js 'd[0].results[0].n')" = 1 ] || fail "t0: a note edit revived a stopped timer"
+TB="{\"note\":\"Smoke stale\",\"updated_at\":\"$TEU\"}"; X=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/time/$TES -d "$TB")
+[ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q time_conflict || fail "t0: a stale edit is not 409: $X"
+[ "$(D1X "SELECT note AS a FROM time_entries WHERE id='$TES'" | js 'd[0].results[0].a')" = "Smoke after stop" ] || fail "t0: a stale edit was written"
 # refusals
 iso() { node -pe "new Date(Date.now()+($1)*6e4).toISOString()"; }
 TB="{\"task_id\":\"${TT[0]}\",\"started_at\":\"$(iso -30)\",\"ended_at\":\"$(iso 10)\"}"; X=$(tpost time "$TB"); [ "$(kst "$X")" = 400 ] && kbody "$X" | grep -q bad_time || fail "t0: a manual end 10 minutes ahead: $X"
@@ -1867,7 +1876,7 @@ D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'time.%' AND detail L
 # clean up (local D1 only)
 D1X "DELETE FROM time_entries WHERE created_at >= '$T0'" >/dev/null
 curl "${H[@]}" -X DELETE $B/api/projects/$TPJ >/dev/null
-echo "smoke: (t0) time: start 201 running, same task 409 timer_running, sixth 409 timer_limit, stop twice same end, future end / 25 h / no project note 400, done task 409 time_target, work note ciphertext (personal plain), since returns a trashed entry, Trash lists and restores it (running beside a new one 409), Empty Trash removes a purged task's entries, export opens them"
+echo "smoke: (t0) time: start 201 running, same task 409 timer_running, sixth 409 timer_limit, stop twice same end, future end / 25 h / no project note 400, done task 409 time_target, work note ciphertext (personal plain), since returns a trashed entry, note edit after a stop keeps it stopped, stale edit 409 time_conflict, Trash lists and restores it (running beside a new one 409), Empty Trash removes a purged task's entries, export opens them"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

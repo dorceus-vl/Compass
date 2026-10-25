@@ -135,10 +135,14 @@ time.patch('/:id', async (c) => {
   // T2: sealed by the entry's own kind, never the task's current one.
   const s = await seal(c.env, 'time_entries', { ...next, enc_v: 0 });
   next.enc_v = s.enc_v;
-  // 6 binds
-  await c.env.DB.prepare('UPDATE time_entries SET started_at = ?2, ended_at = ?3, note = ?4, auto_stopped = 0, updated_at = ?5, enc_v = ?6 WHERE id = ?1 AND deleted_at IS NULL')
-    .bind(stored.id, s.started_at, s.ended_at, s.note, s.updated_at, s.enc_v).run();
-  await audit(c.env, 'you', 'time.edit', stored.id, Object.keys(body).filter((k) => ['started_at', 'ended_at', 'note'].includes(k)));
+  // Compare-and-swap: only the columns in the body are written, and only over the row we read (or the version the caller names in `updated_at`),
+  // so a stop that lands meanwhile (cron auto-stop, widget, another device) is never undone. At most 7 binds.
+  const fields = (['started_at', 'ended_at', 'note'] as const).filter((k) => k in body);
+  const expected = typeof body.updated_at === 'string' ? body.updated_at : stored.updated_at;
+  const r = await c.env.DB.prepare(`UPDATE time_entries SET ${fields.map((k, i) => `${k} = ?${i + 5}, `).join('')}auto_stopped = 0, updated_at = ?3, enc_v = ?4 WHERE id = ?1 AND deleted_at IS NULL AND updated_at = ?2`)
+    .bind(stored.id, expected, s.updated_at, s.enc_v, ...fields.map((k) => s[k])).run();
+  if (!r.meta.changes) return c.json({ error: 'time_conflict', message: 'This entry changed meanwhile; try again' }, 409);
+  await audit(c.env, 'you', 'time.edit', stored.id, fields);
   return c.json({ entry: next });
 });
 
