@@ -107,6 +107,9 @@ const daysOf = (w: ReturnType<typeof run>, id: string) => w.weeks.flatMap((wk) =
   assert.deepEqual(w.weeks[1].over, { work: 120, personal: 60 });
   assert.deepEqual(w.weeks[2].capacity, { work: 2400, personal: 480 });
   assert.deepEqual(w.weeks[2].over, { work: 0, personal: 0 });
+  // An override on the current week is cut to the weekdays left too (3/5 on a Wednesday).
+  const cw = run([], { ...S, overrides: { '2026-10-26': { work: 20, personal: 5 } } });
+  assert.deepEqual(cw.weeks[0].capacity, { work: 20 * 60 * 3 / 5, personal: 5 * 60 * 3 / 5 });
   // On a weekend nothing is left of the current week.
   const sat = workload([t('v', { due_at: '2026-10-31' })], S, '2026-10-31', TZ);
   assert.deepEqual(sat.weeks[0].capacity, { work: 0, personal: 0 });

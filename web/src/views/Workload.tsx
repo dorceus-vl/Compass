@@ -160,6 +160,10 @@ export function Workload() {
             {(cw, by) => <StackedBars id={`wl-${kind}`} w={cw} weeks={weeks} kind={kind} segs={segsOf(kind)} describedBy={by} selected={pick?.kind === kind ? pick.start : null}
               onPick={(start) => setPick(pick?.kind === kind && pick.start === start ? null : { kind, start })} />}
           </ChartFrame>
+            <label className="wl-pick">Week<select className="field" value={pick?.kind === kind ? pick.start : ''} onChange={(e) => setPick(e.target.value ? { kind, start: e.target.value } : null)}>
+              <option value="">Choose a week to list its tasks</option>
+              {weeks.map((x) => <option key={x.start} value={x.start}>{short(x.start)}: {hrs(x.minutes[kind])} of {hrs(x.capacity[kind])}{x.over[kind] ? `, +${hrs(x.over[kind])} over` : ''}</option>)}
+            </select></label>
             {pick?.kind === kind && chosen && <section className="wl-week" aria-live="polite">
               <h3>Week of {short(chosen.start)} · {hrs(chosen.minutes[kind])} of {hrs(chosen.capacity[kind])}</h3>
               {chosen[kind].length === 0 ? <p className="hint">Nothing planned this week.</p> : <ul className="wl-list">
