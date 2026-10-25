@@ -1788,6 +1788,22 @@ G2B="{\"program_id\":\"$G2ID\",\"project_id\":\"$G2P\",\"from\":\"2026-10-01\",\
 # clean up (local D1 only): what g2 made
 D1X "DELETE FROM milestones WHERE project_id = '$G2P'; DELETE FROM task_events WHERE task_id = '$G2T'; DELETE FROM tasks WHERE id = '$G2T'; DELETE FROM projects WHERE id = '$G2P'; DELETE FROM programs WHERE id = '$G2ID'" >/dev/null
 echo "smoke: (g2) program summary: numbers and RAG words only on the stub (no names), one copilot ai_usage row; an Offline-only member refuses with no row; both ids and neither 400; a missing program 404"
+# (g3) v2.4 Task 4: settings.workload (P9). A row without the key reads the defaults; hours over 168, an override on a Tuesday and 105 overrides are 400;
+# an override is saved and a null removes it. The stored workload is put back as it was.
+D1X "UPDATE settings SET json = json_remove(json_set(json, '\$.workload_saved', json_extract(json, '\$.workload')), '\$.workload') WHERE id = 1" >/dev/null
+G3=$(curl "${H[@]}" $B/api/settings | js "JSON.stringify(d.workload)")
+D1X "UPDATE settings SET json = json_set(json, '\$.workload', json(json_extract(json, '\$.workload_saved'))) WHERE id = 1 AND json_extract(json, '\$.workload_saved') IS NOT NULL; UPDATE settings SET json = json_remove(json, '\$.workload_saved') WHERE id = 1" >/dev/null
+[ "$G3" = '{"work_hours":40,"personal_hours":8,"day_hours":8,"default_estimate_minutes":60,"overrides":{}}' ] || fail "g3: an older settings row does not read the defaults: $G3"
+G3B='{"workload":{"work_hours":200}}'; [ "$(kst "$(gpatch settings "$G3B")")" = 400 ] || fail "g3: work_hours 200 is not 400"
+G3B='{"workload":{"day_hours":0}}'; [ "$(kst "$(gpatch settings "$G3B")")" = 400 ] || fail "g3: day_hours 0 is not 400"
+G3B='{"workload":{"overrides":{"2030-01-08":{"work":10,"personal":0}}}}'; [ "$(kst "$(gpatch settings "$G3B")")" = 400 ] || fail "g3: an override on a Tuesday is not 400"
+G3B=$(node -pe "const o={};for(let i=0;i<105;i++)o[new Date(Date.UTC(2030,0,7+7*i)).toISOString().slice(0,10)]={work:1,personal:1};JSON.stringify({workload:{overrides:o}})")
+[ "$(kst "$(gpatch settings "$G3B")")" = 400 ] || fail "g3: 105 overrides are not 400"
+G3B='{"workload":{"overrides":{"2030-01-07":{"work":10,"personal":2}}}}'; G3=$(gpatch settings "$G3B")
+[ "$(kst "$G3")" = 200 ] && [ "$(kbody "$G3" | js "JSON.stringify(d.workload.overrides['2030-01-07'])")" = '{"work":10,"personal":2}' ] || fail "g3: a valid override: $G3"
+G3B='{"workload":{"overrides":{"2030-01-07":null}}}'; G3=$(gpatch settings "$G3B")
+[ "$(kst "$G3")" = 200 ] && [ "$(kbody "$G3" | js "'2030-01-07' in d.workload.overrides")" = false ] || fail "g3: a null override is not removed: $G3"
+echo "smoke: (g3) workload settings: an older row reads the defaults; work_hours 200, day_hours 0, a Tuesday override and 105 overrides 400; an override saved, then removed by null"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

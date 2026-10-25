@@ -38,10 +38,11 @@ const ICONS: Record<string, ReactNode> = {
   mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>,
 
 };
+ICONS.workload = ICONS.bars; // NAV keys double as icon names
 export const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{ICONS[name]}</svg>;
 
 const NAV = [
-  ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'],
+  ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'], ['workload', '/workload', 'Workload'],
   ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['knowledge', '/knowledge', 'Knowledge'], ['athena', '/athena', 'Athena'],
 ] as const;
 
@@ -91,7 +92,7 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
         <Link to="/" className={on('today')} aria-current={on('today') ? 'page' : undefined}><Icon name="today" />Today</Link><Link to="/board" className={on('board')} aria-current={on('board') ? 'page' : undefined}><Icon name="board" />Board</Link>
         <button type="button" className="add" onClick={onPalette} aria-label="Quick add"><Icon name="plus" /></button>
         <Link to="/projects" className={on('projects')} aria-current={on('projects') ? 'page' : undefined}><Icon name="projects" />Projects</Link>
-        <Link to="/settings" className={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar')} aria-current={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+        <Link to="/settings" className={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') || on('workload')} aria-current={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') || on('workload') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
       </nav>
     </div>
   );

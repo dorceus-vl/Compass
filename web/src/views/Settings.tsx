@@ -19,11 +19,12 @@ import { loadUsage, providerReady, spend, type Usage } from '../copilot.ts';
 import { saveBytes } from '../docs/download.ts';
 import { exportMarkdown } from '../docs/export-md.ts';
 import { SCOPE_LABEL } from '../../../shared/kelly-log.ts';
+import { parseEstimate, formatEstimate } from '../../../shared/workload.ts';
 
-type Patch = Partial<Omit<Settings, 'wip_limits' | 'push'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']> };
+type Patch = Partial<Omit<Settings, 'wip_limits' | 'push' | 'workload'>> & { wip_limits?: Partial<Settings['wip_limits']>; push?: Partial<Settings['push']>; workload?: Partial<Omit<Settings['workload'], 'overrides'>> };
 type Save = (patch: Patch) => Promise<void>;
 const MORE = [['inbox', '/inbox', 'Inbox'], ['meetings', '/meetings', 'Meetings'], ['review', '/review', 'Weekly review'], ['library', '/library', 'Library'], ['knowledge', '/knowledge', 'Knowledge'], ['athena', '/athena', 'Athena'],
-  ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'], ['timeline', '/timeline', 'Timeline'], ['trash', '/trash', 'Trash']] as const;
+  ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'], ['bars', '/workload', 'Workload'], ['timeline', '/timeline', 'Timeline'], ['trash', '/trash', 'Trash']] as const;
 const WIP_LABELS: Partial<Record<Status, string>> = { new: 'New', progress: 'In progress', hold: 'On hold', waiting: 'Waiting on' };
 
 export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
@@ -40,7 +41,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   // Optimistic: show the change now, send only the changed key (the server merges WIP per status), ignore replies older than the newest request.
   const save = async (patch: Patch) => {
     const n = ++latest.current;
-    setS((cur) => cur && { ...cur, ...patch, wip_limits: { ...cur.wip_limits, ...patch.wip_limits }, push: { ...cur.push, ...patch.push } });
+    setS((cur) => cur && { ...cur, ...patch, wip_limits: { ...cur.wip_limits, ...patch.wip_limits }, push: { ...cur.push, ...patch.push }, workload: { ...cur.workload, ...patch.workload } });
     try {
       const next = await api<Settings>('/settings', { method: 'PATCH', json: patch });
       if (n === latest.current) { setS(next); toast('Saved'); }
@@ -77,6 +78,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
         {row('Weekly review on', <select className="field" value={s.weekly_review_day} onChange={(e) => save({ weekly_review_day: Number(e.target.value) })}>{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => <option key={d} value={i}>{d}</option>)}</select>)}
         {row('Time zone', <input className="field" defaultValue={s.tz} onBlur={(e) => e.target.value !== s.tz && save({ tz: e.target.value })} />)}
       </div>
+      <WorkloadCard s={s} save={save} />
       <Notifications s={s} save={save} />
       <Rules />
       <Email s={s} save={save} />
@@ -338,6 +340,32 @@ function ExportCard() {
         <button type="button" className="btn" disabled={busy} onClick={run('json')}>Export everything (JSON)</button>
         <button type="button" className="btn" disabled={busy} onClick={run('zip')}>Export as Markdown (zip)</button>
       </div>
+    </div>
+  );
+}
+
+/** Settings → Workload (v2.4, P9): weekly capacity, the hours in a day ("1d" in an estimate) and what a task with no estimate counts as. Week overrides live on the Workload screen. */
+function WorkloadCard({ s, save }: { s: Settings; save: Save }) {
+  const w = s.workload;
+  const row = (label: string, el: ReactElement) => <label key={label} className="ai-row">{label}{el}</label>;
+  const num = (k: 'work_hours' | 'personal_hours' | 'day_hours', lo: number, hi: number) => (
+    <input key={`${k}:${w[k]}`} className="field" type="number" min={lo} max={hi} step="any" defaultValue={w[k]} onBlur={(e) => {
+      const v = Number(e.target.value);
+      if (e.target.value === '' || !Number.isFinite(v) || v < lo || v > hi) { toast(`Use a number from ${lo} to ${hi}`); e.target.value = String(w[k]); return; }
+      if (v !== w[k]) void save({ workload: { [k]: v } });
+    }} />);
+  return (
+    <div className="card ai-card">
+      <CardHead icon="bars" title="Workload" desc="How many hours a week you have, so Workload can show the weeks that are over." />
+      {row('Work hours a week', num('work_hours', 0, 168))}
+      {row('Personal hours a week', num('personal_hours', 0, 168))}
+      {row('Hours in a day (for 1d)', num('day_hours', 1, 24))}
+      {row('A task with no estimate counts as', <input key={`def:${w.default_estimate_minutes}`} className="field" placeholder="1h" defaultValue={formatEstimate(w.default_estimate_minutes)} onBlur={(e) => {
+        const v = parseEstimate(e.target.value, w.day_hours);
+        if (v == null || v > 2400) { toast('Use minutes or hours up to 40h, like 1h'); e.target.value = formatEstimate(w.default_estimate_minutes); return; }
+        if (v !== w.default_estimate_minutes) void save({ workload: { default_estimate_minutes: v } });
+      }} />)}
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-faint)' }}>Set a lighter week (leave, travel) on the <Link to="/workload">Workload</Link> screen.</p>
     </div>
   );
 }

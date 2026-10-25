@@ -54,6 +54,31 @@ settings.patch('/', async (c) => {
     if (b.hide_work_on_lock !== undefined && typeof b.hide_work_on_lock !== 'boolean') return c.json({ error: 'widgets.hide_work_on_lock must be true or false' }, 400);
     patch.widgets = { ...(await getSettings(c.env)).widgets, ...(b.hide_work_on_lock !== undefined && { hide_work_on_lock: b.hide_work_on_lock }) };
   }
+  if (body.workload !== undefined) { // capacity (P9): partial; an override set to null is removed
+    if (!body.workload || typeof body.workload !== 'object') return c.json({ error: 'workload must be an object' }, 400);
+    const b = body.workload as Record<string, unknown>, w = { ...(await getSettings(c.env)).workload };
+    const num = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+    for (const [k, lo, hi] of [['work_hours', 0, 168], ['personal_hours', 0, 168], ['day_hours', 1, 24], ['default_estimate_minutes', 0, 2400]] as const) {
+      if (b[k] === undefined) continue;
+      if (!num(b[k], lo, hi) || (k === 'default_estimate_minutes' && !Number.isInteger(b[k]))) return c.json({ error: `workload.${k} must be a number from ${lo} to ${hi}` }, 400);
+      w[k] = b[k] as number;
+    }
+    if (b.overrides !== undefined) {
+      if (!b.overrides || typeof b.overrides !== 'object' || Array.isArray(b.overrides)) return c.json({ error: 'workload.overrides must be an object keyed by Monday' }, 400);
+      const o = { ...w.overrides };
+      for (const [k, v] of Object.entries(b.overrides as Record<string, unknown>)) {
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(k) ? Date.parse(k + 'T00:00:00Z') : NaN;
+        if (Number.isNaN(day) || new Date(day).toISOString().slice(0, 10) !== k || new Date(day).getUTCDay() !== 1) return c.json({ error: 'workload.overrides keys must be Mondays (YYYY-MM-DD)' }, 400);
+        if (v === null) { delete o[k]; continue; }
+        const x = v as Record<string, unknown>;
+        if (!x || typeof x !== 'object' || !num(x.work, 0, 168) || !num(x.personal, 0, 168)) return c.json({ error: 'workload.overrides values must be { work, personal } hours from 0 to 168' }, 400);
+        o[k] = { work: x.work as number, personal: x.personal as number };
+      }
+      if (Object.keys(o).length > 104) return c.json({ error: 'workload.overrides can hold at most 104 weeks' }, 400);
+      w.overrides = o;
+    }
+    patch.workload = w;
+  }
   if (Array.isArray(body.work_email_domains)) {
     const d = body.work_email_domains;
     if (d.length > 10 || !d.every((x) => typeof x === 'string' && DOMAIN.test(x))) return c.json({ error: 'work_email_domains must be up to 10 lowercase domains' }, 400);

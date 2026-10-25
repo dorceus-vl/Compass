@@ -35,12 +35,12 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
   const [splitting, setSplitting] = useState(false);
   const [saveTpl, setSaveTpl] = useState(false);
   const [depQ, setDepQ] = useState('');
-  const [dayHours, setDayHours] = useState(8); // Task 4 adds settings.workload; until then 8
+  const [dayHours, setDayHours] = useState(8); // settings.workload.day_hours, for "1d"
   const [estText, setEstText] = useState<string | null>(null); // what is typed while it is not (yet) valid
   const [estBad, setEstBad] = useState(false);
   useEffect(() => {
     if (!navigator.onLine) return;
-    void api<{ workload?: { day_hours?: number } }>('/settings').then((s) => setDayHours(s.workload?.day_hours ?? 8)).catch(() => {});
+    void api<{ workload?: { day_hours?: number } }>('/settings').then((s) => setDayHours(s.workload?.day_hours ?? 8)).catch(() => {}); // an older server may not send it
   }, []);
   const fromMail = task?.source_kind === 'email';
   useEffect(() => {

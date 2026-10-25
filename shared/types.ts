@@ -57,6 +57,8 @@ export interface Settings {
   athena: { voice_id: string | null; speak_answers: boolean; portrait_id: string | null };
   /** iPhone and iPad widgets (v2.3, W8): on the Lock Screen a work task shows as "Work task" while this is on. */
   widgets: { hide_work_on_lock: boolean };
+  /** Workload (v2.4, P9): weekly capacity in hours, the hours in a working day (for "1d" estimates), the estimate a task without one counts as, and per-week overrides keyed by Monday. */
+  workload: { work_hours: number; personal_hours: number; day_hours: number; default_estimate_minutes: number; overrides: Record<string, { work: number; personal: number }> };
 }
 /** One of Athena's avatar loops (Settings → Athena). The file is served by GET /api/athena/media/:id. */
 export type AthenaClipState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -70,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kelly: { enabled: false, scopes: [] },
   athena: { voice_id: null, speak_answers: false, portrait_id: null },
   widgets: { hide_work_on_lock: true },
+  workload: { work_hours: 40, personal_hours: 8, day_hours: 8, default_estimate_minutes: 60, overrides: {} },
 };
 export interface TodayAnswer {
   date: string; short: Task[]; medium: Task[]; long: Task[]; overdue: Task[]; done_this_week: number; open_today: number;
