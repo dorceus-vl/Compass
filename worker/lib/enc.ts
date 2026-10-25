@@ -26,6 +26,8 @@ export const ENC_COLS = {
   // v2.2. A baseline's snapshot holds ids and dates only, but it is sealed with the name so a work plan's shape is not readable at rest.
   baselines: ['name', 'snapshot'],
   stakeholders: ['name', 'role', 'channel', 'notes'],
+  // v2.4. rag and kind stay plain.
+  programs: ['name', 'rag_reason', 'notes'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string | null }; // typed rows (Project, Milestone) have no index signature

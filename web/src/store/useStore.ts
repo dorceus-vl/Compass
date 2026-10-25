@@ -55,7 +55,7 @@ export async function trashTask(id: string): Promise<void> {
 export async function createProject(input: Partial<Project> & { name: string; kind: 'personal' | 'work' }): Promise<Project> {
   const t = now();
   const p: Project = { id: tmp(), status: 'active', rag: 'none', rag_reason: null, sponsor: null, objectives: null, scope_in: null, scope_out: null, success_criteria: null, phase: null,
-    start_at: null, end_at: null, budget_planned: null, budget_spent: null, data_boundary: input.kind === 'work' ? 'offline' : 'cloud', colour: null, sort: 0, enc_v: 0, created_at: t, updated_at: t, deleted_at: null, ...input };
+    start_at: null, end_at: null, budget_planned: null, budget_spent: null, program_id: null, budget_forecast: null, currency: 'CAD', data_boundary: input.kind === 'work' ? 'offline' : 'cloud', colour: null, sort: 0, enc_v: 0, created_at: t, updated_at: t, deleted_at: null, ...input };
   await enqueue({ method: 'POST', path: '/projects', json: { name: p.name, kind: p.kind }, tempId: p.id, store: 'projects' }, p);
   return p;
 }

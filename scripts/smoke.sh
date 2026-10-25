@@ -1683,6 +1683,69 @@ curl "${H[@]}" $B/api/widget/tokens | js "!d.tokens.some(t=>t.id==='$WTID'||t.id
 curl "${H[@]}" $B/api/export | grep -q "$WTK2" && fail "w: the export holds a token"
 D1X "DELETE FROM widget_tokens WHERE created_at >= '$T0'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
 echo "smoke: (w) widget tick: token 256-bit base64url and stored as SHA-256 only, listed without secrets, done with it (actor you, via widget, sealed for work, recurrence runs, last_used_at set), a done, missing or trashed task 404, bad tokens 401 with no audit row, the guard lets only that method and path through, audit rows hold ids and no text, 60 a minute then 429 (not audited), a new token for the same device and a revoke both end the old one at once"
+# (g0) v2.4 Task 0: programs. A work program is ciphertext in D1 (a personal one plain); kind is fixed (400); a project joins only a live program of its kind (400 program_kind,
+# program_missing); the 50-program cap holds on create and on restore; the detail of a 60-project program answers each member's latest baseline and the top 10 risks;
+# Trash lists a program by name; export opens it; Empty Trash with the program 31 days in Trash unlinks its projects and removes the row. Everything it made is removed.
+gpost() { curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/programs -d "$1"; }
+gpatch() { curl "${H[@]}" -w '\n%{http_code}' -X PATCH "$B/api/$1" -d "$2"; }
+GW=$(gpost "{\"kind\":\"work\",\"name\":\"Smoke program $R\",\"rag\":\"amber\",\"rag_reason\":\"Smoke reason\",\"notes\":\"Smoke notes\"}"); [ "$(kst "$GW")" = 201 ] || fail "g0: create a work program: $GW"
+GWID=$(kbody "$GW" | js d.program.id)
+GP=$(gpost "{\"kind\":\"personal\",\"name\":\"Smoke own program $R\"}"); [ "$(kst "$GP")" = 201 ] || fail "g0: create a personal program: $GP"
+GPID=$(kbody "$GP" | js d.program.id)
+RAWG=$(D1X "SELECT name||'|'||rag_reason||'|'||notes||'|'||rag||'|'||enc_v AS a FROM programs WHERE id='$GWID'" | js 'd[0].results[0].a')
+case "$RAWG" in *Smoke*) fail "g0: a work program is not sealed in D1: $RAWG";; esac
+[ "${RAWG##*|}" = 2 ] && case "$RAWG" in *"|amber|2") ;; *) false;; esac || fail "g0: a work program's enc_v or rag: $RAWG"
+[ "$(D1X "SELECT name||'|'||enc_v AS a FROM programs WHERE id='$GPID'" | js 'd[0].results[0].a')" = "Smoke own program $R|0" ] || fail "g0: a personal program is not plain"
+curl "${H[@]}" $B/api/programs | js "d.programs.some(g=>g.id==='$GWID'&&g.name==='Smoke program $R'&&g.notes==='Smoke notes')" | grep -qx true || fail "g0: the list does not open the work program"
+for b in '{"kind":"work","name":""}' '{"kind":"team","name":"x"}' '{"name":"x"}' '{"kind":"work","name":"x","rag":"blue"}' "{\"kind\":\"work\",\"name\":\"$(printf 'x%.0s' $(seq 121))\"}"; do
+  [ "$(kst "$(gpost "$b")")" = 400 ] || fail "g0: a bad program body is not 400: $b"
+done
+GK=$(gpatch programs/$GWID '{"kind":"personal"}'); [ "$(kst "$GK")" = 400 ] && kbody "$GK" | grep -q program_kind_fixed || fail "g0: PATCH kind: $GK"
+GB="{\"name\":\"Smoke program renamed $R\",\"rag\":\"red\"}"; GRN=$(gpatch programs/$GWID "$GB") # a body with a comma goes through a variable: inside "$( )" bash would brace-expand it
+[ "$(kst "$GRN")" = 200 ] && kbody "$GRN" | js "d.program.name+'/'+d.program.rag" | grep -qx "Smoke program renamed $R/red" || fail "g0: rename: $GRN"
+D1X "SELECT name||rag_reason AS a FROM programs WHERE id='$GWID'" | js 'd[0].results[0].a' | grep -q Smoke && fail "g0: a renamed work program is plain"
+# a project joins only a live program of its own kind
+GWP=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke program member","kind":"work"}' | js d.project.id)
+GA=$(gpatch projects/$GWP "{\"program_id\":\"$GPID\"}"); [ "$(kst "$GA")" = 400 ] && kbody "$GA" | grep -q '"program_kind"' || fail "g0: work project into a personal program: $GA"
+GA=$(gpatch projects/$GWP "{\"program_id\":\"no-such-program\"}"); [ "$(kst "$GA")" = 400 ] && kbody "$GA" | grep -q program_missing || fail "g0: a missing program: $GA"
+GA=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/projects -d "{\"name\":\"Smoke wrong kind\",\"kind\":\"personal\",\"program_id\":\"$GWID\"}"); [ "$(kst "$GA")" = 400 ] && kbody "$GA" | grep -q '"program_kind"' || fail "g0: POST a personal project into a work program: $GA"
+GA=$(gpatch projects/$GWP "{\"program_id\":\"$GWID\",\"budget_forecast\":1200.5,\"currency\":\"USD\"}"); [ "$(kst "$GA")" = 200 ] || fail "g0: join the work program: $GA"
+[ "$(D1X "SELECT program_id||'|'||budget_forecast||'|'||currency AS a FROM projects WHERE id='$GWP'" | js 'd[0].results[0].a')" = "$GWID|1200.5|USD" ] || fail "g0: the project's program, forecast or currency was not stored"
+[ "$(kst "$(gpatch projects/$GWP '{"currency":"usd"}')")" = 400 ] && [ "$(kst "$(gpatch projects/$GWP '{"budget_forecast":-1}')")" = 400 ] || fail "g0: a bad currency or forecast is not 400"
+curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke default currency","kind":"personal"}' | js "d.project.currency+'|'+d.project.program_id" | grep -qx 'CAD|null' || fail "g0: a new project's currency is not CAD"
+# the cap: fill to 50 live programs by SQL, the 51st is 409; trash one, take its place, and its restore is 409
+GN=$(D1X "SELECT count(*) AS n FROM programs WHERE deleted_at IS NULL" | js 'd[0].results[0].n')
+[ "$GN" -lt 50 ] || fail "g0: the local D1 already holds $GN programs"
+D1X "INSERT INTO programs (id, kind, name, created_at, updated_at) WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM c WHERE i < $((50 - GN))) SELECT 'smkpg-$R-'||i, 'personal', 'bulk', '$TS', '$TS' FROM c" >/dev/null
+[ "$(D1X "SELECT count(*) AS n FROM programs WHERE deleted_at IS NULL" | js 'd[0].results[0].n')" = 50 ] || fail "g0: seeding did not reach 50"
+GC=$(gpost '{"kind":"personal","name":"one too many"}'); [ "$(kst "$GC")" = 409 ] && kbody "$GC" | grep -q program_limit || fail "g0: the 51st program: $GC"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/programs/smkpg-$R-1)" = 200 ] || fail "g0: trash a program"
+[ "$(kst "$(gpost '{"kind":"personal","name":"Smoke fiftieth"}')")" = 201 ] || fail "g0: the 50th program after a trash"
+GR=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/programs/smkpg-$R-1/restore); [ "$(kst "$GR")" = 409 ] && kbody "$GR" | grep -q program_limit || fail "g0: restore at the cap: $GR"
+# detail: 60 work members, one baseline and one risk each (the first member also has an older baseline and two pending changes)
+D1X "INSERT INTO projects (id, name, kind, data_boundary, program_id, created_at, updated_at) WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM c WHERE i < 60) SELECT 'smkgp-$R-'||i, 'bulk', 'work', 'offline', '$GWID', '$TS', '$TS' FROM c" >/dev/null
+D1X "INSERT INTO baselines (id, project_id, name, snapshot, taken_at, created_at, updated_at) WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM c WHERE i < 60) SELECT 'smkgb-$R-'||i, 'smkgp-$R-'||i, 'bulk', '{\"tasks\":[],\"milestones\":[],\"project\":{\"start_at\":null,\"end_at\":\"2026-06-30\"}}', '2026-10-0'||(1+i%9)||'T00:00:00.000Z', '$TS', '$TS' FROM c" >/dev/null
+D1X "INSERT INTO baselines (id, project_id, name, snapshot, taken_at, created_at, updated_at) VALUES ('smkgb-$R-old', 'smkgp-$R-1', 'old', '{\"tasks\":[],\"milestones\":[],\"project\":{\"start_at\":null,\"end_at\":\"2026-01-01\"}}', '2026-09-01T00:00:00.000Z', '$TS', '$TS')" >/dev/null
+D1X "INSERT INTO raid_items (id, project_id, type, text, probability, impact, created_at, updated_at) WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM c WHERE i < 60) SELECT 'smkgr-$R-'||i, 'smkgp-$R-'||i, 'risk', 'bulk risk', 1+i%5, 1+(i/5)%5, '$TS', '$TS' FROM c" >/dev/null
+D1X "INSERT INTO change_requests (id, project_id, title, created_at, updated_at) VALUES ('smkgc-$R-1', 'smkgp-$R-1', 'c', '$TS', '$TS'), ('smkgc-$R-2', 'smkgp-$R-1', 'c', '$TS', '$TS')" >/dev/null
+GD=$(curl "${H[@]}" -D - $B/api/programs/$GWID/detail)
+echo "$GD" | grep -qi 'cache-control: private, no-store' || fail "g0: the detail is cacheable"
+echo "$GD" | tail -1 | js "const b=d.baselines.find(x=>x.project_id==='smkgp-$R-1'); [d.program.name, d.baselines.length, b.snapshot.project.end_at, d.risks.length, d.risks.every((r,i,a)=>!i||a[i-1].probability*a[i-1].impact>=r.probability*r.impact), d.risks[0].title, JSON.stringify(d.pending_changes)].join('/')" \
+  | grep -Fqx "Smoke program renamed $R/60/2026-06-30/10/true/bulk risk/[{\"project_id\":\"smkgp-$R-1\",\"n\":2}]" || fail "g0: detail: $(echo "$GD" | tail -1 | head -c 400)"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/programs/no-such/detail)" = 404 ] || fail "g0: a missing program's detail is not 404"
+# export opens the work program; the audit rows hold no content
+curl "${H[@]}" $B/api/export | js "d.programs.some(g=>g.id==='$GWID'&&g.name==='Smoke program renamed $R'&&g.notes==='Smoke notes'&&!('enc_v' in g))" | grep -qx true || fail "g0: export did not open the program"
+D1X "SELECT group_concat(action||':'||ifnull(detail,''),'|') AS a FROM audit_log WHERE target IN ('$GWID','$GPID')" | js 'd[0].results[0].a' | grep -q Smoke && fail "g0: an audit row carries content"
+# Trash lists it by name (opened, no notes); its detail is 404; Empty Trash with deleted_at 31 days back unlinks the members and removes the row
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/programs/$GWID)" = 200 ] || fail "g0: trash the work program"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' $B/api/programs/$GWID/detail)" = 404 ] || fail "g0: a trashed program's detail is not 404"
+curl "${H[@]}" $B/api/trash | js "const g=d.programs.find(x=>x.id==='$GWID'); !!g&&g.name==='Smoke program renamed $R'&&g.kind==='work'&&!('notes' in g)&&!('rag_reason' in g)" | grep -qx true || fail "g0: Trash does not list the program by name"
+D1X "UPDATE programs SET deleted_at = '$(node -pe 'new Date(Date.now()-31*864e5).toISOString()')' WHERE id='$GWID'" >/dev/null
+GE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$GE")" = 200 ] && [ "$(kbody "$GE" | js d.purged.programs)" -ge 1 ] || fail "g0: Empty Trash with a program: $GE"
+[ "$(D1X "SELECT (SELECT count(*) FROM programs WHERE id='$GWID')+(SELECT count(*) FROM projects WHERE program_id='$GWID') AS n" | js 'd[0].results[0].n')" = 0 ] || fail "g0: the program or a member's link survived Empty Trash"
+# clean up (local D1 only)
+D1X "DELETE FROM change_requests WHERE id LIKE 'smkgc-$R-%'; DELETE FROM raid_items WHERE id LIKE 'smkgr-$R-%'; DELETE FROM baselines WHERE id LIKE 'smkgb-$R-%'; DELETE FROM projects WHERE id LIKE 'smkgp-$R-%' OR (created_at >= '$T0' AND name IN ('Smoke program member','Smoke default currency')); UPDATE projects SET program_id = NULL WHERE program_id IN (SELECT id FROM programs WHERE created_at >= '$T0' OR id LIKE 'smkpg-$R-%'); DELETE FROM programs WHERE created_at >= '$T0' OR id LIKE 'smkpg-$R-%'" >/dev/null
+echo "smoke: (g0) programs: work program ciphertext in D1 (personal plain), bad bodies 400, kind fixed (400), a project joins only a live program of its kind (program_kind, program_missing; forecast and currency stored, CAD by default), 51st program 409 and restore at the cap 409, detail of 60 members: 60 latest baselines, top 10 risks, pending changes, no-store; export opens it; Trash lists it; Empty Trash unlinks its projects and removes it"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env, Variables } from '../types.ts';
 import type { AgentScope, Milestone, Project, Task } from '../../shared/types.ts';
-import { allowed, shared, parseNewTask, overLimit } from '../lib/agent.ts';
+import { allowed, shared, parseNewTask, overLimit, agentProject } from '../lib/agent.ts';
 import { safeEqual } from '../lib/inbox-parse.ts';
 import { open } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
@@ -136,7 +136,7 @@ agent.post('/tasks/:id/done', (c) => call(c, 'agent.tasks.done', 'compass:write.
 
 agent.get('/projects', (c) => call(c, 'agent.projects', 'compass:read.projects', async () => {
   const rows = (await portfolioRows(c.env)).filter((p) => shared({ project_id: p.id, kind: p.kind }, p));
-  return { body: { projects: rows.map((p) => ({ id: p.id, name: p.name, rag: p.rag, rag_reason: p.rag_reason, pct_done: p.pct_done, next_milestone: p.next_milestone, open_risks: p.open_risks })) } };
+  return { body: { projects: rows.map(agentProject) } };
 }));
 
 /**

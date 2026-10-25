@@ -38,6 +38,15 @@ for (const [table, row] of [
   assert.deepEqual(await open(env, table, { ...w }), { ...row, enc_v: 2 });
   assert.deepEqual(await seal(env, table, { ...row }, 'personal'), row, `${table} personal untouched`);
 }
+// v2.4: a work program's name, RAG reason and notes are sealed; rag and kind stay plain; a personal program is untouched.
+const prog = { id: 'g1', kind: 'work', name: 'Acme migration', rag: 'amber', rag_reason: 'Vendor late', notes: 'Watch the cutover', sort: 0, enc_v: 0 };
+const sp = await seal(env, 'programs', { ...prog }) as any;
+assert.equal(sp.enc_v, 2);
+for (const col of ['name', 'rag_reason', 'notes']) assert.notEqual(sp[col], (prog as any)[col], `programs.${col} sealed`);
+assert.equal(sp.rag, 'amber'); assert.equal(sp.kind, 'work');
+assert.deepEqual(await open(env, 'programs', { ...sp }), { ...prog, enc_v: 2 });
+const ownProg = { ...prog, id: 'g2', kind: 'personal' };
+assert.deepEqual(await seal(env, 'programs', { ...ownProg }), ownProg, 'a personal program is untouched');
 for (const t of ['raid_items', 'change_requests', 'lessons', 'documents', 'ai_threads', 'ai_messages'] as const) assert.ok(ENC_COLS[t].length > 0);
 
 // Raw bytes (every byte value, bigger than one base64 chunk) round-trip; the context binds them.

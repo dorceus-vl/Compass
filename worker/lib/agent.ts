@@ -1,4 +1,4 @@
-import type { AgentScope, Horizon, Project, Settings, Task } from '../../shared/types.ts';
+import type { AgentScope, Horizon, PortfolioRow, Project, Settings, Task } from '../../shared/types.ts';
 
 // Pure rules for the agent API (Kelly). No Worker imports, so scripts/agent.test.ts runs them directly.
 export const AGENT_SCOPES = ['compass:read.tasks', 'compass:write.tasks', 'compass:read.projects', 'compass:read.knowledge'] as const satisfies readonly AgentScope[];
@@ -8,6 +8,9 @@ export const MAX_WRITES_PER_HOUR = 30;
 /** Kelly may act only when switched on and the scope is listed. */
 // Defensive: a hand-edited settings row (the only way to change it for now) must mean "off", never a 500.
 export const allowed = (k: Settings['kelly'] | undefined, scope: AgentScope): boolean => k?.enabled === true && Array.isArray(k.scopes) && k.scopes.includes(scope);
+
+/** Kelly's project shape: these seven fields picked one by one, so a new column (program, forecast, currency) can't leak. */
+export const agentProject = (p: PortfolioRow) => ({ id: p.id, name: p.name, rag: p.rag, rag_reason: p.rag_reason, pct_done: p.pct_done, next_milestone: p.next_milestone, open_risks: p.open_risks });
 
 /**
  * What an outside app may see: a task with no project only if it is personal; otherwise only a live project with a cloud boundary.

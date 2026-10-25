@@ -7,9 +7,10 @@ import { requireStepUp } from '../lib/step-up.ts';
 import { remove } from '../lib/vectors.ts';
 import { MAX_BASELINES } from '../../shared/baseline.ts';
 import { MAX_STAKEHOLDERS } from '../../shared/stakeholders.ts';
+import { MAX_PROGRAMS } from '../../shared/program.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
-const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders' } as const;
+const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders', programs: 'programs' } as const;
 // Phase 3 rows show "name · project": the list query joins the project (name, enc_v) and this opens it.
 const PM_TABLES = ['raid_items', 'change_requests', 'decisions', 'lessons', 'documents', 'ai_threads'] as const;
 const TRASH_DAYS = 30, AUDIT_DAYS = 90, SESSION_DAYS = 30;
@@ -45,6 +46,9 @@ trash.get('/', async (c) => {
   const sh = await c.env.DB.prepare('SELECT x.id, x.project_id, x.name, x.role, x.deleted_at, x.enc_v, p.name AS project_name, p.enc_v AS project_enc_v FROM stakeholders x LEFT JOIN projects p ON p.id = x.project_id WHERE x.deleted_at IS NOT NULL ORDER BY x.deleted_at DESC')
     .all<{ project_name: string | null; project_enc_v: number; enc_v: number }>();
   pm.stakeholders = await Promise.all((await openAll(c.env, 'stakeholders', sh.results)).map(async ({ project_enc_v, ...r }) => ({ ...r, project_name: r.project_name === null ? null : (await open(c.env, 'projects', { name: r.project_name, enc_v: project_enc_v })).name })));
+  // v2.4: a deleted program, by name and kind (notes and the RAG reason stay on the server).
+  const pg = await c.env.DB.prepare('SELECT id, kind, name, deleted_at, enc_v FROM programs WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all<{ enc_v: number }>();
+  pm.programs = await openAll(c.env, 'programs', pg.results);
   return c.json({ tasks: await openAll(c.env, 'tasks', t.results), projects: await openAll(c.env, 'projects', p.results), milestones: await openAll(c.env, 'milestones', m.results), ...pm, purge_after_days: TRASH_DAYS });
 });
 
@@ -61,6 +65,10 @@ trash.post('/:table/:id/restore', async (c) => {
   if (table === 'stakeholders') {
     const n = await c.env.DB.prepare('SELECT (SELECT COUNT(*) FROM stakeholders o WHERE o.project_id = b.project_id AND o.deleted_at IS NULL) AS n FROM stakeholders b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL').bind(id).first<{ n: number }>();
     if (n && n.n >= MAX_STAKEHOLDERS) return c.json({ error: 'stakeholder_limit', message: `A project keeps ${MAX_STAKEHOLDERS} stakeholders at most` }, 409);
+  }
+  if (table === 'programs') {
+    const n = await c.env.DB.prepare('SELECT (SELECT COUNT(*) FROM programs WHERE deleted_at IS NULL) AS n FROM programs b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL').bind(id).first<{ n: number }>();
+    if (n && n.n >= MAX_PROGRAMS) return c.json({ error: 'program_limit', message: `Compass keeps ${MAX_PROGRAMS} programs at most` }, 409);
   }
   let r;
   try {
@@ -93,7 +101,7 @@ trash.post('/empty', async (c) => {
  * Cron: rows in Trash for 30 days are deleted (all = everything in Trash, for Empty Trash).
  * Order respects the foreign keys: knowledge passages and items first (KN17), events, task parents, tasks, copilot messages then threads, library imports then documents,
  * knowledge collections (before the documents their items came from),
- * project logs (RAID, changes, lessons, decisions), baselines and stakeholders (v2.2), milestones, project links (tasks, meeting reviews), projects.
+ * project logs (RAID, changes, lessons, decisions), baselines and stakeholders (v2.2), milestones, project links (tasks, meeting reviews, programs), projects, then programs (v2.4, P8).
  */
 export async function purgeTrash(env: Env, all = false): Promise<Record<string, number>> {
   const cutoff = all ? '9999' : daysAgo(TRASH_DAYS);
@@ -110,9 +118,10 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     OR (source = 'email' AND source_id IN (SELECT ib.id FROM inbox_items ib JOIN tasks t ON t.id = ib.task_id JOIN projects p ON p.id = t.project_id WHERE t.id IN (${goneTasks}) AND p.data_boundary = 'offline'))`;
   // KN18: likewise an email item whose task goes while it sits in an Offline-only project; in any other project its content was already allowed where it is, so it stays.
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
+  const gonePrograms = 'SELECT id FROM programs WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , projects, clips] = await env.DB.batch([
+  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , , projects, clips, , programs] = await env.DB.batch([
     q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // first, while tasks and reviews still name their project; their vectors go below
     q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
@@ -135,9 +144,11 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`UPDATE tasks SET project_id = NULL WHERE project_id IN (${goneProjects})`),
     q(`UPDATE meeting_reviews SET project_id = NULL, series_id = NULL WHERE project_id IN (${goneProjects})`), // the review stays, unfiled (FK); the next list puts it in an unfiled series
     q(`DELETE FROM meeting_series WHERE project_id IN (${goneProjects})`), // v2.1: a project's series go with it (FK)
+    q(`UPDATE projects SET program_id = NULL WHERE program_id IN (${gonePrograms})`), // v2.4 (P8): any project, live or trashed, lets go of a purged program (FK)
     q(`DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1`),
     q(`DELETE FROM athena_clips WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING r2_key`), // Athena's removed clips and portraits
     q(`DELETE FROM templates WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.1: a deleted template (nothing refers to it)
+    q(`DELETE FROM programs WHERE id IN (${gonePrograms})`), // v2.4: after the projects that pointed at it are gone or unlinked
   ]);
   // best effort, only after the rows are gone
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email'))));
@@ -149,7 +160,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   return {
     task_events: events.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
     raid_items: raid.meta.changes, change_requests: changes.meta.changes, lessons: lessons.meta.changes, decisions: decisions.meta.changes,
-    baselines: baselines.meta.changes, stakeholders: stakeholders.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes, athena_clips: clips.results.length,
+    baselines: baselines.meta.changes, stakeholders: stakeholders.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes, programs: programs.meta.changes, athena_clips: clips.results.length,
     knowledge_chunks: kchunks.results.length, knowledge_items: kitems.meta.changes, knowledge_collections: kcolls.meta.changes,
   };
 }

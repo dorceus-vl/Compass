@@ -11,7 +11,21 @@ export interface Project {
   sponsor: string | null; objectives: string | null; scope_in: string | null; scope_out: string | null; success_criteria: string | null;
   phase: string | null; start_at: string | null; end_at: string | null; budget_planned: number | null; budget_spent: number | null;
   data_boundary: 'cloud' | 'offline'; colour: string | null; sort: number; enc_v: number;
+  /** v2.4: the program it belongs to (same kind), the forecast at completion and the currency of its three budget numbers (ISO 4217). */
+  program_id: string | null; budget_forecast: number | null; currency: string;
   created_at: string; updated_at: string; deleted_at: string | null;
+}
+/** v2.4: a program groups projects of one kind. name, rag_reason and notes are sealed for work; kind is fixed after creation. */
+export interface Program {
+  id: string; kind: Kind; name: string; rag: Rag; rag_reason: string | null; notes: string | null; sort: number; enc_v: number;
+  created_at: string; updated_at: string; deleted_at: string | null;
+}
+/** GET /api/programs/:id/detail (P3): the latest live baseline of each member (opened), the top 10 open risks by probability x impact, pending changes per member. */
+export interface ProgramDetail {
+  program: Program;
+  baselines: { project_id: string; snapshot: Snapshot; taken_at: string }[];
+  risks: { id: string; project_id: string; title: string; probability: number | null; impact: number | null }[];
+  pending_changes: { project_id: string; n: number }[];
 }
 export type PortfolioRow = Project & {
   open_tasks: number; done_tasks: number; pct_done: number; next_milestone: { name: string; due_at: string } | null;
@@ -178,4 +192,6 @@ export interface ExportBundle {
   templates: Raw; meeting_series: Raw;
   /** v2.2 */
   baselines: Raw; stakeholders: Raw;
+  /** v2.4 */
+  programs: Raw;
 }

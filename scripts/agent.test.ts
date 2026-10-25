@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { AGENT_SCOPES, allowed, shared, parseNewTask, overLimit } from '../worker/lib/agent.ts';
+import { AGENT_SCOPES, allowed, shared, parseNewTask, overLimit, agentProject } from '../worker/lib/agent.ts';
 
 // allowed: switched on and the scope listed.
 assert.equal(allowed({ enabled: false, scopes: [...AGENT_SCOPES] }, 'compass:read.tasks'), false);
@@ -46,3 +46,7 @@ assert.equal(overLimit(10, 99, false), null); // reads ignore the write cap
 assert.equal(overLimit(61, 31, true), 'rate');
 
 console.log('agent: ok');
+
+// The projects shape is exactly seven keys: v2.4's program, forecast and currency never reach Kelly.
+const proj = agentProject({ id: 'p', name: 'n', rag: 'green', rag_reason: null, pct_done: 50, next_milestone: null, open_risks: 1, program_id: 'g', budget_forecast: 10, currency: 'CAD', budget_planned: 5 } as never);
+assert.deepEqual(Object.keys(proj).sort(), ['id', 'name', 'next_milestone', 'open_risks', 'pct_done', 'rag', 'rag_reason']);

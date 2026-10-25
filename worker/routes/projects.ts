@@ -14,7 +14,18 @@ const PROJECT_CHECKS: Record<string, Check> = {
   sponsor: text(200), objectives: text(20000), scope_in: text(20000), scope_out: text(20000), success_criteria: text(20000), phase: text(100),
   start_at: date(), end_at: date(), budget_planned: num(0), budget_spent: num(0), data_boundary: oneOf('cloud', 'offline'),
   colour: text(20), sort: num(),
+  // v2.4: the forecast at completion, the currency of the three budget numbers, and the program (same kind, checked by sameKindProgram).
+  budget_forecast: num(0),
+  currency: (v, f) => typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? { value: v } : { error: `${f} must be a three-letter currency code (CAD, USD, EUR)` },
+  program_id: (v, f) => v === null || v === '' ? { value: null } : typeof v === 'string' && v.length <= 64 ? { value: v } : { error: `${f} must be a program id or null` },
 };
+/** v2.4: a project joins only a live program of its own kind. null when fine, else the 400 answer's body. */
+async function sameKindProgram(env: Env, programId: unknown, kind: 'personal' | 'work'): Promise<{ error: string; message: string } | null> {
+  if (typeof programId !== 'string') return null;
+  const g = await env.DB.prepare('SELECT kind FROM programs WHERE id = ?1 AND deleted_at IS NULL').bind(programId).first<{ kind: string }>();
+  if (!g) return { error: 'program_missing', message: 'That program is missing or in Trash' };
+  return g.kind === kind ? null : { error: 'program_kind', message: `A ${kind} project can only join a ${kind} program` };
+}
 const MILESTONE_CHECKS: Record<string, Check> = { name: text(200), due_at: date(), done_at: date(), gate: num(0, 1, { integer: true }), sort: num() };
 
 export async function projectKind(env: Env, projectId: string | null): Promise<'personal' | 'work' | null> {
@@ -43,18 +54,18 @@ export async function projectStmt(env: Env, kind: 'personal' | 'work', values: R
   const row = {
     id: crypto.randomUUID(), kind, status: 'active', rag: 'none', data_boundary: kind === 'work' ? 'offline' : 'cloud', sort: 0, enc_v: 0,
     rag_reason: null, sponsor: null, objectives: null, scope_in: null, scope_out: null, success_criteria: null, phase: null,
-    start_at: null, end_at: null, budget_planned: null, budget_spent: null, colour: null,
+    start_at: null, end_at: null, budget_planned: null, budget_spent: null, colour: null, program_id: null, budget_forecast: null, currency: 'CAD',
     ...values, created_at: t, updated_at: t, deleted_at: null,
   } as unknown as Project;
   const s = await seal(env, 'projects', { ...row });
   row.enc_v = s.enc_v; // the response is plaintext, but says how the stored row is held
   const stmt = env.DB.prepare(
     `INSERT INTO projects (id, name, kind, status, rag, rag_reason, sponsor, objectives, scope_in, scope_out, success_criteria, phase, start_at, end_at,
-       budget_planned, budget_spent, data_boundary, colour, sort, enc_v, created_at, updated_at)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)`,
+       budget_planned, budget_spent, data_boundary, colour, sort, enc_v, created_at, updated_at, program_id, budget_forecast, currency)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)`,
   ).bind(s.id, s.name, s.kind, s.status, s.rag, s.rag_reason ?? null, s.sponsor ?? null, s.objectives ?? null, s.scope_in ?? null, s.scope_out ?? null,
     s.success_criteria ?? null, s.phase ?? null, s.start_at ?? null, s.end_at ?? null, s.budget_planned ?? null, s.budget_spent ?? null,
-    s.data_boundary, s.colour ?? null, s.sort, s.enc_v, s.created_at, s.updated_at);
+    s.data_boundary, s.colour ?? null, s.sort, s.enc_v, s.created_at, s.updated_at, s.program_id ?? null, s.budget_forecast ?? null, s.currency ?? 'CAD');
   return { row, stmt };
 }
 /** A milestone's row and its unsent INSERT; sealed with the project's kind. */
@@ -75,6 +86,8 @@ projects.post('/', async (c) => {
   const r = checkAll(body, PROJECT_CHECKS);
   if ('error' in r) return c.json({ error: r.error }, 400);
   if (!r.values.name) return c.json({ error: 'name is required' }, 400);
+  const bad = await sameKindProgram(c.env, r.values.program_id, kind);
+  if (bad) return c.json(bad, 400);
   const { row, stmt } = await projectStmt(c.env, kind, r.values);
   await stmt.run();
   await audit(c.env, 'you', 'project.create', row.id);
@@ -98,6 +111,8 @@ projects.patch('/:id', async (c) => {
   const r = checkAll(body, PROJECT_CHECKS);
   if ('error' in r) return c.json({ error: r.error }, 400);
   if ('name' in r.values && !r.values.name) return c.json({ error: 'name is required' }, 400);
+  const bad = await sameKindProgram(c.env, r.values.program_id, project.kind); // kind is fixed (P1), so this is the whole rule
+  if (bad) return c.json(bad, 400);
   const boundaryChanged = r.values.data_boundary !== undefined && r.values.data_boundary !== project.data_boundary;
   if (boundaryChanged) { const refused = await requireStepUp(c); if (refused) return refused; } // passkey, like Empty Trash
   const next = { ...project, ...r.values, updated_at: now() } as Project;
