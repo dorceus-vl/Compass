@@ -106,5 +106,9 @@ console.log('report-model v2.2: ok');
   assert.equal(pm.projects[0].next_milestone?.due_at, '2026-11-01');
   assert.deepEqual(pm.risks, [{ title: 'ZZRISK', project: 'ZZPROJ1', score: 20 }, { title: 'Unrated', project: 'ZZPROJ1', score: null }]);
   assert.equal(pm.as_of, '2026-10-25'); assert.equal(pm.summary, undefined);
+  const { programDoc } = await import('../web/src/docs/templates.ts');
+  const sl = { compared: 3, late: 2, early: 0, unchanged: 1, added: 0, dropped: 0, avg_late: 3, max_late: 5, milestones_late: 2, project_end_delta: null };
+  const lateDoc = JSON.stringify(programDoc({ ...pm, budget: { rows: [], totals: [] }, projects: [{ ...pm.projects[0], slip: sl as never }] }));
+  assert.match(lateDoc, /2 later, up to 5 days · 2 milestones late/);
   console.log('report-model program: ok');
 }

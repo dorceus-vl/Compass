@@ -83,7 +83,7 @@ async function programSummary(env: Env, id: string): Promise<{ status: 200 | 404
   const settings = await getSettings(env);
   const rollup = programRollup({ program, projects, tasks: ts.results as Task[], milestones: ms.results as Milestone[], detail: { baselines }, today: localDate(settings.tz), tz: settings.tz });
   try {
-    const out = await runAi(env, 'copilot', {
+    const out = await runAi(env, 'status_report', {
       provider: settings.default_provider, system: PROGRAM_SYSTEM, maxTokens: 600,
       messages: [{ role: 'user', content: 'Write the executive summary for this program report.\n\n' + fence('report', programReportText(rollup, program)) }],
     });

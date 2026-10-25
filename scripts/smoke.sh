@@ -1761,7 +1761,7 @@ G1P=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke currency","kind"
 curl "${H[@]}" -X DELETE $B/api/tasks/$G1T >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$G1P >/dev/null
 echo "smoke: (g1) estimates: 90 and null are 200; -1, 1.5, 60000 and \"2h\" are 400 bad_estimate on PATCH and POST; currency usd 400, USD 200; forecast -1 400"
 # (g2) v2.4 Task 3: the program summary (P7). On the stub (it echoes the prompt): a summary, numbers and RAG words only (no program, project or milestone name),
-# one ai_usage row with feature copilot; a member switched to Offline only refuses (offline_boundary) with no new ai_usage row; both ids or neither 400; a missing program 404.
+# one ai_usage row with feature status_report; a member switched to Offline only refuses (offline_boundary) with no new ai_usage row; both ids or neither 400; a missing program 404.
 G2=$(gpost "{\"kind\":\"work\",\"name\":\"Smoke report program $R\",\"rag\":\"green\"}"); [ "$(kst "$G2")" = 201 ] || fail "g2: create a program: $G2"
 G2ID=$(kbody "$G2" | js d.program.id)
 G2B="{\"name\":\"Smoke report member $R\",\"kind\":\"work\",\"rag\":\"amber\",\"program_id\":\"$G2ID\",\"budget_planned\":1000,\"budget_spent\":250}"
@@ -1770,13 +1770,13 @@ G2B="{\"title\":\"Smoke report task $R\",\"project_id\":\"$G2P\"}"; G2T=$(curl "
 G2B="{\"name\":\"Smoke report milestone $R\",\"due_at\":\"$(node -pe 'new Date(Date.now()+5*864e5).toISOString().slice(0,10)')\"}"
 curl "${H[@]}" -X POST $B/api/projects/$G2P/milestones -d "$G2B" >/dev/null
 D1X "UPDATE projects SET data_boundary = 'cloud' WHERE id = '$G2P'" >/dev/null # a work project starts Offline only; the boundary PATCH needs the step-up
-g2usage() { D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='copilot'" | js 'd[0].results[0].n'; }
+g2usage() { D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='status_report'" | js 'd[0].results[0].n'; }
 U0=$(g2usage)
 G2B="{\"program_id\":\"$G2ID\"}"; G2R=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d "$G2B")
 [ "$(kst "$G2R")" = 200 ] || fail "g2: summary: $G2R"
 kbody "$G2R" | js "typeof d.summary==='string'&&d.summary.includes('Project 1: RAG Amber, 0% done')&&d.summary.includes('CAD: 1 project, planned 1000, spent 250')&&d.summary.includes('Milestones due in the next 30 days: 1')" | grep -qx true || fail "g2: the summary text: $(kbody "$G2R" | head -c 600)"
 kbody "$G2R" | grep -q "Smoke report" && fail "g2: a name reached the model: $(kbody "$G2R" | head -c 600)"
-[ "$(g2usage)" = $((U0 + 1)) ] || fail "g2: one ai_usage row with feature copilot"
+[ "$(g2usage)" = $((U0 + 1)) ] || fail "g2: one ai_usage row with feature status_report"
 D1X "UPDATE projects SET data_boundary = 'offline' WHERE id = '$G2P'" >/dev/null
 G2R=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d "$G2B")
 [ "$(kst "$G2R")" = 200 ] && [ "$(kbody "$G2R" | js "d.ai_refused+'|'+('summary' in d)")" = "offline_boundary|false" ] || fail "g2: an Offline-only member: $G2R"

@@ -126,7 +126,7 @@ export const BUILTINS: { id: BuiltinId; name: string; guide: string; make: (m: R
 // v2.4 (Task 3): the program status report (Word, Markdown and print share it, as the project report does).
 const RAG_WORD: Record<string, string> = { green: 'Green', amber: 'Amber', red: 'Red', none: 'Not set' };
 const money = (n: number | null, currency: string) => (n == null ? '' : new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(n));
-const schedule = (s: ProgramReportModel['projects'][number]['slip']) => (!s ? 'No baseline' : s.late ? `${s.late} later, up to ${s.max_late} days` : 'On plan');
+const schedule = (s: ProgramReportModel['projects'][number]['slip']) => (!s ? 'No baseline' : s.late ? `${s.late} later, up to ${s.max_late} days${s.milestones_late ? ` · ${s.milestones_late} milestone${s.milestones_late === 1 ? '' : 's'} late` : ''}` : 'On plan');
 export function programDoc(m: ProgramReportModel): TemplateDoc {
   const pname = (id: string) => m.projects.find((p) => p.id === id)?.name ?? '';
   return {
