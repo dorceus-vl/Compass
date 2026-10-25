@@ -91,6 +91,23 @@ assert.deepEqual(r.budget.totals.map((x) => x.currency), ['CAD', 'USD']);
 // a project with no tasks: 0, and an empty program is none
 assert.equal(programRollup({ program, projects: [], tasks: [], milestones: [], detail: { baselines: [] }, today: '2026-10-25', tz: 'America/Toronto' }).worst, 'none');
 
+// programReportText (Task 3, P7): numbers and RAG words only, never a program, project, milestone or risk name.
+{
+  const { programReportText } = await import('../shared/program.ts');
+  const zp = { ...program, name: 'ZZPROGRAM', rag_reason: 'ZZREASON', notes: 'ZZNOTES', rag: 'amber' as const };
+  const zprojects = [proj('p1', { name: 'ZZPROJ1', rag: 'amber', budget_planned: 100, budget_spent: 50, budget_forecast: 120 }), proj('p2', { name: 'ZZPROJ2', rag: 'red', currency: 'USD', budget_planned: 10, budget_spent: 1 })];
+  const zms = milestones.map((m) => ({ ...m, name: 'ZZMS' + m.id }));
+  const zr = programRollup({ program: zp, projects: zprojects, tasks, milestones: zms, detail: { baselines }, today: '2026-10-25', tz: 'America/Toronto' });
+  const text = programReportText(zr, zp);
+  for (const s of ['ZZPROGRAM', 'ZZREASON', 'ZZNOTES', 'ZZPROJ', 'ZZMS', 'ZZRISK', 'p1', 'p2']) assert.ok(!text.includes(s), `the summary text carries ${s}`);
+  assert.match(text, /Project 1: RAG Amber, 50% done, schedule: 1 later \(up to 2 days, average 2\), 0 earlier.*; budget CAD: 50% spent, forecast variance \+20\./);
+  assert.match(text, /Project 2: RAG Red, 0% done, schedule: no baseline saved/);
+  assert.match(text, /Program RAG you set: Amber\. Worst project RAG: Red\./);
+  assert.match(text, /CAD: 1 project, planned 100, spent 50, forecast 120, variance \+20, 50% spent/);
+  assert.match(text, /USD: 1 project, planned 10, spent 1, forecast 10, variance 0, 10% spent/);
+  assert.match(text, /Milestones due in the next 30 days: 3/);
+}
+
 // web/src/programs.ts: a 404 (program trashed elsewhere, or a bad id) is "gone", not offline; a network failure is offline.
 // No IndexedDB in Node: the cache reads and writes fail and are swallowed, as they are when storage is blocked.
 {

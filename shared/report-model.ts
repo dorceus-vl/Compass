@@ -1,4 +1,5 @@
-import type { ReportInput, ReportModel, Section } from './types.ts';
+import type { Program, ProgramDetail, Project, Rag, ReportInput, ReportModel, Section } from './types.ts';
+import type { ProgramProjectRow, ProgramRollup } from './program.ts';
 import { slip } from './baseline.ts';
 import { dashboardMetrics, localDay as toLocalDay, addDaysYmd, daysBetweenYmd } from './dashboard.ts';
 
@@ -131,4 +132,23 @@ export function reportText(m: ReportModel): string {
     part('Done this period', m.tasks.done.list), part('Overdue', m.tasks.overdue.list), part('Due in the next two weeks', m.tasks.next.list), part('Milestones', m.milestones.list),
     part('Open risks', m.risks.list), part('Open issues', m.issues.list), part('Decisions needed', m.decisions_needed.list), part('Decisions made', m.decisions.list),
   ].filter(Boolean).join('\n\n');
+}
+
+// v2.4 (Task 3): the program form of the status report. It keeps the names: it is Vlad's own document, built on the device (the summary text is
+// programReportText in shared/program.ts, numbers only). Dates are local days in tz; a risk's score is p x i only when both are rated, else null ("unrated").
+export interface ProgramReportModel {
+  kind: 'program'; title: string; rag: Rag; rag_reason: string; worst: Rag; sentence: string | null; as_of: string; generated_at: string;
+  projects: ProgramProjectRow[]; upcoming: ProgramRollup['upcoming']; risks: { title: string; project: string; score: number | null }[];
+  budget: ProgramRollup['budget']; summary?: string;
+}
+export function buildProgramReportModel(i: { program: Program; rollup: ProgramRollup; risks: ProgramDetail['risks']; projects: Project[] }, today: string, now: string, tz: string): ProgramReportModel {
+  const local = localDay(tz), r = i.rollup;
+  const pname = (id: string) => txt(i.projects.find((p) => p.id === id)?.name) || 'Project';
+  return {
+    kind: 'program', title: txt(i.program.name), rag: i.program.rag, rag_reason: txt(i.program.rag_reason), worst: r.worst, sentence: r.sentence, as_of: today, generated_at: now,
+    projects: r.projects.map((p) => ({ ...p, name: txt(p.name), next_milestone: p.next_milestone ? { name: txt(p.next_milestone.name), due_at: local(p.next_milestone.due_at) } : null })),
+    upcoming: r.upcoming.map((u) => ({ ...u, name: txt(u.name), due_at: local(u.due_at) })),
+    risks: i.risks.map((x) => ({ title: txt(x.title), project: pname(x.project_id), score: x.probability != null && x.impact != null ? x.probability * x.impact : null })),
+    budget: r.budget,
+  };
 }

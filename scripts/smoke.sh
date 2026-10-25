@@ -1760,6 +1760,34 @@ G1P=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke currency","kind"
 [ "$(kst "$(gpatch projects/$G1P '{"budget_forecast":-1}')")" = 400 ] || fail "g1: forecast -1 is not 400"
 curl "${H[@]}" -X DELETE $B/api/tasks/$G1T >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$G1P >/dev/null
 echo "smoke: (g1) estimates: 90 and null are 200; -1, 1.5, 60000 and \"2h\" are 400 bad_estimate on PATCH and POST; currency usd 400, USD 200; forecast -1 400"
+# (g2) v2.4 Task 3: the program summary (P7). On the stub (it echoes the prompt): a summary, numbers and RAG words only (no program, project or milestone name),
+# one ai_usage row with feature copilot; a member switched to Offline only refuses (offline_boundary) with no new ai_usage row; both ids or neither 400; a missing program 404.
+G2=$(gpost "{\"kind\":\"work\",\"name\":\"Smoke report program $R\",\"rag\":\"green\"}"); [ "$(kst "$G2")" = 201 ] || fail "g2: create a program: $G2"
+G2ID=$(kbody "$G2" | js d.program.id)
+G2B="{\"name\":\"Smoke report member $R\",\"kind\":\"work\",\"rag\":\"amber\",\"program_id\":\"$G2ID\",\"budget_planned\":1000,\"budget_spent\":250}"
+G2P=$(curl "${H[@]}" -X POST $B/api/projects -d "$G2B" | js d.project.id)
+G2B="{\"title\":\"Smoke report task $R\",\"project_id\":\"$G2P\"}"; G2T=$(curl "${H[@]}" -X POST $B/api/tasks -d "$G2B" | js d.task.id)
+G2B="{\"name\":\"Smoke report milestone $R\",\"due_at\":\"$(node -pe 'new Date(Date.now()+5*864e5).toISOString().slice(0,10)')\"}"
+curl "${H[@]}" -X POST $B/api/projects/$G2P/milestones -d "$G2B" >/dev/null
+D1X "UPDATE projects SET data_boundary = 'cloud' WHERE id = '$G2P'" >/dev/null # a work project starts Offline only; the boundary PATCH needs the step-up
+g2usage() { D1X "SELECT count(*) AS n FROM ai_usage WHERE feature='copilot'" | js 'd[0].results[0].n'; }
+U0=$(g2usage)
+G2B="{\"program_id\":\"$G2ID\"}"; G2R=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d "$G2B")
+[ "$(kst "$G2R")" = 200 ] || fail "g2: summary: $G2R"
+kbody "$G2R" | js "typeof d.summary==='string'&&d.summary.includes('Project 1: RAG Amber, 0% done')&&d.summary.includes('CAD: 1 project, planned 1000, spent 250')&&d.summary.includes('Milestones due in the next 30 days: 1')" | grep -qx true || fail "g2: the summary text: $(kbody "$G2R" | head -c 600)"
+kbody "$G2R" | grep -q "Smoke report" && fail "g2: a name reached the model: $(kbody "$G2R" | head -c 600)"
+[ "$(g2usage)" = $((U0 + 1)) ] || fail "g2: one ai_usage row with feature copilot"
+D1X "UPDATE projects SET data_boundary = 'offline' WHERE id = '$G2P'" >/dev/null
+G2R=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d "$G2B")
+[ "$(kst "$G2R")" = 200 ] && [ "$(kbody "$G2R" | js "d.ai_refused+'|'+('summary' in d)")" = "offline_boundary|false" ] || fail "g2: an Offline-only member: $G2R"
+[ "$(g2usage)" = $((U0 + 1)) ] || fail "g2: a refusal was metered"
+G2B="{\"program_id\":\"$G2ID\",\"project_id\":\"$G2P\",\"from\":\"2026-10-01\",\"to\":\"2026-10-07\"}"
+[ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d "$G2B")")" = 400 ] || fail "g2: both ids are not 400"
+[ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d '{}')")" = 400 ] || fail "g2: neither id is not 400"
+[ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/reports/status -d '{"program_id":"no-such-program"}')")" = 404 ] || fail "g2: a missing program is not 404"
+# clean up (local D1 only): what g2 made
+D1X "DELETE FROM milestones WHERE project_id = '$G2P'; DELETE FROM task_events WHERE task_id = '$G2T'; DELETE FROM tasks WHERE id = '$G2T'; DELETE FROM projects WHERE id = '$G2P'; DELETE FROM programs WHERE id = '$G2ID'" >/dev/null
+echo "smoke: (g2) program summary: numbers and RAG words only on the stub (no names), one copilot ai_usage row; an Offline-only member refuses with no row; both ids and neither 400; a missing program 404"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

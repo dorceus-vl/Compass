@@ -17,7 +17,7 @@ import { useDocs } from './Documents.tsx';
 
 type Preset = 'week' | 'two' | 'month' | 'custom';
 const PRESETS: [Preset, string][] = [['week', 'This week'], ['two', 'Last 2 weeks'], ['month', 'This month'], ['custom', 'Custom']];
-const REFUSED: Record<string, string> = {
+export const REFUSED: Record<string, string> = {
   offline_boundary: 'Offline only: Athena never sends this project to Claude or Gemini.',
   no_key: "That provider isn't set up yet. See Settings.", cap_reached: "This month's AI budget is used up. Raise it in Settings.",
   rate_limited: 'Too many questions this hour. Try again in a few minutes.', provider_error: 'The provider could not answer. Try again.',

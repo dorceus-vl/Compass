@@ -1,4 +1,5 @@
 import type { ReportModel } from '../../../shared/types.ts';
+import type { ProgramReportModel } from '../../../shared/report-model.ts';
 import { p, fields, list, table, sec, type TemplateDoc } from '../../../shared/doc-model.ts';
 
 export type BuiltinId = 'charter' | 'raid_log' | 'raci' | 'wbs' | 'status_report' | 'change_request' | 'exception_report' | 'lessons_learned';
@@ -121,3 +122,26 @@ export const BUILTINS: { id: BuiltinId; name: string; guide: string; make: (m: R
     ],
   }) },
 ];
+
+// v2.4 (Task 3): the program status report (Word, Markdown and print share it, as the project report does).
+const RAG_WORD: Record<string, string> = { green: 'Green', amber: 'Amber', red: 'Red', none: 'Not set' };
+const money = (n: number | null, currency: string) => (n == null ? '' : new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(n));
+const schedule = (s: ProgramReportModel['projects'][number]['slip']) => (!s ? 'No baseline' : s.late ? `${s.late} later, up to ${s.max_late} days` : 'On plan');
+export function programDoc(m: ProgramReportModel): TemplateDoc {
+  const pname = (id: string) => m.projects.find((p) => p.id === id)?.name ?? '';
+  return {
+    title: 'Program status report', subtitle: `${m.title} · as of ${m.as_of}`,
+    sections: [
+      sec('Overall status', fields(['Your RAG', RAG_WORD[m.rag]], ['Reason', m.rag_reason], ['Worst project RAG', RAG_WORD[m.worst]]), ...(m.sentence ? [p(m.sentence + '.')] : [])),
+      sec('Executive summary', p(m.summary || `${m.projects.length} project${m.projects.length === 1 ? '' : 's'}; ${m.upcoming.length} milestone${m.upcoming.length === 1 ? '' : 's'} due in the next 30 days.`)),
+      sec('Projects', table(['Project', 'RAG', 'Done', 'Schedule', 'Next milestone'],
+        m.projects.map((x) => [x.name, RAG_WORD[x.rag], `${x.pct_done}%`, schedule(x.slip), x.next_milestone ? `${x.next_milestone.name} (${x.next_milestone.due_at})` : '']), 'No projects in this program.')),
+      sec('Milestones in the next 30 days', table(['Due', 'Milestone', 'Project'], m.upcoming.map((u) => [u.due_at, u.name, pname(u.project_id)]), 'No milestone due in the next 30 days.')),
+      sec('Top risks', table(['Risk', 'Project', 'Score'], m.risks.map((r) => [r.title, r.project, r.score ?? 'unrated']), 'No open risks.')),
+      sec('Budget', table(['Project', 'Planned', 'Spent', 'Forecast', 'Variance', '% spent'],
+        m.budget.rows.filter((r) => r.planned != null).map((r) => [pname(r.project_id), money(r.planned, r.currency), money(r.spent, r.currency), money(r.forecast, r.currency), money(r.variance, r.currency), r.pct_spent == null ? '' : `${r.pct_spent}%`]), 'No project has a planned budget.'),
+        p('Totals per currency'), table(['Currency', 'Projects', 'Planned', 'Spent', 'Forecast', 'Variance', '% spent'],
+          m.budget.totals.map((t) => [t.currency, t.projects, money(t.planned, t.currency), money(t.spent, t.currency), money(t.forecast, t.currency), money(t.variance, t.currency), t.pct_spent == null ? '' : `${t.pct_spent}%`]), 'No totals.')),
+    ],
+  };
+}

@@ -87,3 +87,24 @@ assert.match(text, /Schedule against the baseline: compared \d+, later 3, earlie
 assert.ok(!text.includes('Plan v1'));
 assert.match(reportText(m0), /Schedule against the baseline: no baseline saved/);
 console.log('report-model v2.2: ok');
+
+// v2.4 (Task 3): the program form keeps the names (it is Vlad's own document); scores only when both are rated.
+{
+  const { buildProgramReportModel } = await import('../shared/report-model.ts');
+  const { programRollup } = await import('../shared/program.ts');
+  const T = '2026-10-01T12:00:00.000Z';
+  const program = { id: 'g1', kind: 'work' as const, name: 'ZZPROGRAM', rag: 'green' as const, rag_reason: 'ZZREASON', notes: null, sort: 0, enc_v: 0, created_at: T, updated_at: T, deleted_at: null };
+  const projects = [{ ...project, id: 'p1', name: 'ZZPROJ1', rag: 'red' as const, program_id: 'g1', deleted_at: null }];
+  const milestones = [{ id: 'm1', project_id: 'p1', name: 'ZZMS', due_at: '2026-11-01T04:30:00.000Z', done_at: null, gate: 0, sort: 0, enc_v: 0, created_at: T, updated_at: T, deleted_at: null }];
+  const rollup = programRollup({ program, projects, tasks: [], milestones, detail: { baselines: [] }, today: '2026-10-25', tz: TZ });
+  const risks = [{ id: 'r1', project_id: 'p1', title: 'ZZRISK', probability: 4, impact: 5 }, { id: 'r2', project_id: 'p1', title: 'Unrated', probability: null, impact: 3 }];
+  const pm = buildProgramReportModel({ program, rollup, risks, projects }, '2026-10-25', '2026-10-25T12:00:00Z', TZ);
+  assert.equal(pm.kind, 'program'); assert.equal(pm.title, 'ZZPROGRAM'); assert.equal(pm.rag, 'green'); assert.equal(pm.rag_reason, 'ZZREASON'); assert.equal(pm.worst, 'red');
+  assert.equal(pm.sentence, 'You say green; one project is red');
+  assert.equal(pm.projects[0].name, 'ZZPROJ1');
+  assert.deepEqual(pm.upcoming, [{ project_id: 'p1', name: 'ZZMS', due_at: '2026-11-01' }], 'due as the local day in tz (00:30 Toronto on 1 Nov)');
+  assert.equal(pm.projects[0].next_milestone?.due_at, '2026-11-01');
+  assert.deepEqual(pm.risks, [{ title: 'ZZRISK', project: 'ZZPROJ1', score: 20 }, { title: 'Unrated', project: 'ZZPROJ1', score: null }]);
+  assert.equal(pm.as_of, '2026-10-25'); assert.equal(pm.summary, undefined);
+  console.log('report-model program: ok');
+}

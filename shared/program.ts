@@ -73,3 +73,26 @@ export function programRollup(i: { program: Program; projects: Project[]; tasks:
     upcoming: upcoming.sort((a, b) => a.due_at.localeCompare(b.due_at)), budget: { rows: budget, totals: budgetTotals(budget) },
   };
 }
+
+// Program report (Task 3, P7): the text the program summary sends to a model. Numbers and RAG words only: projects are "Project 1", "Project 2"…,
+// never a program, project, milestone or risk name (nor the program's reason or notes, which are Vlad's words).
+const WORD: Record<Rag, string> = { green: 'Green', amber: 'Amber', red: 'Red', none: 'not set' };
+const n2 = (n: number) => String(Math.round(n * 100) / 100);
+const signed = (n: number) => (n > 0 ? '+' : '') + n2(n);
+const many = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+export function programReportText(r: ProgramRollup, program: Pick<Program, 'rag'>): string {
+  const lines = [
+    `Program RAG you set: ${WORD[program.rag]}. Worst project RAG: ${WORD[r.worst]}.${r.sentence ? ` ${r.sentence}.` : ''}`,
+    `Projects: ${r.projects.length}. Milestones due in the next 30 days: ${r.upcoming.length}.`,
+    ...r.projects.map((p, i) => {
+      const s = p.slip;
+      const sched = !s ? 'no baseline saved' : `${s.late} later (up to ${s.max_late} days, average ${s.avg_late}), ${s.early} earlier, ${s.unchanged} unchanged, ${s.added} added, ${s.dropped} removed, ${many(s.milestones_late, 'milestone')} late, project end moved ${s.project_end_delta ?? 'n/a'} days`;
+      const b = r.budget.rows.find((x) => x.project_id === p.id);
+      const money = b?.planned != null ? `; budget ${b.currency}: ${b.pct_spent ?? 0}% spent${b.variance != null ? `, forecast variance ${signed(b.variance)}` : ''}` : '';
+      return `Project ${i + 1}: RAG ${WORD[p.rag]}, ${p.pct_done}% done, schedule: ${sched}${money}.`;
+    }),
+    r.budget.totals.length ? 'Budget totals per currency:' : 'Budget totals: no project has a planned budget.',
+    ...r.budget.totals.map((t) => `${t.currency}: ${many(t.projects, 'project')}, planned ${n2(t.planned)}, spent ${n2(t.spent)}, forecast ${n2(t.forecast)}, variance ${signed(t.variance)}, ${t.pct_spent ?? 0}% spent.`),
+  ];
+  return lines.join('\n');
+}

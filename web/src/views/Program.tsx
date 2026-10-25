@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Project } from '../../../shared/types.ts';
 import type { Program, ProgramDetail, Rag } from '../../../shared/types.ts';
 import { programRollup, type BudgetRow } from '../../../shared/program.ts';
 import { localDay } from '../../../shared/dashboard.ts';
-import { online, SignedOut } from '../api.ts';
+import { api, online, SignedOut } from '../api.ts';
+import { buildProgramReportModel } from '../../../shared/report-model.ts';
+import { toMarkdown } from '../../../shared/to-md.ts';
+import type { TemplateDoc } from '../../../shared/doc-model.ts';
+import { programDoc } from '../docs/templates.ts';
+import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
+import { PrintDoc } from '../ui/PrintDoc.tsx';
 import { useStore } from '../store/useStore.ts';
 import { Link, navigate } from '../router.ts';
 import { todayIn } from '../dates.ts';
@@ -11,7 +18,7 @@ import { ChartFrame } from '../ui/Chart.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { useSlider } from '../ui/Shell.tsx';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
-import { useTz } from './project/Report.tsx';
+import { useTz, REFUSED } from './project/Report.tsx';
 import { loadProgramDetail, updateProgram, trashProgram, OFFLINE_LINE } from '../programs.ts';
 
 const TABS = ['overview', 'budget', 'report'] as const;
@@ -105,7 +112,7 @@ export function ProgramPage({ id, tab = 'overview' }: { id: string; tab?: string
           <div><button type="button" className="btn" style={{ color: 'var(--danger)' }} disabled={!canWrite} onClick={() => void trash()}>Move to Trash</button></div>
         </div>}
         {current === 'budget' && <Budget rows={roll.budget.rows} totals={roll.budget.totals} name={name} />}
-        {current === 'report' && <p className="hint">Report comes in the next step</p>}
+        {current === 'report' && <ProgramReport program={g} roll={roll} risks={s.detail.risks} projects={projects} today={today} tz={tz} offline={!canWrite} />}
       </div>
     </>
   );
@@ -149,5 +156,64 @@ function Budget({ rows, totals, name }: { rows: BudgetRow[]; totals: ReturnType<
         <p className="hint">A project with no planned budget joins no total; a missing forecast counts as the plan.</p>
       </section>
     </div>
+  );
+}
+
+const OFFLINE_MEMBER = 'One project is Offline only, so Athena can\u2019t summarise this program';
+
+/** Report tab: the program report built on this device (preview, Word, Markdown, PDF); Athena's summary is numbers only on the server (P7). */
+function ProgramReport({ program, roll, risks, projects, today, tz, offline }: { program: Program; roll: ReturnType<typeof programRollup>; risks: ProgramDetail['risks']; projects: Project[]; today: string; tz: string; offline: boolean }) {
+  const [summary, setSummary] = useState('');
+  const [ai, setAi] = useState({ busy: false, note: '' });
+  const [toPrint, setToPrint] = useState<TemplateDoc | null>(null);
+  const model = useMemo(() => {
+    const m = buildProgramReportModel({ program, rollup: roll, risks, projects }, today, new Date().toISOString(), tz);
+    if (summary) m.summary = summary;
+    return m;
+  }, [program, roll, risks, projects, today, tz, summary]);
+  const doc = programDoc(model);
+  // iOS Safari's print() doesn't block: keep the print copy mounted until afterprint (as the project report does).
+  useEffect(() => {
+    if (!toPrint) return;
+    const done = () => setToPrint(null);
+    window.addEventListener('afterprint', done, { once: true });
+    window.print();
+    const timer = window.setTimeout(done, 60_000);
+    return () => { window.removeEventListener('afterprint', done); window.clearTimeout(timer); };
+  }, [toPrint]);
+  const name = fileName(program.name, 'program status', today);
+  const word = async () => {
+    try { const { toDocx } = await import('../docs/to-docx.ts'); saveBytes(await toDocx(doc), `${name}.docx`, DOCX_TYPE); }
+    catch (e) { toast((e as Error).message); }
+  };
+  const cloud = projects.filter((p) => p.program_id === program.id && !p.deleted_at).every((p) => p.data_boundary !== 'offline');
+  const ask = async () => {
+    setAi({ busy: true, note: '' });
+    try {
+      const r = await api<{ summary?: string; ai_refused?: string }>('/reports/status', { method: 'POST', json: { program_id: program.id } });
+      if (r.summary) { setSummary(r.summary); setAi({ busy: false, note: '' }); }
+      else setAi({ busy: false, note: r.ai_refused === 'offline_boundary' ? OFFLINE_MEMBER : REFUSED[r.ai_refused ?? ''] ?? 'No summary was written.' });
+    } catch (e) { setAi({ busy: false, note: e instanceof SignedOut ? '' : (e as Error).message }); }
+  };
+  return (
+    <>
+      <div className="no-print" style={{ display: 'grid', gap: 14 }}>
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{ai.busy ? 'Athena is writing the summary…' : summary ? 'Summary ready. The preview is updated.' : ai.note}</div>
+        <div className="card report-bar" style={{ display: 'grid', gap: 10 }}>
+          <div className="row">
+            <button type="button" className="btn primary" aria-label="Download the program report as Word" onClick={() => void word()}>Word</button>
+            <button type="button" className="btn" aria-label="Download the program report as Markdown" onClick={() => saveText(toMarkdown(doc), `${name}.md`)}>Markdown</button>
+            <button type="button" className="btn" aria-label="Print the program report or save it as PDF" onClick={() => setToPrint(doc)}>PDF</button>
+            {cloud
+              ? <button type="button" className="btn" disabled={ai.busy || offline} onClick={() => void ask()}>{ai.busy ? 'Writing…' : 'Ask Athena for a summary'}</button>
+              : <small className="sub">{OFFLINE_MEMBER}</small>}
+          </div>
+          {ai.note && <div className="sub" style={{ color: 'var(--danger)' }}>{ai.note}</div>}
+          {cloud && offline && <div className="sub" role="note">Athena's summary needs a connection.</div>}
+        </div>
+        <div className="card report-preview" aria-label="Report preview"><PrintDoc doc={doc} /></div>
+      </div>
+      <div className="print-only">{toPrint && <PrintDoc doc={toPrint} />}</div>
+    </>
   );
 }
