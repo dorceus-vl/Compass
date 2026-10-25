@@ -18,12 +18,13 @@ export function navigate(path: string, replace = false) { path = legacy(path); h
 // iOS Safari swipe-back and Android predictive back already animate (hasUAVisualTransition); ours would play on top of theirs.
 window.addEventListener('popstate', (e) => { fixLegacy(); change(!(e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition); });
 
-/** Paths: / board list upcoming calendar timeline projects projects/:id projects/:id/:tab inbox meetings meetings/:id meetings/series/:id review library library/:slug knowledge knowledge/:id athena athena/:id (or athena/new; /copilot redirects) settings kelly/log trash. */
+/** Paths: / board list upcoming calendar timeline projects programs programs/:id[/:tab] projects/:id projects/:id/:tab inbox meetings meetings/:id meetings/series/:id review library library/:slug knowledge knowledge/:id athena athena/:id (or athena/new; /copilot redirects) settings kelly/log trash. */
 export function useRoute(): { path: string; params: Record<string, string> } {
   const [, tick] = useState(0);
   useEffect(() => { const l = () => tick((n) => n + 1); listeners.add(l); return () => { listeners.delete(l); }; }, []);
   const parts = location.pathname.split('/').filter(Boolean);
   if (parts[0] === 'projects' && parts[1]) return { path: 'project', params: { id: parts[1], tab: parts[2] ?? 'overview' } };
+  if (parts[0] === 'programs' && parts[1]) return { path: 'program', params: { id: parts[1], tab: parts[2] ?? 'overview' } };
   if (parts[0] === 'meetings' && parts[1] === 'series' && parts[2]) return { path: 'series', params: { id: parts[2] } };
   if (parts[0] === 'meetings' && parts[1]) return { path: 'meeting', params: { id: parts[1] } };
   if (parts[0] === 'athena' && parts[1]) return { path: 'athena', params: { id: parts[1] } };

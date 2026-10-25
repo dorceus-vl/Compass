@@ -26,6 +26,8 @@ import { RagPill, Ring } from '../ui/ProjectCard.tsx';
 import { useSlider } from '../ui/Shell.tsx';
 import { projectColor, PROJECT_SWATCHES } from '../ui/colors.ts';
 import { SaveAsTemplate } from '../ui/Templates.tsx';
+import { usePrograms } from './Programs.tsx';
+import { OFFLINE_LINE } from '../programs.ts';
 
 const TABS = ['overview', 'dashboard', 'raid', 'stakeholders', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
@@ -36,6 +38,8 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
   const [open, setOpen] = useState<string | null>(null);
   const [newTask, setNewTask] = useState('');
   const [boundaryBusy, setBoundaryBusy] = useState(false);
+  const [programBusy, setProgramBusy] = useState(false);
+  const { programs, offline: programsOffline } = usePrograms();
   const [saveTpl, setSaveTpl] = useState(false);
   const [newMs, setNewMs] = useState({ name: '', due_at: '', gate: false });
   const [finished, onFinish] = useFinished();
@@ -78,6 +82,17 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
     try { await api(`/projects/${p.id}`, { method: 'PATCH', json: { data_boundary } }); await pull(); }
     catch (e) { toast((e as Error).message); }
     finally { setBoundaryBusy(false); }
+  };
+  // v2.4: same-kind live programs; a trashed or unknown program shows as "No program". Direct call (online only), like the boundary switch.
+  const choices = (programs ?? []).filter((g) => g.kind === p.kind);
+  const programValue = p.program_id && choices.some((g) => g.id === p.program_id) ? p.program_id : '';
+  const setProgram = async (program_id: string | null) => {
+    if ((program_id ?? '') === programValue || programBusy) return;
+    if (!online()) { toast(OFFLINE_LINE); return; }
+    setProgramBusy(true);
+    try { await api(`/projects/${p.id}`, { method: 'PATCH', json: { program_id } }); await pull(); }
+    catch (e) { toast((e as Error).message); }
+    finally { setProgramBusy(false); }
   };
   return (
     <>
@@ -154,6 +169,10 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
               <div className="seg" role="group" aria-label="Data boundary" style={{ display: 'flex', width: 'max-content', maxWidth: '100%', flexWrap: 'wrap' }}>
                 {([['cloud', 'Cloud AI allowed'], ['offline', 'Offline only']] as const).map(([v, l]) => <button type="button" key={v} className={p.data_boundary === v ? 'on' : ''} aria-pressed={p.data_boundary === v} disabled={boundaryBusy} onClick={() => void setBoundary(v)}>{l}</button>)}</div>
               <div className="qnote">Offline only: Athena never sends this project to Claude or Gemini.</div></div>
+            <div className="qcard"><h3>Program</h3>
+              <select className="field" aria-label="Program" value={programValue} disabled={programBusy || programsOffline || !online() || p.id.startsWith('tmp-')} onChange={(e) => void setProgram(e.target.value || null)}>
+                <option value="">No program</option>{choices.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+              <div className="qnote">{programsOffline || !online() ? OFFLINE_LINE + '.' : `Only ${p.kind} programs are listed.`}{programValue && <> <Link to={`/programs/${programValue}`}>Open the program</Link></>}</div></div>
             <div className="qcard"><h3>Objectives</h3>{inp('objectives', 'Objectives', 'area')}{inp('success_criteria', 'Success criteria', 'area')}</div>
             <div className="qcard"><h3>Scope</h3>{inp('scope_in', 'In scope', 'area')}{inp('scope_out', 'Out of scope', 'area')}</div>
           </div></section>

@@ -1,10 +1,12 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { NewFromTemplate } from '../ui/Templates.tsx';
 import { Portfolio } from './Portfolio.tsx';
+import { Programs } from './Programs.tsx';
 import { useStore, createProject } from '../store/useStore.ts';
 import { navigate } from '../router.ts';
 
-export function Projects() {
+/** `/projects` (the portfolio) and `/programs` (P2): one screen, a segmented control between the two. */
+export function Projects({ mode = 'projects' }: { mode?: 'projects' | 'programs' }) {
   const { projects, ready } = useStore();
   const dlg = useRef<HTMLDialogElement>(null);
   const [tpl, setTpl] = useState(false);
@@ -17,9 +19,11 @@ export function Projects() {
   };
   return (
     <>
-      <div className="head"><div><div className="eyebrow">Projects</div><h1 style={{ marginTop: 6 }}>Your <b>portfolio</b></h1><div className="sub">{live.filter((p) => p.status === 'active').length} active</div></div>
-        <div className="row"><button className="btn" onClick={() => setTpl(true)}>New from template</button><button className="btn primary" onClick={() => dlg.current?.showModal()}>+ New project</button></div></div>
-      <Portfolio />
+      <div className="head"><div><div className="eyebrow">Projects</div><h1 style={{ marginTop: 6 }}>Your <b>{mode === 'programs' ? 'programs' : 'portfolio'}</b></h1>{mode === 'projects' && <div className="sub">{live.filter((p) => p.status === 'active').length} active</div>}</div>
+        {mode === 'projects' && <div className="row"><button className="btn" onClick={() => setTpl(true)}>New from template</button><button className="btn primary" onClick={() => dlg.current?.showModal()}>+ New project</button></div>}</div>
+      <div className="seg" role="group" aria-label="View" style={{ width: 'max-content' }}>
+        {([['projects', 'Projects'], ['programs', 'Programs']] as const).map(([m, l]) => <button type="button" key={m} className={mode === m ? 'on' : ''} aria-pressed={mode === m} onClick={() => mode !== m && navigate(`/${m}`)}>{l}</button>)}</div>
+      {mode === 'programs' ? <Programs /> : <Portfolio />}
       {tpl && <NewFromTemplate onClose={() => setTpl(false)} />}
       <dialog ref={dlg}><form onSubmit={submit} style={{ display: 'grid', gap: 10 }}><b>New project</b>
         <input className="field" name="name" placeholder="Name" required autoFocus />

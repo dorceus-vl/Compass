@@ -37,6 +37,11 @@ export function ProjectCard({ p }: { p: PortfolioRow }) {
         <div className="prow"><span>{ms ? `Next: ${ms.name} · ${fmtDue(ms.due_at).text}` : 'No upcoming milestone'}</span></div>
         <div className="prow"><span>{p.open_risks} open risk{p.open_risks === 1 ? '' : 's'}</span>
           <span className="mono" style={{ color: p.high_risks ? 'var(--danger)' : 'var(--text-faint)' }}>{p.high_risks} high</span></div>
+        {p.budget_planned != null && p.budget_planned > 0 && (() => {
+          const spent = p.budget_spent ?? 0, pct = Math.round((100 * spent) / p.budget_planned);
+          return <div className="pbud"><div className="prow"><span>Budget: {p.currency} {spent.toLocaleString()} of {p.budget_planned.toLocaleString()}</span><span className="mono" style={{ color: pct > 100 ? 'var(--danger)' : undefined }}>{pct}% spent{pct > 100 ? ' · over' : ''}</span></div>
+            <div className="pb-bar" aria-hidden="true"><i className="pb-spent" style={{ width: `${Math.min(100, pct)}%` }} /></div></div>;
+        })()}
         {p.pending_changes > 0 && <div className="prow" style={{ color: 'var(--warn)' }}><span>{p.pending_changes} pending change{p.pending_changes === 1 ? '' : 's'}</span></div>}
       </Link>
     </article>

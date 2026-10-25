@@ -67,7 +67,7 @@ export function useSlider(nav: { current: HTMLElement | null }, pill: { current:
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {
   const { path } = useRoute();
   const fresh = useInbox().items.filter((i) => i.state === 'new').length;
-  const on = (k: string) => (path === k || (k === 'projects' && path === 'project') || (k === 'library' && path === 'libpage') || (k === 'meetings' && (path === 'meeting' || path === 'series')) ? 'on' : '');
+  const on = (k: string) => (path === k || (k === 'projects' && (path === 'project' || path === 'programs' || path === 'program')) || (k === 'library' && path === 'libpage') || (k === 'meetings' && (path === 'meeting' || path === 'series')) ? 'on' : '');
   const portrait = useAthenaMedia()?.portrait_id;
   const rail = useRef<HTMLElement>(null), railPill = useRef<HTMLSpanElement>(null), tab = useRef<HTMLElement>(null), tabPill = useRef<HTMLSpanElement>(null);
   useSlider(rail, railPill, path); useSlider(tab, tabPill, path);
