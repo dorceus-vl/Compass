@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { parseEstimate, formatEstimate, MAX_ESTIMATE_MINUTES } from '../shared/workload.ts';
+
+assert.equal(parseEstimate('90', 8), 90);
+assert.equal(parseEstimate('30m', 8), 30);
+assert.equal(parseEstimate('2h', 8), 120);
+assert.equal(parseEstimate('1.5h', 8), 90);
+assert.equal(parseEstimate('1h 30m', 8), 90);
+assert.equal(parseEstimate('1d', 8), 480);
+assert.equal(parseEstimate('1.5D', 6), 540);
+assert.equal(parseEstimate('', 8), null);
+assert.equal(parseEstimate('abc', 8), null);
+assert.equal(parseEstimate('-2h', 8), null);
+assert.equal(parseEstimate('41d', 8), null, 'over 40 days of day_hours');
+assert.equal(parseEstimate('40d', 8), 19_200);
+assert.equal(formatEstimate(90), '1h 30m');
+assert.equal(formatEstimate(45), '45m');
+assert.equal(formatEstimate(120), '2h');
+assert.equal(formatEstimate(0), '0m');
+assert.equal(MAX_ESTIMATE_MINUTES, 57_600);
+console.log('workload: ok');

@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types.ts';
 import type { Task, TaskEvent, Status, Kind } from '../../shared/types.ts';
-import { checkAll, text, httpsUrl, oneOf, date, num, type Check } from '../lib/validate.ts';
+import { checkAll, text, httpsUrl, oneOf, date, num, int, type Check } from '../lib/validate.ts';
+import { MAX_ESTIMATE_MINUTES } from '../../shared/workload.ts';
 import { seal, open, openAll, openBytes } from '../lib/enc.ts';
 import { now, audit, getSettings } from '../lib/db.ts';
 import { localDate } from '../lib/dates.ts';
@@ -28,7 +29,7 @@ const checklist: Check = (v, f) => {
 const CHECKS: Record<string, Check> = {
   title: text(300), notes: text(20000), project_id: text(40), parent_id: text(40), kind: oneOf('personal', 'work'),
   horizon: oneOf('short', 'medium', 'long'), status: oneOf('new', 'progress', 'hold', 'waiting', 'done'), priority: num(0, 3, { integer: true, nullable: false }),
-  start_at: date(), due_at: date(), estimate_minutes: num(0, 100000, { integer: true }), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
+  start_at: date(), due_at: date(), estimate_minutes: int(0, MAX_ESTIMATE_MINUTES), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
   recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy, checklist,
 };
 const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','status','priority','start_at','due_at','done_at','estimate_minutes','waiting_on','waiting_since',
@@ -173,6 +174,7 @@ tasks.get('/', async (c) => {
 
 tasks.post('/', async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
+  if ('estimate_minutes' in body && body.estimate_minutes !== null && !(Number.isInteger(body.estimate_minutes) && (body.estimate_minutes as number) >= 0 && (body.estimate_minutes as number) <= MAX_ESTIMATE_MINUTES)) return c.json({ error: 'bad_estimate' }, 400);
   const r = checkAll(body, CHECKS);
   if (bad(r)) return c.json({ error: r.error }, 400);
   if (!r.values.title) return c.json({ error: 'title is required' }, 400);
@@ -235,6 +237,7 @@ tasks.patch('/:id', async (c) => {
   const task = await loadTask(c.env, c.req.param('id'));
   if (!task) return c.json({ error: 'Not found' }, 404);
   const body = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
+  if ('estimate_minutes' in body && body.estimate_minutes !== null && !(Number.isInteger(body.estimate_minutes) && (body.estimate_minutes as number) >= 0 && (body.estimate_minutes as number) <= MAX_ESTIMATE_MINUTES)) return c.json({ error: 'bad_estimate' }, 400);
   const r = checkAll(body, CHECKS);
   if (bad(r)) return c.json({ error: r.error }, 400);
   if (badRecur(r.values.recur)) return c.json({ error: 'recur is not a valid rule' }, 400);

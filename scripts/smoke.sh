@@ -1746,6 +1746,20 @@ GE=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$
 # clean up (local D1 only)
 D1X "DELETE FROM change_requests WHERE id LIKE 'smkgc-$R-%'; DELETE FROM raid_items WHERE id LIKE 'smkgr-$R-%'; DELETE FROM baselines WHERE id LIKE 'smkgb-$R-%'; DELETE FROM projects WHERE id LIKE 'smkgp-$R-%' OR (created_at >= '$T0' AND name IN ('Smoke program member','Smoke default currency')); UPDATE projects SET program_id = NULL WHERE program_id IN (SELECT id FROM programs WHERE created_at >= '$T0' OR id LIKE 'smkpg-$R-%'); DELETE FROM programs WHERE created_at >= '$T0' OR id LIKE 'smkpg-$R-%'" >/dev/null
 echo "smoke: (g0) programs: work program ciphertext in D1 (personal plain), bad bodies 400, kind fixed (400), a project joins only a live program of its kind (program_kind, program_missing; forecast and currency stored, CAD by default), 51st program 409 and restore at the cap 409, detail of 60 members: 60 latest baselines, top 10 risks, pending changes, no-store; export opens it; Trash lists it; Empty Trash unlinks its projects and removes it"
+# (g1) v2.4 Task 1: the Estimate check (integer 0 to 57,600 minutes or null, else 400 bad_estimate) and the project's currency and forecast answers.
+G1T=$(curl "${H[@]}" -X POST $B/api/tasks -d "{\"title\":\"Smoke estimate $R\",\"kind\":\"personal\"}" | js d.task.id)
+[ "$(kst "$(gpatch tasks/$G1T '{"estimate_minutes":90}')")" = 200 ] || fail "g1: estimate 90 is not 200"
+[ "$(kst "$(gpatch tasks/$G1T '{"estimate_minutes":null}')")" = 200 ] || fail "g1: estimate null is not 200"
+for b in '{"estimate_minutes":-1}' '{"estimate_minutes":1.5}' '{"estimate_minutes":60000}' '{"estimate_minutes":"2h"}'; do
+  G1=$(gpatch tasks/$G1T "$b"); [ "$(kst "$G1")" = 400 ] && kbody "$G1" | grep -q bad_estimate || fail "g1: $b: $G1"
+done
+G1=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/tasks -d '{"title":"x","estimate_minutes":-1}'); [ "$(kst "$G1")" = 400 ] && kbody "$G1" | grep -q bad_estimate || fail "g1: POST estimate -1: $G1"
+G1P=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke currency","kind":"personal"}' | js d.project.id)
+[ "$(kst "$(gpatch projects/$G1P '{"currency":"usd"}')")" = 400 ] || fail "g1: currency usd is not 400"
+[ "$(kst "$(gpatch projects/$G1P '{"currency":"USD"}')")" = 200 ] || fail "g1: currency USD is not 200"
+[ "$(kst "$(gpatch projects/$G1P '{"budget_forecast":-1}')")" = 400 ] || fail "g1: forecast -1 is not 400"
+curl "${H[@]}" -X DELETE $B/api/tasks/$G1T >/dev/null; curl "${H[@]}" -X DELETE $B/api/projects/$G1P >/dev/null
+echo "smoke: (g1) estimates: 90 and null are 200; -1, 1.5, 60000 and \"2h\" are 400 bad_estimate on PATCH and POST; currency usd 400, USD 200; forecast -1 400"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

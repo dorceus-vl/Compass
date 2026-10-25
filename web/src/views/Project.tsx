@@ -144,7 +144,12 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
             <div className="qcard"><h3>Status</h3>{inp('rag_reason', 'RAG reason')}{inp('sponsor', 'Sponsor')}{inp('phase', 'Phase')}</div>
             <div className="qcard"><h3>Schedule and budget</h3>
               <div className="qpair">{inp('start_at', 'Start', 'date')}{inp('end_at', 'End', 'date')}</div>
-              <div className="qpair">{inp('budget_planned', 'Budget planned', 'number')}{inp('budget_spent', 'Budget spent', 'number')}</div></div>
+              <div className="qpair">{inp('budget_planned', 'Budget planned', 'number')}{inp('budget_spent', 'Budget spent', 'number')}</div>
+              <div className="qpair">{inp('budget_forecast', 'Forecast at completion', 'number')}
+                <label className="qf">Currency
+                  <select className="field" value={p.currency} onChange={(e) => save({ currency: e.target.value })}>
+                    {[...new Set(['CAD', 'USD', 'EUR', 'GBP', p.currency])].map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select></label></div></div>
             <div className="qcard"><h3>Data boundary</h3>
               <div className="seg" role="group" aria-label="Data boundary" style={{ display: 'flex', width: 'max-content', maxWidth: '100%', flexWrap: 'wrap' }}>
                 {([['cloud', 'Cloud AI allowed'], ['offline', 'Offline only']] as const).map(([v, l]) => <button type="button" key={v} className={p.data_boundary === v ? 'on' : ''} aria-pressed={p.data_boundary === v} disabled={boundaryBusy} onClick={() => void setBoundary(v)}>{l}</button>)}</div>

@@ -10,6 +10,7 @@ import { parseBlockedBy, wouldCycle, blocksOf, blockedIds } from '../../../share
 import { BlockedChip } from './BlockedChip.tsx';
 import { Checklist } from './Checklist.tsx';
 import { SaveAsTemplate } from './Templates.tsx';
+import { parseEstimate, formatEstimate } from '../../../shared/workload.ts';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
   ['{"freq":"weekly","interval":1,"weekdays":[1,2,3,4,5]}', 'Weekdays'], ['{"freq":"monthly","interval":1}', 'Every month'], ['{"freq":"weekly","interval":2,"after_completion":true}', 'Two weeks after done']];
@@ -34,6 +35,13 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
   const [splitting, setSplitting] = useState(false);
   const [saveTpl, setSaveTpl] = useState(false);
   const [depQ, setDepQ] = useState('');
+  const [dayHours, setDayHours] = useState(8); // Task 4 adds settings.workload; until then 8
+  const [estText, setEstText] = useState<string | null>(null); // what is typed while it is not (yet) valid
+  const [estBad, setEstBad] = useState(false);
+  useEffect(() => {
+    if (!navigator.onLine) return;
+    void api<{ workload?: { day_hours?: number } }>('/settings').then((s) => setDayHours(s.workload?.day_hours ?? 8)).catch(() => {});
+  }, []);
   const fromMail = task?.source_kind === 'email';
   useEffect(() => {
     if (!fromMail || !navigator.onLine) return;
@@ -97,6 +105,19 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
         {field('Status', <select className="field" value={v.status} onChange={(e) => save({ status: e.target.value as Status })}>{(['new', 'progress', 'hold', 'waiting', 'done'] as const).map((s) => <option key={s} value={s}>{s}</option>)}</select>)}
         {field('Start', <input className="field" type="date" value={v.start_at ?? ''} onChange={(e) => save({ start_at: e.target.value || null })} />)}
         {field('Due', <input className="field" type="date" value={v.due_at ?? ''} onChange={(e) => save({ due_at: e.target.value || null })} />)}
+        {field('Estimate', <>
+          <input className="field" placeholder="30m, 2h, 1d" aria-label="Estimate" aria-describedby="est-msg" value={estText ?? (v.estimate_minutes == null ? '' : formatEstimate(v.estimate_minutes))}
+            onChange={(e) => { setEstText(e.target.value); setEstBad(false); }}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              if (!raw) { setEstText(null); if (task.estimate_minutes != null) save({ estimate_minutes: null }); return; }
+              const n = parseEstimate(raw, dayHours);
+              if (n == null) { setEstBad(true); return; }
+              setEstText(null); if (n !== task.estimate_minutes) save({ estimate_minutes: n });
+            }} />
+          <span id="est-msg" role="status" style={{ fontSize: 12 }}>
+            {estBad ? 'Use minutes, hours or days, like 2h'
+              : tasks.some((t) => t.parent_id === task.id && !t.deleted_at && t.status !== 'done') ? "Workload counts the subtasks' estimates instead." : ''}</span></>)}
         {field('Priority', <select className="field" value={v.priority} onChange={(e) => save({ priority: Number(e.target.value) })}><option value={0}>None</option><option value={1}>Low</option><option value={2}>Medium</option><option value={3}>High</option></select>)}
         {field('Repeat', <select className="field" value={v.recur ?? ''} onChange={(e) => save({ recur: e.target.value || null })}>{RECUR.map(([val, l]) => <option key={val} value={val}>{l}</option>)}</select>)}
         {v.status === 'waiting' && field('Waiting on', <input className="field" value={v.waiting_on ?? ''} onChange={(e) => setDraft({ ...draft, waiting_on: e.target.value })} onBlur={(e) => save({ waiting_on: e.target.value || null })} />)}
