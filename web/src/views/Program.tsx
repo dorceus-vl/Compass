@@ -30,7 +30,7 @@ export function ProgramPage({ id, tab = 'overview' }: { id: string; tab?: string
   useEffect(() => {
     let live = true;
     loadProgramDetail(id).then(({ data, offline }) => { if (live) set({ detail: data, offline, loaded: true }); })
-      .catch((e) => { if (!(e instanceof SignedOut) && live) set({ detail: null, offline: true, loaded: true }); });
+      .catch(() => {}); // only SignedOut reaches here (cached() turns every other failure into an answer); the app signs out
     return () => { live = false; };
   }, [id, n]);
   const current = (TABS as readonly string[]).includes(tab) ? tab : 'overview';

@@ -23,7 +23,7 @@ export function usePrograms() {
   const [n, setN] = useState(0);
   useEffect(() => {
     let live = true;
-    loadPrograms().then(({ data, offline }) => { if (live) set({ programs: data ?? [], offline }); }).catch((e) => { if (!(e instanceof SignedOut) && live) set({ programs: [], offline: true }); });
+    loadPrograms().then(({ data, offline }) => { if (live) set({ programs: data ?? [], offline }); }).catch(() => {}); // only SignedOut reaches here
     return () => { live = false; };
   }, [n]);
   return { ...s, reload: () => setN((x) => x + 1) };

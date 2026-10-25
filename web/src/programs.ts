@@ -1,5 +1,5 @@
 import type { Program, ProgramDetail } from '../../shared/types.ts';
-import { api, SignedOut } from './api.ts';
+import { api, ApiError, SignedOut } from './api.ts';
 import { idb } from './store/db.ts';
 
 // Programs (v2.4): network first, the answer cached in IndexedDB `meta` and shown, marked offline, when the network fails (like the Portfolio).
@@ -7,7 +7,8 @@ import { idb } from './store/db.ts';
 
 export const OFFLINE_LINE = "Programs can be changed when you're online";
 
-/** Rethrows SignedOut (the app signs out); any other failure reads the cached copy. `data` is null when there is no copy either. */
+/** Rethrows SignedOut (the app signs out). A 404 or 410 means gone (trashed elsewhere, or a bad id): the copy is dropped and `data` is null, not offline.
+ *  Any other failure reads the cached copy; `data` is null when there is no copy either. */
 async function cached<T>(id: string, fetcher: () => Promise<T>): Promise<{ data: T | null; offline: boolean }> {
   try {
     const data = await fetcher();
@@ -15,6 +16,7 @@ async function cached<T>(id: string, fetcher: () => Promise<T>): Promise<{ data:
     return { data, offline: false };
   } catch (e) {
     if (e instanceof SignedOut) throw e;
+    if (e instanceof ApiError && (e.status === 404 || e.status === 410)) { await idb.del('meta', id).catch(() => {}); return { data: null, offline: false }; }
     const c = await idb.get<{ data: T }>('meta', id).catch(() => undefined);
     return { data: c?.data ?? null, offline: true };
   }

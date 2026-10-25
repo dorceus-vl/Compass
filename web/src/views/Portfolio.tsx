@@ -43,7 +43,7 @@ export function Portfolio() {
   const closed = projects.filter((p) => !p.deleted_at && p.status === 'closed' && (filter === 'all' || p.kind === filter));
   // Sections in program order, then "No program"; a trashed or unknown program counts as none.
   const known = new Set((programs ?? []).map((g) => g.id));
-  const sections = group
+  const sections = group && programs
     ? [...(programs ?? []).map((g) => ({ key: g.id, g, rows: shown.filter((p) => p.program_id === g.id) })).filter((x) => x.rows.length),
        { key: 'none', g: null, rows: shown.filter((p) => !p.program_id || !known.has(p.program_id)) }].filter((x) => x.rows.length)
     : null;

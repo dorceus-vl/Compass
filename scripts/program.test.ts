@@ -91,4 +91,20 @@ assert.deepEqual(r.budget.totals.map((x) => x.currency), ['CAD', 'USD']);
 // a project with no tasks: 0, and an empty program is none
 assert.equal(programRollup({ program, projects: [], tasks: [], milestones: [], detail: { baselines: [] }, today: '2026-10-25', tz: 'America/Toronto' }).worst, 'none');
 
+// web/src/programs.ts: a 404 (program trashed elsewhere, or a bad id) is "gone", not offline; a network failure is offline.
+// No IndexedDB in Node: the cache reads and writes fail and are swallowed, as they are when storage is blocked.
+{
+  const { loadProgramDetail } = await import('../web/src/programs.ts');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })) as typeof fetch;
+  assert.deepEqual(await loadProgramDetail('gone'), { data: null, offline: false }, '404: not found, not offline');
+  globalThis.fetch = (async () => new Response('{}', { status: 410 })) as typeof fetch;
+  assert.deepEqual(await loadProgramDetail('gone'), { data: null, offline: false }, '410: not found, not offline');
+  globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as typeof fetch;
+  assert.deepEqual(await loadProgramDetail('x'), { data: null, offline: true }, 'network failure: offline');
+  globalThis.fetch = (async () => new Response('{}', { status: 500 })) as typeof fetch;
+  assert.equal((await loadProgramDetail('x')).offline, true, 'a server error still falls back to the copy');
+  globalThis.fetch = realFetch;
+}
+
 console.log('program: ok');
