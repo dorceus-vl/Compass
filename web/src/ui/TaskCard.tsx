@@ -8,6 +8,7 @@ import { taskColor, projectColor } from './colors.ts';
 import { appLabel, appGlyph } from './sources.ts';
 import { BlockedChip } from './BlockedChip.tsx';
 import { ChecklistChip } from './ChecklistChip.tsx';
+import { TimerButton } from './TimerButton.tsx';
 
 /** The icon tile's glyph: the source app's mark, else the project's initial. */
 export function iconFor(task: Task, project?: Project): string {
@@ -36,7 +37,7 @@ export function TaskCard({ task, projects, onOpen, onFinish, blocked }: CardProp
     confetti(x, y, color);
     void completeTask(task.id);
   };
-  const swipe = useSwipe<HTMLElement>({ right: !done, skip: '.check, a', onSwipe: (_d, x, y) => finish(x, y) });
+  const swipe = useSwipe<HTMLElement>({ right: !done, skip: '.check, .timer, a', onSwipe: (_d, x, y) => finish(x, y) });
 
   return (
     <article
@@ -63,6 +64,7 @@ export function TaskCard({ task, projects, onOpen, onFinish, blocked }: CardProp
         </div>
         <div className="due">
           {due.text && <b className={tone}>{due.text}</b>}
+          <TimerButton task={task} />
           <button type="button" className="check" aria-label={`Done: ${task.title}`} aria-pressed={done}
             onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); finish(r.left + r.width / 2, r.top + r.height / 2); }}><i /></button>
         </div>

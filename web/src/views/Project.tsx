@@ -28,6 +28,7 @@ import { projectColor, PROJECT_SWATCHES } from '../ui/colors.ts';
 import { SaveAsTemplate } from '../ui/Templates.tsx';
 import { usePrograms } from './Programs.tsx';
 import { OFFLINE_LINE } from '../programs.ts';
+import { LogTimeDialog } from '../ui/TimeSection.tsx';
 
 const TABS = ['overview', 'dashboard', 'raid', 'stakeholders', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
@@ -41,6 +42,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
   const [programBusy, setProgramBusy] = useState(false);
   const { programs, offline: programsOffline } = usePrograms();
   const [saveTpl, setSaveTpl] = useState(false);
+  const [logTime, setLogTime] = useState(false);
   const [newMs, setNewMs] = useState({ name: '', due_at: '', gate: false });
   const [finished, onFinish] = useFinished();
   const p = projects.find((x) => x.id === id);
@@ -115,10 +117,12 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
             {PROJECT_SWATCHES.map((s, i) => <button type="button" key={s} className="sw" style={{ ['--sw' as string]: s } as CSSProperties} aria-label={`Colour ${SWATCH_NAME[i]}`}
               aria-pressed={color.toLowerCase() === s.toLowerCase()} onClick={() => p.colour !== s && save({ colour: s })}><i /></button>)}
           </div>
+          <button className="btn" onClick={() => setLogTime(true)}>Log time</button>
           <button className="btn" disabled={!online()} title={online() ? undefined : 'Needs a connection'} onClick={() => { if (p.id.startsWith('tmp-')) { toast('Wait for the project to sync, then save it'); return; } setSaveTpl(true); }}>Save as template</button>
           <button className="btn ptrash" onClick={async () => { if (await confirmAction(`Move "${p.name}" to Trash? Its tasks stay on the board.`, { danger: true })) { await trashProject(p.id); toast('Moved to Trash'); navigate('/projects'); } }}>Trash</button>
         </div>
       </header>
+      {logTime && <LogTimeDialog project={p} onClose={() => setLogTime(false)} />}
       <nav className="tabs no-print" role="tablist" aria-label="Project sections" ref={nav}>
         <span className="slide" ref={pill} aria-hidden="true" />
         {TABS.map((t) => <Link key={t} to={`/projects/${p.id}${t === 'overview' ? '' : `/${t}`}`} role="tab" aria-selected={current === t}>{TAB_LABEL[t]}</Link>)}

@@ -10,6 +10,8 @@ import { parseBlockedBy, wouldCycle, blocksOf, blockedIds } from '../../../share
 import { BlockedChip } from './BlockedChip.tsx';
 import { Checklist } from './Checklist.tsx';
 import { SaveAsTemplate } from './Templates.tsx';
+import { TimerButton } from './TimerButton.tsx';
+import { TimeSection } from './TimeSection.tsx';
 import { parseEstimate, formatEstimate } from '../../../shared/workload.ts';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
@@ -93,7 +95,10 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
   const field = (label: string, el: ReactElement) => <label style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--text-faint)' }}>{label}{el}</label>;
   return (
     <dialog ref={ref} onClose={() => { flush(); onClose(); }} style={{ maxWidth: 640 }}>
+      <div className="row" style={{ flexWrap: 'nowrap' }}>
       <input className="field" style={{ fontSize: 18, fontWeight: 600 }} value={v.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={(e) => e.target.value.trim() && save({ title: e.target.value.trim() })} aria-label="Title" />
+      <TimerButton task={task} label />
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
         {field('Project', <select className="field" value={v.project_id ?? ''} onChange={(e) => {
           const to = projects.find((p) => p.id === e.target.value)?.kind ?? v.kind; // a task with links keeps its kind (work and personal never link)
@@ -163,6 +168,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
         </>}
       </section>
       <Checklist task={task} />
+      <TimeSection task={task} tasks={tasks} />
       {field('Notes', <textarea ref={notesRef} className="field" rows={5} defaultValue={v.notes ?? ''} onBlur={(e) => save({ notes: e.target.value || null })} />)}
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>

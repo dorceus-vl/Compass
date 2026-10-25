@@ -1166,3 +1166,26 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .wl-form label{display:grid;gap:4px;font-size:13px;color:var(--text-dim)}
 .wl-form .field{width:auto}
 .wl-form .btn{min-height:44px}
+
+/* ---------- v2.5 time: timer button, running-timers bar, the task sheet's Time section ---------- */
+.btn.timer{min-height:44px;min-width:44px;padding:0 12px;justify-content:center;gap:6px;font:600 13px var(--mono);flex:none}
+.btn.timer svg{width:16px;height:16px;fill:currentColor}
+.btn.timer.on{border-color:var(--accent);color:var(--accent)}
+.tcard .timer{position:relative;z-index:1}
+@container (max-width:420px){.tcard .body{gap:10px}.tcard .due{gap:4px}.tcard .timer.on{padding:0 8px}.tcard .timer.on svg{display:none}}
+.timers{display:grid;gap:6px;background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:8px 10px}
+.timers .trow{display:flex;align-items:center;gap:12px;min-height:44px}
+.timers .tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.timers .tel{font:600 14px var(--mono);color:var(--accent)}
+.timers .btn{min-height:44px;padding:0 14px}
+.tsec{display:grid;gap:10px;margin-top:12px}
+.tsec .tsum{font:600 13px var(--mono);color:var(--text)}
+.tents{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.tent,.tadd{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}
+.tent .field,.tadd .field{min-width:0}
+.tent .tnote,.tadd .tnote{grid-column:1/3}
+.tent{padding:8px 0;border-top:1px solid var(--border-soft)}
+.tent .trun{display:flex;align-items:center;min-height:44px;color:var(--accent);font-size:14px}
+.tent .tauto{grid-column:1/-1;margin:0;color:var(--warn);font-size:13px}
+.tent .btn,.tadd .btn{min-height:44px}
+@media (max-width:760px){.tent,.tadd{grid-template-columns:minmax(0,1fr) auto}.tent>.qf:not(.tnote),.tadd>.qf:not(.tnote){grid-column:1/-1}.tent .tnote,.tadd .tnote{grid-column:1}}

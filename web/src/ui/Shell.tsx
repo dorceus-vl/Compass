@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Link, useRoute } from '../router.ts';
 import { useInbox } from '../inbox.ts';
 import { mediaUrl, useAthenaMedia } from '../athena-media.ts';
+import { TimersBar } from './TimersBar.tsx';
 
 // Inline icons, 24-box, stroke 1.75 (set in CSS), no library.
 const ICONS: Record<string, ReactNode> = {
@@ -86,7 +87,7 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
         <div className="spacer" />
         <Link to="/settings" className={on('settings') || on('kelly')} aria-current={on('settings') || on('kelly') ? 'page' : undefined}><Icon name="settings" />Settings</Link>
       </nav>
-      <div className="main">{children}</div>
+      <div className="main"><TimersBar />{children}</div>
       <nav className="ptab phone-only" aria-label="Main" ref={tab}>
         <span className="slide" ref={tabPill} aria-hidden="true" />
         <Link to="/" className={on('today')} aria-current={on('today') ? 'page' : undefined}><Icon name="today" />Today</Link><Link to="/board" className={on('board')} aria-current={on('board') ? 'page' : undefined}><Icon name="board" />Board</Link>
