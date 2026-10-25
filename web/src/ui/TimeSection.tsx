@@ -1,36 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { DEFAULT_SETTINGS, type Project, type Settings, type Task, type TimeEntry } from '../../../shared/types.ts';
+import type { Project, Task, TimeEntry } from '../../../shared/types.ts';
 import { MAX_ENTRY_MINUTES, MAX_NOTE, taskLogged, zonedToIso, isoToZoned } from '../../../shared/time.ts';
 import { parseEstimate, formatEstimate } from '../../../shared/workload.ts';
 import { addTime, editTime, deleteTime } from '../store/useStore.ts';
-import { idb } from '../store/db.ts';
-import { api } from '../api.ts';
+import { useSettingsBits } from '../settings-cache.ts';
 import { todayIn } from '../dates.ts';
 import { toast } from './dialogs.tsx';
 import { useTimers } from './TimerButton.tsx';
-
-/** settings.tz (cached for offline, like the report's) and day_hours (for "1d"). */
-export function useTimeSettings() {
-  const [s, set] = useState({ tz: DEFAULT_SETTINGS.tz, dayHours: DEFAULT_SETTINGS.workload.day_hours });
-  useEffect(() => {
-    let live = true;
-    void idb.get<{ tz: string }>('meta', 'settings:tz').then((c) => { if (live && c) set((x) => ({ ...x, tz: c.tz })); }).catch(() => {});
-    api<Settings>('/settings').then((r) => {
-      if (!live) return;
-      set({ tz: r.tz, dayHours: r.workload?.day_hours ?? DEFAULT_SETTINGS.workload.day_hours });
-      void idb.put('meta', { id: 'settings:tz', tz: r.tz }).catch(() => {});
-    }).catch(() => {});
-    return () => { live = false; };
-  }, []);
-  return s;
-}
 
 const SHOWN = 50;
 
 /** The task sheet's Time section: total against the estimate, the entries (edit in place), Add time. */
 export function TimeSection({ task, tasks }: { task: Task; tasks: Task[] }) {
   const { entries, now } = useTimers();
-  const { tz, dayHours } = useTimeSettings();
+  const { tz, dayHours } = useSettingsBits();
   const [all, setAll] = useState(false);
   const logged = taskLogged(entries, task.id, tasks, now), est = task.estimate_minutes;
   const summary = est == null ? `${formatEstimate(logged)} logged`
@@ -93,7 +76,8 @@ export function LogTimeForm({ tz, dayHours, onAdd, noteRequired = false, submitL
     if (min == null || min < 1 || min > MAX_ENTRY_MINUTES) { setMsg('Use a duration up to 24 hours, like 1h 30m'); return; }
     if (noteRequired && !note.trim()) { setMsg('Add a note: what was the time for?'); return; }
     setMsg('');
-    await onAdd(start, new Date(Date.parse(start) + min * 60_000).toISOString(), note.trim() || null);
+    try { await onAdd(start, new Date(Date.parse(start) + min * 60_000).toISOString(), note.trim() || null); }
+    catch (e) { setMsg((e as Error).message || "Couldn't add the time"); return; }
     setDur(''); setNote('');
   };
   return (
@@ -110,7 +94,7 @@ export function LogTimeForm({ tz, dayHours, onAdd, noteRequired = false, submitL
 /** The project page's "Log time": time on the project itself, with a note saying what it was for. */
 export function LogTimeDialog({ project, onClose }: { project: Project; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const { tz, dayHours } = useTimeSettings();
+  const { tz, dayHours } = useSettingsBits();
   useEffect(() => { ref.current?.showModal(); }, []);
   return (
     <dialog ref={ref} onClose={onClose} aria-labelledby="logtime-h" style={{ maxWidth: 560 }}>

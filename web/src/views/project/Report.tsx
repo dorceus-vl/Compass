@@ -14,6 +14,7 @@ import { PrintDoc } from '../../ui/PrintDoc.tsx';
 import { toast } from '../../ui/dialogs.tsx';
 import { accent, projectColor } from '../../ui/colors.ts';
 import { useDocs } from './Documents.tsx';
+import { useSettingsBits } from '../../settings-cache.ts';
 
 type Preset = 'week' | 'two' | 'month' | 'custom';
 const PRESETS: [Preset, string][] = [['week', 'This week'], ['two', 'Last 2 weeks'], ['month', 'This month'], ['custom', 'Custom']];
@@ -23,17 +24,8 @@ export const REFUSED: Record<string, string> = {
   rate_limited: 'Too many questions this hour. Try again in a few minutes.', provider_error: 'The provider could not answer. Try again.',
 };
 
-/** settings.tz decides what "today" and "this week" mean; the last copy is kept for offline use. */
-export function useTz() {
-  const [tz, set] = useState(DEFAULT_SETTINGS.tz);
-  useEffect(() => {
-    let live = true;
-    void idb.get<{ tz: string }>('meta', 'settings:tz').then((c) => { if (live && c) set(c.tz); }).catch(() => {});
-    api<Settings>('/settings').then((s) => { if (live) { set(s.tz); void idb.put('meta', { id: 'settings:tz', tz: s.tz }).catch(() => {}); } }).catch(() => {});
-    return () => { live = false; };
-  }, []);
-  return tz;
-}
+/** settings.tz decides what "today" and "this week" mean (cached for offline use). */
+export const useTz = () => useSettingsBits().tz;
 
 const rangeOf = (preset: Preset, today: string, custom: { from: string; to: string }) => {
   const mon = startOfWeek(today);

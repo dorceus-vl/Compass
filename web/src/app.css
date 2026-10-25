@@ -1172,6 +1172,11 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .btn.timer svg{width:16px;height:16px;fill:currentColor}
 .btn.timer.on{border-color:var(--accent);color:var(--accent)}
 .tcard .timer{position:relative;z-index:1}
+.kc{flex-direction:row;align-items:flex-end;gap:8px}
+.kc .kb{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px;border-radius:10px}
+.kc .kb:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.kc .kt{flex:none;cursor:default}
+.timerwrap{display:grid;gap:4px;justify-items:end;max-width:220px;text-align:right}
 @container (max-width:420px){.tcard .body{gap:10px}.tcard .due{gap:4px}.tcard .timer.on{padding:0 8px}.tcard .timer.on svg{display:none}}
 .timers{display:grid;gap:6px;background:var(--panel);border:1px solid var(--border-soft);border-radius:18px;padding:8px 10px}
 .timers .trow{display:flex;align-items:center;gap:12px;min-height:44px}

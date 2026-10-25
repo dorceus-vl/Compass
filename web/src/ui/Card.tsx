@@ -6,6 +6,7 @@ import { iconFor } from './TaskCard.tsx';
 import { appLabel } from './sources.ts';
 import { BlockedChip } from './BlockedChip.tsx';
 import { ChecklistChip } from './ChecklistChip.tsx';
+import { TimerButton } from './TimerButton.tsx';
 
 const HZ = { short: 'Short', medium: 'Medium', long: 'Long' };
 const TONE = { over: 'var(--danger)', due: 'var(--accent)', '': 'var(--text-dim)' };
@@ -21,8 +22,9 @@ export function Card({ task, project, projects, subtasks, onOpen, dragging, land
   return (
     <div className={`kc${dragging ? ' ghost' : ''}${landed ? ' landed' : ''}${task.status === 'hold' && task.waiting_on ? ' block' : ''}`} data-task={task.id}
       onPointerDown={(e) => onPointerDown(e, task.id)} onClick={() => !dragging && onOpen(task.id)}
-      style={{ ['--tc' as string]: color }} role="button" tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onOpen(task.id)}>
+      style={{ ['--tc' as string]: color }}>
+      {/* The opener is its own role=button so the timer can sit beside it, not inside it. */}
+      <div className="kb" role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOpen(task.id)}>
       <div className="kh">
         <div className="ico" aria-hidden="true">{iconFor(task, project)}</div>
         <div className="kx">
@@ -40,6 +42,9 @@ export function Card({ task, project, projects, subtasks, onOpen, dragging, land
         {due.text && <span className="chip" style={dot(TONE[due.tone])}><i />{due.text}</span>}
         {task.priority === 3 && <span className="chip" style={dot('var(--danger)')}><i />!</span>}
       </div>
+      </div>
+      {/* Not a drag handle and not the opener: a press here never reaches the card's handlers. */}
+      <div className="kt" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}><TimerButton task={task} /></div>
     </div>
   );
 }
