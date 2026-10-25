@@ -1804,6 +1804,70 @@ G3B='{"workload":{"overrides":{"2030-01-07":{"work":10,"personal":2}}}}'; G3=$(g
 G3B='{"workload":{"overrides":{"2030-01-07":null}}}'; G3=$(gpatch settings "$G3B")
 [ "$(kst "$G3")" = 200 ] && [ "$(kbody "$G3" | js "'2030-01-07' in d.workload.overrides")" = false ] || fail "g3: a null override is not removed: $G3"
 echo "smoke: (g3) workload settings: an older row reads the defaults; work_hours 200, day_hours 0, a Tuesday override and 105 overrides 400; an override saved, then removed by null"
+# (t0) v2.5 Task 0: time entries. A start is 201 and running; a second on the same task is 409 timer_running; five running make the sixth 409 timer_limit; stop ends it
+# and a second stop is 200 unchanged; a manual end 10 minutes ahead, 25 hours, a project entry without a note are 400 bad_time; a done task is 409 time_target; a work
+# note is ciphertext in D1 (enc_v 2), a personal one plain; GET since returns a trashed row; Trash lists it (task title, no note) and restores it; restoring a running
+# entry beside a new one is 409 timer_running; Empty Trash with a task 31 days in Trash removes its entries; export opens the table. Everything it made is removed.
+tpost() { curl "${H[@]}" -w '\n%{http_code}' -X POST "$B/api/$1" -d "$2"; }
+trun() { D1X "SELECT count(*) AS n FROM time_entries WHERE ended_at IS NULL AND deleted_at IS NULL" | js 'd[0].results[0].n'; }
+TRUN=$(trun); [ "$TRUN" -le 3 ] || fail "t0: the local D1 already has $TRUN running timers"
+TT=(); for i in 1 2 3 4 5 6 7; do TB="{\"title\":\"Smoke time $R $i\",\"kind\":\"personal\"}"; TT+=("$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)"); done
+TB="{\"title\":\"Smoke time work $R\",\"kind\":\"work\"}"; TWT=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+TB="{\"title\":\"Smoke time done $R\",\"kind\":\"personal\"}"; TDT=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id); curl "${H[@]}" -X POST $B/api/tasks/$TDT/done >/dev/null
+TB="{\"name\":\"Smoke time project $R\",\"kind\":\"personal\"}"; TPJ=$(curl "${H[@]}" -X POST $B/api/projects -d "$TB" | js d.project.id)
+X=$(tpost time "{\"task_id\":\"${TT[0]}\"}"); [ "$(kst "$X")" = 201 ] && [ "$(kbody "$X" | js "d.entry.ended_at+'|'+d.entry.source+'|'+d.entry.kind")" = "null|timer|personal" ] || fail "t0: start: $X"
+TE1=$(kbody "$X" | js d.entry.id)
+X=$(tpost time "{\"task_id\":\"${TT[0]}\"}"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q timer_running || fail "t0: a second start on the task: $X"
+for ((i = 1; i <= 3 - TRUN; i++)); do [ "$(kst "$(tpost time "{\"task_id\":\"${TT[$i]}\"}")")" = 201 ] || fail "t0: start $i"; done
+X=$(tpost time "{\"task_id\":\"${TT[4]}\"}"); [ "$(kst "$X")" = 201 ] || fail "t0: the fifth timer: $X"
+[ "$(trun)" = 5 ] || fail "t0: five timers are not running ($(trun))"
+X=$(tpost time "{\"task_id\":\"${TT[5]}\"}"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q timer_limit || fail "t0: the sixth timer: $X"
+X=$(tpost time/$TE1/stop '{}'); [ "$(kst "$X")" = 200 ] || fail "t0: stop: $X"
+TEND=$(kbody "$X" | js d.entry.ended_at); [ "$TEND" != null ] || fail "t0: stop left it running"
+X=$(tpost time/$TE1/stop '{}'); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.entry.ended_at)" = "$TEND" ] || fail "t0: a second stop changed it: $X"
+[ "$(kst "$(tpost time/no-such-entry/stop '{}')")" = 404 ] || fail "t0: stopping a missing entry is not 404"
+# refusals
+iso() { node -pe "new Date(Date.now()+($1)*6e4).toISOString()"; }
+TB="{\"task_id\":\"${TT[0]}\",\"started_at\":\"$(iso -30)\",\"ended_at\":\"$(iso 10)\"}"; X=$(tpost time "$TB"); [ "$(kst "$X")" = 400 ] && kbody "$X" | grep -q bad_time || fail "t0: a manual end 10 minutes ahead: $X"
+TB="{\"task_id\":\"${TT[0]}\",\"started_at\":\"$(iso -1560)\",\"ended_at\":\"$(iso -60)\"}"; X=$(tpost time "$TB"); [ "$(kst "$X")" = 400 ] && kbody "$X" | grep -q bad_time || fail "t0: a 25 h manual entry: $X"
+TB="{\"task_id\":\"${TT[0]}\",\"started_at\":\"$(iso -30)\",\"ended_at\":\"$(iso -40)\"}"; [ "$(kst "$(tpost time "$TB")")" = 400 ] || fail "t0: an end before the start is not 400"
+TB="{\"project_id\":\"$TPJ\",\"started_at\":\"$(iso -30)\",\"ended_at\":\"$(iso -10)\"}"; X=$(tpost time "$TB"); [ "$(kst "$X")" = 400 ] && kbody "$X" | grep -q bad_time || fail "t0: a project entry without a note: $X"
+TB="{\"task_id\":\"${TT[0]}\",\"project_id\":\"$TPJ\"}"; [ "$(kst "$(tpost time "$TB")")" = 400 ] || fail "t0: task and project is not 400"
+X=$(tpost time "{\"task_id\":\"$TDT\"}"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q time_target || fail "t0: a done task: $X"
+# a project entry with a note; a work note sealed in D1, a personal one plain; the list opens it
+TB="{\"project_id\":\"$TPJ\",\"note\":\"Smoke time planning $R\",\"started_at\":\"$(iso -30)\",\"ended_at\":\"$(iso -10)\"}"; X=$(tpost time "$TB"); [ "$(kst "$X")" = 201 ] && [ "$(kbody "$X" | js d.entry.source)" = manual ] || fail "t0: a project entry: $X"
+TB="{\"task_id\":\"$TWT\",\"note\":\"Smoke time note $R\",\"started_at\":\"$(iso -90)\",\"ended_at\":\"$(iso -60)\"}"; X=$(tpost time "$TB"); [ "$(kst "$X")" = 201 ] || fail "t0: a work entry: $X"
+TEW=$(kbody "$X" | js d.entry.id)
+RAWT=$(D1X "SELECT note||'|'||enc_v||'|'||kind AS a FROM time_entries WHERE id='$TEW'" | js 'd[0].results[0].a')
+case "$RAWT" in *Smoke*) fail "t0: a work note is plain in D1: $RAWT";; *"|2|work") ;; *) fail "t0: a work entry's enc_v or kind: $RAWT";; esac
+TB="{\"task_id\":\"${TT[0]}\",\"note\":\"Smoke own note $R\",\"started_at\":\"$(iso -200)\",\"ended_at\":\"$(iso -100)\"}"; X=$(tpost time "$TB"); TEP=$(kbody "$X" | js d.entry.id)
+[ "$(D1X "SELECT note||'|'||enc_v AS a FROM time_entries WHERE id='$TEP'" | js 'd[0].results[0].a')" = "Smoke own note $R|0" ] || fail "t0: a personal note is not plain"
+curl "${H[@]}" $B/api/time | js "d.entries.some(e=>e.id==='$TEW'&&e.note==='Smoke time note $R')" | grep -qx true || fail "t0: the list does not open the work note"
+TB='{"note":"Smoke edited","ended_at":"'"$(iso -95)"'"}'; X=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/time/$TEP -d "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.entry.note)" = "Smoke edited" ] || fail "t0: PATCH: $X"
+TB='{"ended_at":"'"$(iso -300)"'"}'; [ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/time/$TEP -d "$TB")")" = 400 ] || fail "t0: PATCH an end before the start is not 400"
+# trash: since returns it; Trash lists it by its task's title, no note; restore
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/time/$TEP)" = 200 ] || fail "t0: trash an entry"
+curl "${H[@]}" "$B/api/time?since=$T0" | js "d.entries.some(e=>e.id==='$TEP'&&e.deleted_at)" | grep -qx true || fail "t0: since does not return the trashed entry"
+curl "${H[@]}" $B/api/time | js "d.entries.some(e=>e.id==='$TEP')" | grep -qx false || fail "t0: the plain list returns a trashed entry"
+curl "${H[@]}" $B/api/trash | js "const e=d.time_entries.find(x=>x.id==='$TEP'); !!e&&e.label==='Smoke time $R 1'&&!('note' in e)" | grep -qx true || fail "t0: Trash does not list the entry"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/time_entries/$TEP/restore)" = 200 ] || fail "t0: restore an entry"
+# a running entry trashed while a new one starts on its task can't come back
+X=$(tpost time "{\"task_id\":\"${TT[0]}\"}"); TER=$(kbody "$X" | js d.entry.id); curl "${H[@]}" -X DELETE $B/api/time/$TER >/dev/null
+[ "$(kst "$(tpost time "{\"task_id\":\"${TT[0]}\"}")")" = 201 ] || fail "t0: start after trashing the running entry"
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/time_entries/$TER/restore); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q timer_running || fail "t0: restore beside a running timer: $X"
+# purge: a task 31 days in Trash takes its entries with it
+TB="{\"task_id\":\"${TT[6]}\",\"started_at\":\"$(iso -30)\",\"ended_at\":\"$(iso -10)\"}"; TEG=$(kbody "$(tpost time "$TB")" | js d.entry.id)
+curl "${H[@]}" -X DELETE $B/api/tasks/${TT[6]} >/dev/null
+D1X "UPDATE tasks SET deleted_at = '$(node -pe 'new Date(Date.now()-31*864e5).toISOString()')' WHERE id='${TT[6]}'" >/dev/null
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.purged.time_entries)" -ge 2 ] || fail "t0: Empty Trash: $X"
+[ "$(D1X "SELECT count(*) AS n FROM time_entries WHERE id IN ('$TEG','$TER')" | js 'd[0].results[0].n')" = 0 ] || fail "t0: an entry survived Empty Trash"
+# export opens the work note; audit rows carry no note
+curl "${H[@]}" $B/api/export | js "d.time_entries.some(e=>e.id==='$TEW'&&e.note==='Smoke time note $R'&&!('enc_v' in e))" | grep -qx true || fail "t0: export did not open the time entries"
+D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'time.%' AND detail LIKE '%Smoke%'" | js 'd[0].results[0].n' | grep -qx 0 || fail "t0: an audit row carries a note"
+# clean up (local D1 only)
+D1X "DELETE FROM time_entries WHERE created_at >= '$T0'" >/dev/null
+curl "${H[@]}" -X DELETE $B/api/projects/$TPJ >/dev/null
+echo "smoke: (t0) time: start 201 running, same task 409 timer_running, sixth 409 timer_limit, stop twice same end, future end / 25 h / no project note 400, done task 409 time_target, work note ciphertext (personal plain), since returns a trashed entry, Trash lists and restores it (running beside a new one 409), Empty Trash removes a purged task's entries, export opens them"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

@@ -20,6 +20,11 @@ export interface Program {
   id: string; kind: Kind; name: string; rag: Rag; rag_reason: string | null; notes: string | null; sort: number; enc_v: number;
   created_at: string; updated_at: string; deleted_at: string | null;
 }
+/** v2.5: time on a task (task_id) or straight on a project (project_id, with a note); a running timer has ended_at null. kind is copied at creation (T2); note sealed for work. */
+export interface TimeEntry {
+  id: string; task_id: string | null; project_id: string | null; kind: Kind; started_at: string; ended_at: string | null; note: string | null;
+  source: 'timer' | 'manual' | 'widget'; auto_stopped: number; enc_v: number; created_at: string; updated_at: string; deleted_at: string | null;
+}
 /** GET /api/programs/:id/detail (P3): the latest live baseline of each member (opened), the top 10 open risks by probability x impact, pending changes per member. */
 export interface ProgramDetail {
   program: Program;
@@ -197,4 +202,6 @@ export interface ExportBundle {
   baselines: Raw; stakeholders: Raw;
   /** v2.4 */
   programs: Raw;
+  /** v2.5 */
+  time_entries: Raw;
 }

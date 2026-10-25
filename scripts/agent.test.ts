@@ -50,3 +50,10 @@ console.log('agent: ok');
 // The projects shape is exactly seven keys: v2.4's program, forecast and currency never reach Kelly.
 const proj = agentProject({ id: 'p', name: 'n', rag: 'green', rag_reason: null, pct_done: 50, next_milestone: null, open_risks: 1, program_id: 'g', budget_forecast: 10, currency: 'CAD', budget_planned: 5 } as never);
 assert.deepEqual(Object.keys(proj).sort(), ['id', 'name', 'next_milestone', 'open_risks', 'pct_done', 'rag', 'rag_reason']);
+
+// v2.5: the task shape Kelly gets is still exactly seven keys, and the agent routes never read time entries.
+import { readFileSync } from 'node:fs';
+const agentSrc = readFileSync(new URL('../worker/routes/agent.ts', import.meta.url), 'utf8');
+const shape = /type AgentTask = \{([^}]*)\}/.exec(agentSrc)?.[1] ?? '';
+assert.deepEqual(shape.split(';').map((f) => f.split(':')[0]!.trim()).filter(Boolean).sort(), ['due_at', 'horizon', 'id', 'priority', 'project', 'status', 'title']);
+assert.ok(!/time_entries|\/time\b/.test(agentSrc + readFileSync(new URL('../worker/lib/agent.ts', import.meta.url), 'utf8')), 'Kelly never sees time entries');

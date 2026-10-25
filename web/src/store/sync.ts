@@ -2,9 +2,9 @@ import { api, ApiError, SignedOut, online } from '../api.ts';
 import { idb } from './db.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { planPull, rewriteTmp, tmpIds } from './merge.ts';
-import type { Task, Project, Milestone } from '../../../shared/types.ts';
+import type { Task, Project, Milestone, TimeEntry } from '../../../shared/types.ts';
 
-type Entity = 'tasks' | 'projects' | 'milestones';
+type Entity = 'tasks' | 'projects' | 'milestones' | 'time';
 /** A queued write. `tempId` maps an optimistic create to the server's id when the reply comes back. */
 export interface QueuedOp { seq?: number; method: 'POST' | 'PATCH' | 'DELETE'; path: string; json?: unknown; tempId?: string; store?: Entity }
 const listeners = new Set<() => void>();
@@ -29,20 +29,25 @@ async function applyPlan<T extends { id: string; updated_at: string; deleted_at?
 export function pull(): Promise<void> {
   return exclusive(async () => {
     const since = (await idb.get<{ id: string; at: string }>('meta', 'last_pull'))?.at;
-    const [t, p] = await Promise.all([
+    const sinceTime = (await idb.get<{ id: string; at: string }>('meta', 'last_pull_time'))?.at; // T6: its own mark
+    const [t, p, te] = await Promise.all([
       api<{ tasks: Task[] }>(`/tasks?status=all${since ? `&since=${encodeURIComponent(since)}` : ''}`),
       api<{ projects: Project[] }>('/projects'),
+      api<{ entries: TimeEntry[] }>(`/time${sinceTime ? `?since=${encodeURIComponent(sinceTime)}` : ''}`),
     ]);
     const ms = (await Promise.all(p.projects.map((pr) => api<{ milestones: Milestone[] }>(`/projects/${pr.id}`).then((r) => r.milestones)))).flat();
     // Local rows first, then the queue: a create queues before its row is written, so any row seen here is already claimed below.
-    const [lt, lp, lm] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones')]);
+    const [lt, lp, lm, ltime] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones'), idb.all<TimeEntry>('time')]);
     const claimed = new Set((await idb.all<QueuedOp>('queue')).flatMap((o) => (o.tempId ? [o.tempId] : [])));
     await applyPlan('tasks', lt, t.tasks, claimed, false); // incremental; trashed rows come back with `deleted_at` and leave the device
     await applyPlan('projects', lp, p.projects, claimed, true);
     await applyPlan('milestones', lm, ms, claimed, true);
+    await applyPlan('time', ltime, te.entries, claimed, false); // incremental, like tasks
     // Server clock, so client skew cannot make a later pull skip rows.
-    const last = t.tasks.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '');
+    const latest = (rows: { updated_at: string }[]) => rows.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '');
+    const last = latest(t.tasks), lastTime = latest(te.entries);
     if (last) await idb.put('meta', { id: 'last_pull', at: last });
+    if (lastTime) await idb.put('meta', { id: 'last_pull_time', at: lastTime });
     notify();
   });
 }
@@ -65,21 +70,29 @@ async function take(store: Entity, row: { id: string; deleted_at?: string | null
 async function adopt(op: QueuedOp, real: { id: string }) {
   const tmp = op.tempId!, store = op.store!;
   if (await idb.get(store, tmp)) { await idb.del(store, tmp); await idb.put(store, real); } // trashed meanwhile: its queued DELETE follows
-  if (store !== 'milestones') for (const t of await idb.all<Task>('tasks')) {
-    if (t.project_id === tmp || t.parent_id === tmp) await idb.put('tasks', { ...t, project_id: t.project_id === tmp ? real.id : t.project_id, parent_id: t.parent_id === tmp ? real.id : t.parent_id });
+  if (store === 'tasks' || store === 'projects') {
+    for (const t of await idb.all<Task>('tasks')) {
+      if (t.project_id === tmp || t.parent_id === tmp) await idb.put('tasks', { ...t, project_id: t.project_id === tmp ? real.id : t.project_id, parent_id: t.parent_id === tmp ? real.id : t.parent_id });
+    }
+    for (const e of await idb.all<TimeEntry>('time')) {
+      if (e.task_id === tmp || e.project_id === tmp) await idb.put('time', { ...e, task_id: e.task_id === tmp ? real.id : e.task_id, project_id: e.project_id === tmp ? real.id : e.project_id });
+    }
   }
   if (store === 'projects') for (const m of await idb.all<Milestone>('milestones')) if (m.project_id === tmp) await idb.put('milestones', { ...m, project_id: real.id });
 }
 
-type Reply = { task?: Task; next?: Task; project?: Project; milestone?: Milestone };
+type Reply = { task?: Task; next?: Task; project?: Project; milestone?: Milestone; entry?: TimeEntry };
 
 /** The server refused a write to an existing row: fetch the winning copy and replace ours; a 404 means it is gone. */
 async function refetch(path: string) {
-  const m = /^\/(tasks|projects|milestones)\/([^/]+)/.exec(path);
+  const m = /^\/(tasks|projects|milestones|time)\/([^/]+)/.exec(path);
   if (!m) return;
   const entity = m[1] as Entity, id = m[2]!;
   try {
-    if (entity === 'tasks') await take('tasks', (await api<{ task: Task }>(`/tasks/${id}`)).task);
+    if (entity === 'time') { // no single-entry route: the live list says whether it is still there (refusals are rare)
+      const x = (await api<{ entries: TimeEntry[] }>('/time')).entries.find((e) => e.id === id);
+      if (x) await take('time', x); else await idb.del('time', id);
+    } else if (entity === 'tasks') await take('tasks', (await api<{ task: Task }>(`/tasks/${id}`)).task);
     else {
       const pid = entity === 'projects' ? id : (await idb.get<Milestone>('milestones', id))?.project_id;
       if (!pid) return;
@@ -122,11 +135,12 @@ export function replay(onSignedOut?: () => void): Promise<void> {
             const t = id ? await idb.get<Task>('tasks', id) : undefined;
             toast(`Compass couldn't save a change to ${t?.title ?? j?.title ?? 'a task'}: ${why}`);
           }
+          if (path.startsWith('/time')) toast(`Compass couldn't save a time entry: ${(e as Error).message}`); // the server's sentence
           try { if (op.tempId && op.store) await idb.del(op.store, op.tempId); else await refetch(path); }
           catch (e2) { if (e2 instanceof SignedOut) { onSignedOut?.(); return; } console.error('resync failed', e2); }
           continue;
         }
-        const created = op.tempId && op.store ? (reply.task ?? reply.project ?? reply.milestone) : undefined;
+        const created = op.tempId && op.store ? (reply.task ?? reply.project ?? reply.milestone ?? reply.entry) : undefined;
         if (created) await idb.put('meta', { id: `idmap:${op.tempId}`, real: created.id }); // before dequeuing: a later op needs it
         await idb.del('queue', op.seq!);
         try { // the write is done: a local failure here must not look like "offline" or re-send it; the next pull repairs the row
@@ -135,6 +149,7 @@ export function replay(onSignedOut?: () => void): Promise<void> {
             if (reply.task) await take('tasks', reply.task);
             if (reply.project) await take('projects', reply.project);
             if (reply.milestone) await take('milestones', reply.milestone);
+            if (reply.entry) await take('time', reply.entry);
           }
           if (reply.next) await take('tasks', reply.next, true);
         } catch (e) { console.error('applying reply failed', e); }

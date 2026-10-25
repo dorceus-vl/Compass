@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { idb, type Store } from './db.ts';
 import { enqueue, onChange, notify } from './sync.ts';
-import type { Task, Project, Milestone, Status } from '../../../shared/types.ts';
+import type { Task, Project, Milestone, Status, TimeEntry, Kind } from '../../../shared/types.ts';
 
 export function useStore() {
-  const [state, set] = useState<{ tasks: Task[]; projects: Project[]; milestones: Milestone[]; ready: boolean }>({ tasks: [], projects: [], milestones: [], ready: false });
-  const refresh = async () => set({ tasks: await idb.all<Task>('tasks'), projects: await idb.all<Project>('projects'), milestones: await idb.all<Milestone>('milestones'), ready: true });
+  const [state, set] = useState<{ tasks: Task[]; projects: Project[]; milestones: Milestone[]; time: TimeEntry[]; ready: boolean }>({ tasks: [], projects: [], milestones: [], time: [], ready: false });
+  const refresh = async () => set({ tasks: await idb.all<Task>('tasks'), projects: await idb.all<Project>('projects'), milestones: await idb.all<Milestone>('milestones'),
+    time: (await idb.all<TimeEntry>('time')).filter((e) => !e.deleted_at), ready: true });
   useEffect(() => { void refresh(); return onChange(() => void refresh()); }, []);
   return { ...state, refresh };
 }
@@ -80,4 +81,42 @@ export async function updateMilestone(id: string, patch: Partial<Milestone>): Pr
   const cur = await idb.get<Milestone>('milestones', id); if (!cur) return;
   await idb.put('milestones', { ...cur, ...patch, updated_at: now() }); notify();
   await enqueue({ method: 'PATCH', path: `/milestones/${id}`, json: patch });
+}
+
+// v2.5 time entries (T5): optimistic rows with temp ids through the queue; the reply's `entry` gives the real id.
+type TimeTarget = { task_id: string } | { project_id: string; note: string };
+async function newEntry(target: TimeTarget, started_at: string, ended_at: string | null, note: string | null, source: TimeEntry['source']): Promise<void> {
+  const t = now();
+  const owner = 'task_id' in target
+    ? { task_id: await resolveId('tasks', target.task_id), project_id: null }
+    : { task_id: null, project_id: await resolveId('projects', target.project_id) };
+  const from = owner.task_id ? await idb.get<{ kind: Kind }>('tasks', owner.task_id) : await idb.get<{ kind: Kind }>('projects', owner.project_id!);
+  const e: TimeEntry = { id: tmp(), ...owner, kind: from?.kind ?? 'personal', started_at, ended_at, note, source, auto_stopped: 0, enc_v: 0, created_at: t, updated_at: t, deleted_at: null };
+  const json = { ...(owner.task_id ? { task_id: owner.task_id } : { project_id: owner.project_id }), started_at, note, ...(ended_at ? { ended_at } : { source }) };
+  await enqueue({ method: 'POST', path: '/time', json, tempId: e.id, store: 'time' }, e);
+}
+/** `source` is 'widget' when the app drains a widget's offline start (Task 4). */
+export async function startTimer(target: TimeTarget, source: 'timer' | 'widget' = 'timer'): Promise<void> {
+  await newEntry(target, now(), null, 'note' in target ? target.note : null, source);
+}
+export async function stopTimer(id: string): Promise<void> {
+  id = await resolveId('time', id);
+  const cur = await idb.get<TimeEntry>('time', id); if (!cur || cur.ended_at) return;
+  const ended_at = now();
+  await idb.put('time', { ...cur, ended_at, updated_at: ended_at }); notify();
+  await enqueue({ method: 'POST', path: `/time/${id}/stop`, json: { ended_at } });
+}
+export async function addTime(target: TimeTarget, started_at: string, ended_at: string, note: string | null): Promise<void> {
+  await newEntry(target, started_at, ended_at, note ?? ('note' in target ? target.note : null), 'manual');
+}
+export async function editTime(id: string, patch: Partial<Pick<TimeEntry, 'started_at' | 'ended_at' | 'note'>>): Promise<void> {
+  id = await resolveId('time', id);
+  const cur = await idb.get<TimeEntry>('time', id); if (!cur) return;
+  await idb.put('time', { ...cur, ...patch, auto_stopped: 0, updated_at: now() }); notify();
+  await enqueue({ method: 'PATCH', path: `/time/${id}`, json: patch });
+}
+export async function deleteTime(id: string): Promise<void> {
+  id = await resolveId('time', id);
+  await idb.del('time', id); notify();
+  await enqueue({ method: 'DELETE', path: `/time/${id}` });
 }

@@ -8,9 +8,10 @@ import { remove } from '../lib/vectors.ts';
 import { MAX_BASELINES } from '../../shared/baseline.ts';
 import { MAX_STAKEHOLDERS } from '../../shared/stakeholders.ts';
 import { MAX_PROGRAMS } from '../../shared/program.ts';
+import { MAX_RUNNING } from '../../shared/time.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
-const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders', programs: 'programs' } as const;
+const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders', programs: 'programs', time_entries: 'time_entries' } as const;
 // Phase 3 rows show "name · project": the list query joins the project (name, enc_v) and this opens it.
 const PM_TABLES = ['raid_items', 'change_requests', 'decisions', 'lessons', 'documents', 'ai_threads'] as const;
 const TRASH_DAYS = 30, AUDIT_DAYS = 90, SESSION_DAYS = 30;
@@ -49,6 +50,13 @@ trash.get('/', async (c) => {
   // v2.4: a deleted program, by name and kind (notes and the RAG reason stay on the server).
   const pg = await c.env.DB.prepare('SELECT id, kind, name, deleted_at, enc_v FROM programs WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all<{ enc_v: number }>();
   pm.programs = await openAll(c.env, 'programs', pg.results);
+  // v2.5: a deleted time entry, by its times and its task's title or project's name (opened); never the note.
+  const te = await c.env.DB.prepare(`SELECT x.id, x.task_id, x.project_id, x.started_at, x.ended_at, x.deleted_at, t.title AS task_title, t.enc_v AS task_enc_v, p.name AS project_name, p.enc_v AS project_enc_v
+    FROM time_entries x LEFT JOIN tasks t ON t.id = x.task_id LEFT JOIN projects p ON p.id = x.project_id WHERE x.deleted_at IS NOT NULL ORDER BY x.deleted_at DESC`)
+    .all<{ id: string; task_id: string | null; project_id: string | null; started_at: string; ended_at: string | null; deleted_at: string; task_title: string | null; task_enc_v: number; project_name: string | null; project_enc_v: number }>();
+  pm.time_entries = await Promise.all(te.results.map(async ({ task_title, task_enc_v, project_name, project_enc_v, ...r }) => ({
+    ...r, label: task_title !== null ? (await open(c.env, 'tasks', { title: task_title, enc_v: task_enc_v })).title : project_name === null ? null : (await open(c.env, 'projects', { name: project_name, enc_v: project_enc_v })).name,
+  })));
   return c.json({ tasks: await openAll(c.env, 'tasks', t.results), projects: await openAll(c.env, 'projects', p.results), milestones: await openAll(c.env, 'milestones', m.results), ...pm, purge_after_days: TRASH_DAYS });
 });
 
@@ -69,6 +77,14 @@ trash.post('/:table/:id/restore', async (c) => {
   if (table === 'programs') {
     const n = await c.env.DB.prepare('SELECT (SELECT COUNT(*) FROM programs WHERE deleted_at IS NULL) AS n FROM programs b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL').bind(id).first<{ n: number }>();
     if (n && n.n >= MAX_PROGRAMS) return c.json({ error: 'program_limit', message: `Compass keeps ${MAX_PROGRAMS} programs at most` }, 409);
+  }
+  // v2.5: a running entry comes back only if the timer caps still hold.
+  if (table === 'time_entries') {
+    const n = await c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM time_entries WHERE ended_at IS NULL AND deleted_at IS NULL) AS n,
+      (SELECT COUNT(*) FROM time_entries o WHERE o.task_id = b.task_id AND o.ended_at IS NULL AND o.deleted_at IS NULL) AS onTask
+      FROM time_entries b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL AND b.ended_at IS NULL`).bind(id).first<{ n: number; onTask: number }>();
+    if (n && n.onTask > 0) return c.json({ error: 'timer_running', message: 'A timer is already running on that task' }, 409);
+    if (n && n.n >= MAX_RUNNING) return c.json({ error: 'timer_limit', message: `${MAX_RUNNING} timers can run at once` }, 409);
   }
   let r;
   try {
@@ -99,7 +115,7 @@ trash.post('/empty', async (c) => {
 
 /**
  * Cron: rows in Trash for 30 days are deleted (all = everything in Trash, for Empty Trash).
- * Order respects the foreign keys: knowledge passages and items first (KN17), events, task parents, tasks, copilot messages then threads, library imports then documents,
+ * Order respects the foreign keys: knowledge passages and items first (KN17), events, time entries (v2.5), task parents, tasks, copilot messages then threads, library imports then documents,
  * knowledge collections (before the documents their items came from),
  * project logs (RAID, changes, lessons, decisions), baselines and stakeholders (v2.2), milestones, project links (tasks, meeting reviews, programs), projects, then programs (v2.4, P8).
  */
@@ -121,10 +137,11 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const gonePrograms = 'SELECT id FROM programs WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [kchunks, kitems, events, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , , projects, clips, , programs] = await env.DB.batch([
+  const [kchunks, kitems, events, times, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , , projects, clips, , programs] = await env.DB.batch([
     q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // first, while tasks and reviews still name their project; their vectors go below
     q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
+    q(`DELETE FROM time_entries WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR task_id IN (${goneTasks}) OR project_id IN (${goneProjects})`), // v2.5 (T11): before the tasks and projects they point at (FK)
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING id`),
@@ -158,7 +175,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const tts = (messages.results as { id: string }[]).map(({ id }) => `athena-tts/${id}`); // R2 deletes up to 1,000 keys a call; a missing key is fine
   for (let i = 0; i < tts.length; i += 1000) await env.FILES.delete(tts.slice(i, i + 1000)).catch(() => console.warn('[trash] could not delete an answer\'s audio'));
   return {
-    task_events: events.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
+    task_events: events.meta.changes, time_entries: times.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
     raid_items: raid.meta.changes, change_requests: changes.meta.changes, lessons: lessons.meta.changes, decisions: decisions.meta.changes,
     baselines: baselines.meta.changes, stakeholders: stakeholders.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes, programs: programs.meta.changes, athena_clips: clips.results.length,
     knowledge_chunks: kchunks.results.length, knowledge_items: kitems.meta.changes, knowledge_collections: kcolls.meta.changes,

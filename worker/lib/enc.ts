@@ -28,6 +28,8 @@ export const ENC_COLS = {
   stakeholders: ['name', 'role', 'channel', 'notes'],
   // v2.4. rag and kind stay plain.
   programs: ['name', 'rag_reason', 'notes'],
+  // v2.5. Times, ids, source and flags stay plain.
+  time_entries: ['note'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string | null }; // typed rows (Project, Milestone) have no index signature

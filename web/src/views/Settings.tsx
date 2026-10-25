@@ -58,7 +58,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
     await revokeWidgetToken(); // before the session ends; the Settings switch is derived from the server's list, so it reads off after the next sign-in
     await logout().catch(() => {});
     await clearWidgets();
-    await Promise.all((['tasks', 'projects', 'milestones', 'meta', 'queue'] as const).map((st) => idb.clear(st)));
+    await Promise.all((['tasks', 'projects', 'milestones', 'time', 'meta', 'queue'] as const).map((st) => idb.clear(st)));
     onSignedOut();
   };
   const row = (label: string, el: ReactElement) => <label key={label} style={{ display: 'grid', gridTemplateColumns: '1fr 200px', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14 }}>{label}{el}</label>;

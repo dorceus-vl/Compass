@@ -47,6 +47,13 @@ assert.equal(sp.rag, 'amber'); assert.equal(sp.kind, 'work');
 assert.deepEqual(await open(env, 'programs', { ...sp }), { ...prog, enc_v: 2 });
 const ownProg = { ...prog, id: 'g2', kind: 'personal' };
 assert.deepEqual(await seal(env, 'programs', { ...ownProg }), ownProg, 'a personal program is untouched');
+// v2.5: a work time entry's note is sealed (times, ids, source plain); a personal one stays plain.
+const te = { id: 'te1', task_id: 't1', project_id: null, kind: 'work', started_at: '2026-10-28T14:00:00.000Z', ended_at: null, note: 'Vendor call', source: 'timer', auto_stopped: 0, enc_v: 0 };
+const ste = await seal(env, 'time_entries', { ...te }) as any;
+assert.equal(ste.enc_v, 2); assert.notEqual(ste.note, 'Vendor call'); assert.equal(ste.started_at, te.started_at); assert.equal(ste.source, 'timer');
+assert.deepEqual(await open(env, 'time_entries', { ...ste }), { ...te, enc_v: 2 });
+assert.deepEqual(await seal(env, 'time_entries', { ...te, kind: 'personal' }), { ...te, kind: 'personal' }, 'a personal entry is untouched');
+assert.deepEqual(ENC_COLS.time_entries, ['note']);
 for (const t of ['raid_items', 'change_requests', 'lessons', 'documents', 'ai_threads', 'ai_messages'] as const) assert.ok(ENC_COLS[t].length > 0);
 
 // Raw bytes (every byte value, bigger than one base64 chunk) round-trip; the context binds them.

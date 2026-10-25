@@ -1,13 +1,18 @@
-// A thin IndexedDB wrapper: one database, five object stores, promises. No library.
-const NAME = 'compass', VERSION = 1;
-export type Store = 'tasks' | 'projects' | 'milestones' | 'meta' | 'queue';
+// A thin IndexedDB wrapper: one database, six object stores, promises. No library.
+const NAME = 'compass', VERSION = 2; // 2 (v2.5): `time`
+export type Store = 'tasks' | 'projects' | 'milestones' | 'time' | 'meta' | 'queue';
 let dbp: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   return (dbp ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(NAME, VERSION);
-    req.onupgradeneeded = () => { for (const s of ['tasks', 'projects', 'milestones', 'meta'] as const) req.result.createObjectStore(s, { keyPath: 'id' }); req.result.createObjectStore('queue', { keyPath: 'seq', autoIncrement: true }); };
-    req.onsuccess = () => resolve(req.result);
+    // Any upgrade (a fresh install, or v1 gaining `time`) creates whichever stores are missing.
+    req.onupgradeneeded = () => {
+      const db = req.result, has = (s: string) => db.objectStoreNames.contains(s);
+      for (const s of ['tasks', 'projects', 'milestones', 'time', 'meta'] as const) if (!has(s)) db.createObjectStore(s, { keyPath: 'id' });
+      if (!has('queue')) db.createObjectStore('queue', { keyPath: 'seq', autoIncrement: true });
+    };
+    req.onsuccess = () => { const db = req.result; db.onversionchange = () => { db.close(); dbp = null; }; resolve(db); }; // a newer tab's upgrade is never blocked by this one
     req.onerror = () => reject(req.error);
   }));
 }
