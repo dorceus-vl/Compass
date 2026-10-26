@@ -72,7 +72,7 @@ export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
   wip_limits: { new: null, progress: 5, hold: null, waiting: null, done: null }, saved_views: [], tz: 'America/Toronto',
-  push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true, unblocked: true, stakeholder: true },
+  push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true, unblocked: true, stakeholder: true, timer: true },
   work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
   kelly: { enabled: false, scopes: [] },
   athena: { voice_id: null, speak_answers: false, portrait_id: null },
@@ -104,7 +104,7 @@ export interface MeetingReview {
   series_id?: string | null; // v2.1: the meeting series (shared/series.ts)
 }
 export interface Decision { id: string; project_id: string | null; text: string; decided_at: string; from_meeting_id: string | null; at_ref: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
-export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting' | 'unblocked' | 'stakeholder';
+export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting' | 'unblocked' | 'stakeholder' | 'timer';
 
 export type RaidType = 'risk' | 'assumption' | 'issue' | 'dependency';
 export interface RaidItem {

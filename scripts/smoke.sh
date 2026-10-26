@@ -1877,6 +1877,26 @@ D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'time.%' AND detail L
 D1X "DELETE FROM time_entries WHERE created_at >= '$T0'" >/dev/null
 curl "${H[@]}" -X DELETE $B/api/projects/$TPJ >/dev/null
 echo "smoke: (t0) time: start 201 running, same task 409 timer_running, sixth 409 timer_limit, stop twice same end, future end / 25 h / no project note 400, done task 409 time_target, work note ciphertext (personal plain), since returns a trashed entry, note edit after a stop keeps it stopped, stale edit 409 time_conflict, Trash lists and restores it (running beside a new one 409), Empty Trash removes a purged task's entries, export opens them"
+# (t1) v2.5 Task 2: forgotten timers. A timer running 5 h gets one outbox push (key timer:<id>:4h, body without the task title) and a second cron adds none; one running
+# 13 h is stopped at start + 12 h with auto_stopped = 1. Quiet hours are switched off while it runs. Local D1 only; the seeded rows are removed.
+T1Q=$(curl "${H[@]}" $B/api/settings | js '[d.quiet_from,d.quiet_to].join()'); curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null
+TB="{\"title\":\"Smoke forgotten timer $R\",\"kind\":\"personal\"}"; T1T=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+iso() { date -u -v-"$1"H +%Y-%m-%dT%H:%M:%S.000Z; }
+T1S5=$(iso 5); T1S13=$(iso 13)
+D1X "INSERT INTO time_entries (id, task_id, kind, started_at, source, created_at, updated_at) VALUES ('smk-t1-5','$T1T','personal','$T1S5','timer','$T1S5','$T1S5'), ('smk-t1-13','$T1T','personal','$T1S13','timer','$T1S13','$T1S13')" >/dev/null
+cron; sleep 1
+t1n() { D1X "SELECT count(*) AS n FROM push_outbox WHERE id LIKE 'timer:smk-t1-%'" | js 'd[0].results[0].n'; }
+[ "$(t1n)" = 1 ] || fail "t1: expected one timer push, got $(t1n)"
+D1X "SELECT body FROM push_outbox WHERE id = 'timer:smk-t1-5:4h'" | js 'd[0].results[0].body' | grep -qx 'A timer has been running 4h' || fail "t1: the push body"
+D1X "SELECT title, body FROM push_outbox WHERE id LIKE 'timer:smk-t1-%'" | grep -q "Smoke forgotten" && fail "t1: the push carries the task title"
+cron; sleep 1
+[ "$(t1n)" = 1 ] || fail "t1: a second cron sent another push"
+D1X "SELECT auto_stopped AS a, ended_at AS e, started_at AS s FROM time_entries WHERE id = 'smk-t1-13'" | js 'd[0].results[0].a+"|"+(d[0].results[0].e===new Date(Date.parse(d[0].results[0].s)+12*3600e3).toISOString())' | grep -qx '1|true' || fail "t1: the 13 h timer was not stopped at start + 12 h"
+D1X "SELECT ended_at IS NULL AS r, auto_stopped AS a FROM time_entries WHERE id = 'smk-t1-5'" | js 'd[0].results[0].r+"|"+d[0].results[0].a' | grep -qx '1|0' || fail "t1: the 5 h timer should still run"
+D1X "DELETE FROM time_entries WHERE id LIKE 'smk-t1-%'; DELETE FROM push_outbox WHERE id LIKE 'timer:smk-t1-%'; DELETE FROM push_log WHERE key LIKE 'timer:smk-t1-%'" >/dev/null
+curl "${H[@]}" -X DELETE $B/api/tasks/$T1T >/dev/null
+curl "${H[@]}" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${T1Q%,*}\",\"quiet_to\":\"${T1Q#*,}\"}" >/dev/null
+echo "smoke: (t1) forgotten timers: 5 h -> one outbox push without the task title, second cron adds none; 13 h -> stopped at start + 12 h, auto_stopped"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

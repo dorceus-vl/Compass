@@ -133,3 +133,28 @@ export async function notifyStakeholders(env: Env, at: Date): Promise<void> {
     console.error(`[push] notifyStakeholders failed: ${(e as Error).name}`); // never stops the rest of the cron
   }
 }
+
+export const TIMER_NUDGE_TEXT = 'A timer has been running 4h';
+const MAX_NUDGES = 50; // at most five timers run at once (timer_limit), so this never cuts a nudge
+
+/**
+ * Forgotten timers (v2.5 T7), from the cron's `pushes`. First, a timer running 12 h or more is stopped at started_at + 12 h (derived from the stored value in SQL,
+ * `auto_stopped = 1`, `updated_at` bumped so a stale device edit hits the compare-and-swap). Then one push per timer running 4 h or more, with no task name:
+ * the outbox row `timer:<id>:4h` is the once-only guard; a switch-off or quiet hours write nothing, so those retry at the next tick. Never throws.
+ */
+export async function notifyTimers(env: Env, at: Date): Promise<void> {
+  try {
+    const h = (n: number) => new Date(+at - n * 3600e3).toISOString();
+    await env.DB.prepare(`UPDATE time_entries SET ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', started_at, '+12 hours'), auto_stopped = 1, updated_at = ?1
+      WHERE ended_at IS NULL AND deleted_at IS NULL AND started_at <= ?2`).bind(at.toISOString(), h(12)).run();
+    const s = await getSettings(env);
+    if (s.push.timer === false || inQuietHours(localNow(s.tz, at).hhmm, s.quiet_from, s.quiet_to)) return;
+    const { results } = await env.DB.prepare('SELECT id FROM time_entries WHERE ended_at IS NULL AND deleted_at IS NULL AND started_at <= ?1 LIMIT ?2').bind(h(4), MAX_NUDGES).all<{ id: string }>();
+    for (const { id } of results) {
+      const key = `timer:${id}:4h`;
+      if (!(await env.DB.prepare('SELECT 1 FROM push_outbox WHERE id = ?1').bind(key).first())) await deliver(env, { title: 'Compass', body: TIMER_NUDGE_TEXT, url: '/time' }, key);
+    }
+  } catch (e) {
+    console.error(`[push] notifyTimers failed: ${(e as Error).name}`); // never stops the rest of the cron
+  }
+}
