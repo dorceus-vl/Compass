@@ -23,16 +23,30 @@ import org.json.JSONObject;
 public final class WidgetSnapshot {
     public static final class Item {
         public final String id, title, dueLabel, horizon, project;
-        public final boolean late, work, offline;
+        public final boolean late, work, offline, timerRunning;
 
         Item(JSONObject o) {
             id = str(o, "id"); title = str(o, "title"); dueLabel = nz(str(o, "due_label")); horizon = nz(str(o, "horizon")); project = str(o, "project");
-            late = o.optBoolean("late"); work = o.optBoolean("work"); offline = o.optBoolean("offline");
+            late = o.optBoolean("late"); work = o.optBoolean("work"); offline = o.optBoolean("offline"); timerRunning = o.optBoolean("timer_running");
         }
 
         /** An Offline-only task is never named (W1 gives it no title). No Lock Screen on Android (A2), so a work title shows as it is. */
         public String shown() { return title == null || offline ? "Offline-only task" : title; }
         public boolean named() { return title != null && !offline; }
+    }
+
+    /** A running timer (v2.5): a task's (taskId) or a project's (null). title is null where the builder wouldn't name it; never a note. */
+    public static final class Timer {
+        public final String id, taskId, title, startedAt;
+        public final boolean work;
+
+        Timer(JSONObject o) { id = str(o, "id"); taskId = str(o, "task_id"); title = str(o, "title"); startedAt = nz(str(o, "started_at")); work = o.optBoolean("work"); }
+
+        /** No Lock Screen on Android (A2), so a work title shows as it is; an unnamed timer is "Running timer". */
+        public String shown() { return title == null ? "Running timer" : title; }
+
+        /** When it started (epoch ms), or `fallback` when started_at can't be read. */
+        public long startedMillis(long fallback) { Long t = millis(startedAt); return t == null ? fallback : t; }
     }
 
     public static final class Project {
@@ -66,6 +80,7 @@ public final class WidgetSnapshot {
     public final int due, late, done, total, blocked;
     public final Item next;
     public final List<Item> items, shortItems, mediumItems, longItems;
+    public final List<Timer> timers;
     public final List<Project> projects;
     public final List<Day> week;
 
@@ -82,6 +97,10 @@ public final class WidgetSnapshot {
         mediumItems = items(h == null ? null : h.optJSONArray("medium"));
         longItems = items(h == null ? null : h.optJSONArray("long"));
         blocked = o.optInt("blocked");
+        List<Timer> ts = new ArrayList<>();
+        JSONArray ta = o.optJSONArray("timers"); // absent in files from before v2.5: none running
+        for (int i = 0; ta != null && i < ta.length(); i++) { JSONObject x = ta.optJSONObject(i); if (x != null && str(x, "id") != null) ts.add(new Timer(x)); }
+        timers = Collections.unmodifiableList(ts);
         List<Project> ps = new ArrayList<>();
         JSONArray pa = o.optJSONArray("projects");
         for (int i = 0; pa != null && i < pa.length(); i++) { JSONObject p = pa.optJSONObject(i); if (p != null && str(p, "id") != null) ps.add(new Project(p)); }
@@ -144,6 +163,38 @@ public final class WidgetSnapshot {
         }
     }
 
+    // ---- timers (v2.5, the optimistic half of a Start or Stop tap; the twin of Snapshot.timing on iOS) ----
+
+    /** The file's text right after Start or Stop on a task, or null when nothing changes (a task not in the snapshot, already running, or a bad action).
+     *  Start: its rows say running and a timer from `at` leads the list (at most 5). Stop: the task's timers leave and its rows say stopped. */
+    public String timing(String id, String action, String at) {
+        boolean on = "start".equals(action);
+        if (!on && !"stop".equals(action)) return null;
+        Item it = find(id);
+        if (on && (it == null || it.timerRunning || runningOn(id))) return null;
+        try {
+            JSONObject s = new JSONObject(json.toString());
+            JSONArray old = s.optJSONArray("timers"), next = new JSONArray();
+            if (on) next.put(new JSONObject().put("id", "widget-" + id).put("task_id", id).put("title", it.offline || it.title == null ? JSONObject.NULL : it.title).put("started_at", at).put("work", it.work));
+            for (int i = 0; old != null && i < old.length() && next.length() < 5; i++) { JSONObject x = old.optJSONObject(i); if (x != null && !id.equals(str(x, "task_id"))) next.put(x); }
+            s.put("timers", next);
+            mark(s.optJSONArray("items"), id, on);
+            JSONObject h = s.optJSONObject("horizons");
+            if (h != null) for (String k : new String[] { "short", "medium", "long" }) mark(h.optJSONArray(k), id, on);
+            JSONObject t = s.optJSONObject("today"), n = t == null ? null : t.optJSONObject("next");
+            if (n != null && id.equals(str(n, "id"))) n.put("timer_running", on);
+            return s.toString();
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    private boolean runningOn(String id) { for (Timer t : timers) if (id.equals(t.taskId)) return true; return false; }
+
+    private static void mark(JSONArray a, String id, boolean on) throws JSONException {
+        for (int i = 0; a != null && i < a.length(); i++) { JSONObject o = a.optJSONObject(i); if (o != null && id.equals(str(o, "id"))) o.put("timer_running", on); }
+    }
+
     private Item find(String id) {
         if (id == null) return null;
         List<Item> all = new ArrayList<>(items);
@@ -182,6 +233,14 @@ public final class WidgetSnapshot {
         SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
         f.setTimeZone(TimeZone.getTimeZone("UTC"));
         try { return ymd(f.parse(at.substring(0, 19)).getTime(), tz); } catch (ParseException e) { return null; }
+    }
+
+    /** An ISO time ("2026-10-21T15:00:00.000Z") as epoch ms, or null. */
+    static Long millis(String iso) {
+        if (iso == null || iso.length() < 19) return null;
+        SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
+        f.setTimeZone(TimeZone.getTimeZone("UTC"));
+        try { return f.parse(iso.substring(0, 19)).getTime(); } catch (ParseException e) { return null; }
     }
 
     /** Written on another day than `now` (in its zone): its "Today" is yesterday's until the app writes again. */

@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-/// The Lock Screen widgets: inline (counts), circular (done today) and rectangular (the next task). Anyone can glance at a Lock Screen, so a work
+/// The Lock Screen widgets: inline (counts), circular (done today) and rectangular (the next task; v2.5: a running timer's elapsed time, never its title). Anyone can glance at a Lock Screen, so a work
 /// title shows as "Work task" while `lock.hide_work` is on; Offline-only tasks are never named anywhere. System vibrant rendering, no Compass colours.
 struct LockWidgets: Widget {
     var body: some WidgetConfiguration {
@@ -75,7 +75,14 @@ struct LockRectangular: View {
         if let s {
             let t = s.today
             VStack(alignment: .leading, spacing: 1) {
-                if let n = t.next {
+                if let timer = s.running.first {
+                    // v2.5: a running timer shows its elapsed time only (no title, whatever its kind), above the next task.
+                    HStack(spacing: 4) { Image(systemName: "timer"); Text(timer.started, style: .timer).monospacedDigit() }
+                        .font(.headline).widgetAccentable().lineLimit(1)
+                        .accessibilityElement(children: .combine).accessibilityLabel(s.running.count == 1 ? "A timer is running" : "\(s.running.count) timers are running")
+                    if let n = t.next { Text(n.shown(lock: true, hideWork: s.lock.hideWork)).lineLimit(1) } else { Text("Nothing due").lineLimit(1) }
+                    Text(lateLine(t)).opacity(0.75).lineLimit(1)
+                } else if let n = t.next {
                     Text("Next · \(n.dueLabel)").font(.headline).widgetAccentable().lineLimit(1)
                     Text(n.shown(lock: true, hideWork: s.lock.hideWork)).lineLimit(1)
                     Text(lateLine(t) + (s.lock.hideWork && n.work && !n.offline ? " · titles hidden" : "")).opacity(0.75).lineLimit(1)

@@ -5,12 +5,12 @@
 import { api, online } from './api.ts';
 import { idb } from './store/db.ts';
 import { onChange } from './store/sync.ts';
-import { completeTask, resolveId } from './store/useStore.ts';
+import { completeTask, resolveId, startTimer, stopTimer } from './store/useStore.ts';
 import { inWidgetShell, nativeDevice, setWidgetToken, takeWidgetTicks, updateWidgets } from './native.ts';
 import { buildWidgetSnapshot } from '../../shared/widget-snapshot.ts';
 import { localDay } from '../../shared/dashboard.ts';
 import { parseSnapshot, type Snapshot } from '../../shared/baseline.ts';
-import { DEFAULT_SETTINGS, type Milestone, type Project, type RaidItem, type Settings, type Task } from '../../shared/types.ts';
+import { DEFAULT_SETTINGS, type Milestone, type Project, type RaidItem, type Settings, type Task, type TimeEntry } from '../../shared/types.ts';
 import type { BaselineInfo } from './baselines.ts';
 
 const DEBOUNCE_MS = 2000;
@@ -52,19 +52,27 @@ let gen = 0; // bumped by clearWidgets and by stopping, so a write already in fl
 export async function writeWidgets(): Promise<void> {
   if (!inWidgetShell()) return;
   const mine = gen;
-  const [tasks, projects, milestones, s] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones'), readSettings()]);
-  const snap = buildWidgetSnapshot({ tasks, projects, milestones, ...(await readCaches(projects)), tz: s.tz, hide_work_on_lock: s.hide_work_on_lock, now: new Date() });
+  const [tasks, projects, milestones, time, s] = await Promise.all([idb.all<Task>('tasks'), idb.all<Project>('projects'), idb.all<Milestone>('milestones'), idb.all<TimeEntry>('time'), readSettings()]);
+  const snap = buildWidgetSnapshot({ tasks, projects, milestones, time, ...(await readCaches(projects)), tz: s.tz, hide_work_on_lock: s.hide_work_on_lock, now: new Date() });
   const same = JSON.stringify({ ...snap, at: localDay(snap.at, s.tz) }); // a new day is a change: the widgets must stop saying "open Compass to update"
   if (same === lastJson || mine !== gen) return;
   if (await updateWidgets(JSON.stringify(snap))) lastJson = same;
 }
 
-/** Ticks a widget couldn't deliver (offline, revoked, over the limit, a task the server didn't know yet) go through the normal offline queue, which knows unsynced ids;
- *  a task already done, or truly gone from the device, is dropped here. */
+/** What a widget couldn't deliver (offline, revoked, over the limit, a task the server didn't know yet) goes through the normal offline queue, which knows unsynced ids;
+ *  a task already done, or truly gone from the device, is dropped here. In order: a done tick completes the task; a timer `start` starts one (a second timer on the task
+ *  or the five-timer limit is the server's 409, which the queue drops quietly); a `stop` stops the task's running timer if there is one. */
 async function sendTicks(): Promise<void> {
   for (const t of await takeWidgetTicks()) {
-    const cur = await idb.get<Task>('tasks', await resolveId('tasks', t.id).catch(() => t.id)).catch(() => undefined);
-    if (cur && cur.status !== 'done') await completeTask(t.id).catch(() => {});
+    const id = await resolveId('tasks', t.id).catch(() => t.id);
+    const cur = await idb.get<Task>('tasks', id).catch(() => undefined);
+    if (!cur || cur.status === 'done') continue;
+    if (!t.action) await completeTask(t.id).catch(() => {});
+    else {
+      const run = (await idb.all<TimeEntry>('time').catch(() => [] as TimeEntry[])).find((e) => e.task_id === id && !e.ended_at && !e.deleted_at);
+      if (t.action === 'stop') { if (run) await stopTimer(run.id).catch(() => {}); }
+      else if (!run) await startTimer({ task_id: id }, 'widget').catch(() => {});
+    }
   }
 }
 

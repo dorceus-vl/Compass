@@ -2,7 +2,7 @@ import SwiftUI
 import WidgetKit
 
 /// Today, as in docs/widgets-preview.html: small (counts and the next task), medium (three tasks with ticks and the done ring),
-/// large (by horizon, Blocked, the next milestone). A tap opens Today; a task's title opens the task (W4).
+/// large (by horizon, Blocked, the next milestone). v2.5: running timers lead medium and large (elapsed, Stop), and each task row has Start or Stop. A tap opens Today; a task's title opens the task (W4).
 struct TodayWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CompassToday", provider: SnapProvider()) { entry in
@@ -78,8 +78,11 @@ struct TodayMedium: View {
             Head(title: todayHead(s, now))
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    if s.items.isEmpty { Text("Nothing due. The day is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim) }
-                    ForEach(s.items.prefix(3)) { TaskRow(item: $0, hide: s.hides($0), height: 32) }
+                    // v2.5: the newest running timer takes the first of the three rows.
+                    let timers = Array(s.running.prefix(1))
+                    ForEach(timers) { TimerRow(timer: $0, hide: s.hides($0), height: 32) }
+                    if s.items.isEmpty && timers.isEmpty { Text("Nothing due. The day is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim) }
+                    ForEach(s.items.prefix(3 - timers.count)) { TaskRow(item: $0, hide: s.hides($0), timer: true, height: 32) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(spacing: 4) {
@@ -95,8 +98,10 @@ struct TodayMedium: View {
 struct TodayLarge: View {
     let s: Snapshot; let now: Date
     /// Rows by horizon, short first, within what a large widget holds (one fewer when the Blocked line shows).
+    /// v2.5: up to two running timers lead, each taking a task row.
+    private var timers: [Snapshot.RunningTimer] { Array(s.running.prefix(2)) }
     private var groups: [(String, [Snapshot.Item])] {
-        var left = s.blocked > 0 ? 6 : 7
+        var left = (s.blocked > 0 ? 6 : 7) - timers.count
         return [("Short", s.horizons.short), ("Medium", s.horizons.medium), ("Long", s.horizons.long)].compactMap { name, list in
             let take = Array(list.prefix(left)); left -= take.count
             return take.isEmpty ? nil : (name, take)
@@ -105,10 +110,14 @@ struct TodayLarge: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Head(title: todayHead(s, now, "\(s.today.due) due"))
-            if groups.isEmpty && s.blocked == 0 { Text("Nothing due. The day is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim).padding(.top, 6) }
+            if !timers.isEmpty {
+                GroupLabel(text: timers.count == 1 ? "Timer" : "Timers")
+                ForEach(timers) { TimerRow(timer: $0, hide: s.hides($0)) }
+            }
+            if groups.isEmpty && s.blocked == 0 && timers.isEmpty { Text("Nothing due. The day is yours.").font(.system(size: 12)).foregroundStyle(Theme.dim).padding(.top, 6) }
             ForEach(groups, id: \.0) { name, list in
                 GroupLabel(text: name)
-                ForEach(list) { TaskRow(item: $0, hide: s.hides($0)) }
+                ForEach(list) { TaskRow(item: $0, hide: s.hides($0), timer: true) }
             }
             if s.blocked > 0 {
                 GroupLabel(text: "Blocked (\(s.blocked))")

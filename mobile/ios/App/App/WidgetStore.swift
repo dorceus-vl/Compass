@@ -46,8 +46,12 @@ enum WidgetStore {
         if let e = inner ?? outer { throw e }
     }
 
-    /// The ticks a widget queued while offline, oldest first; the file is cleared as it is read. The file is moved aside first (a rename is atomic),
-    /// so a tick the widget appends meanwhile starts a new file instead of being lost.
+    /// A pending entry's action (v2.5): nil is a done tick (files from before timers read the same), "start" or "stop" a timer action.
+    static func validAction(_ a: String?) -> Bool { a == nil || a == "start" || a == "stop" }
+
+    /// What a widget queued while offline, oldest first: done ticks (`id`, `at`) and timer actions (also `action`); the file is cleared as it is read.
+    /// The file is moved aside first (a rename is atomic), so an entry the widget appends meanwhile starts a new file instead of being lost.
+    /// An entry with an unknown action is dropped, never read as a done tick.
     static func takeTicks(in dir: URL) -> [[String: String]] {
         let file = dir.appendingPathComponent(ticksName), taken = dir.appendingPathComponent("\(ticksName).\(UUID().uuidString).taking")
         guard (try? FileManager.default.moveItem(at: file, to: taken)) != nil else { return [] }
@@ -55,27 +59,40 @@ enum WidgetStore {
         guard let data = try? Data(contentsOf: taken), let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
         return list.prefix(maxTicks).compactMap { t in
             guard let id = t["id"] as? String, let at = t["at"] as? String, !id.isEmpty, id.count <= 64, at.count <= 40 else { return nil }
-            return ["id": id, "at": at]
+            let action = t["action"] as? String
+            guard validAction(action), t["action"] == nil || t["action"] is NSNull || action != nil else { return nil }
+            return action.map { ["id": id, "at": at, "action": $0] } ?? ["id": id, "at": at]
         }
     }
 
-    /// A tick from a widget, kept for the app to send (`takeTicks`). The same task twice is kept once; past `maxTicks` new ones are dropped,
-    /// as `takeTicks` would. If the app takes the file meanwhile, this write starts a new one: a tick may then be sent twice, which is harmless
-    /// (the app skips tasks already done).
-    static func appendTick(_ id: String, at: String, in dir: URL) throws {
-        guard !id.isEmpty, id.count <= 64, at.count <= 40 else { return }
+    /// An entry from a widget, kept for the app to send (`takeTicks`): a done tick (`action` nil) or a timer action. A tap that repeats the last queued action
+    /// for the same task is kept once (start, stop, start stays three entries, in order); past `maxTicks` new ones are dropped, as `takeTicks` would. If the app
+    /// takes the file meanwhile, this write starts a new one: an entry may then be sent twice, which is harmless (the app skips tasks already done, timers already running).
+    static func appendTick(_ id: String, at: String, action: String? = nil, in dir: URL) throws {
+        guard !id.isEmpty, id.count <= 64, at.count <= 40, validAction(action) else { return }
         let file = dir.appendingPathComponent(ticksName)
         var list = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
-        guard list.count < maxTicks, !list.contains(where: { $0["id"] as? String == id }) else { return }
-        list.append(["id": id, "at": at])
+        guard list.count < maxTicks else { return }
+        if let last = list.last(where: { $0["id"] as? String == id }), last["action"] as? String == action { return }
+        var entry: [String: Any] = ["id": id, "at": at]
+        if let action { entry["action"] = action }
+        list.append(entry)
         try JSONSerialization.data(withJSONObject: list).write(to: file, options: writeOptions)
     }
 
-    /// Drops a tick the widget has now delivered to the server (Task 2), so the app doesn't send it again. A file the app already took has nothing to drop.
-    static func removeTick(_ id: String, in dir: URL) throws {
+    /// Drops what the widget has now delivered (a 200), so the app doesn't send it again. A done tick drops the task's done ticks. A timer action drops its own
+    /// entry (same `at`) and every earlier timer action for that task: the server's answer already settles them (a 200 start means none was running; after a 200
+    /// stop none is). A file the app already took has nothing to drop.
+    static func removeTick(_ id: String, action: String? = nil, at: String? = nil, in dir: URL) throws {
         let file = dir.appendingPathComponent(ticksName)
         guard let data = try? Data(contentsOf: file), let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
-        let kept = list.filter { $0["id"] as? String != id }
+        let isTimer = { (t: [String: Any]) in t["id"] as? String == id && (t["action"] as? String).map { $0 == "start" || $0 == "stop" } == true }
+        var kept: [[String: Any]]
+        if action == nil {
+            kept = list.filter { !($0["id"] as? String == id && $0["action"] == nil) }
+        } else if let mine = list.lastIndex(where: { isTimer($0) && $0["action"] as? String == action && $0["at"] as? String == at }) {
+            kept = list.enumerated().filter { i, t in !(i <= mine && isTimer(t)) }.map(\.element)
+        } else { return }
         if kept.count == list.count { return }
         if kept.isEmpty { try? FileManager.default.removeItem(at: file); return }
         try JSONSerialization.data(withJSONObject: kept).write(to: file, options: writeOptions)

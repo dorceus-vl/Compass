@@ -12,7 +12,7 @@ import WidgetKit
 //   openExternal({ url })                          http(s), mailto:, tel: in the system
 //   updateWidgets({ json })                        v2.3 (W2): the widget snapshot, at most 64 KB, written atomically into the app group (protected until the first unlock); '' removes it; then the widgets reload
 //   setWidgetToken({ token })                      v2.3 (W6): the widget's tick token in the shared Keychain item; null deletes it
-//   takeWidgetTicks() → { ticks: [{ id, at }] }    v2.3: ticks a widget queued offline (pending-ticks.json), cleared as they are read
+//   takeWidgetTicks() → { ticks: [{ id, at, action? }] }  v2.3: ticks a widget queued offline (pending-ticks.json), cleared as they are read; v2.5: action start|stop = a timer action
 //   events sharedText { text }, notificationTap { url }   (kept until the page listens, so a cold start loses neither)
 // It also decides every top-level navigation of the web view (CompassLink.route): Compass stays in, other pages go to the browser.
 @objc(CompassNativePlugin)

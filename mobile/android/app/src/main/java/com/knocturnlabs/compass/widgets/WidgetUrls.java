@@ -62,14 +62,31 @@ public final class WidgetUrls {
         return server.replaceAll("/$", "") + "/api/widget/tasks/" + encode(id) + "/done";
     }
 
+    /** v2.5 (T8): POST target for a timer action, <server>/api/widget/tasks/<id>/timer, under the same rules as doneUrl. */
+    public static String timerUrl(String id, String server, boolean allowLocal) {
+        String done = doneUrl(id, server, allowLocal);
+        return done == null ? null : done.substring(0, done.length() - "/done".length()) + "/timer";
+    }
+
+    /** A timer action's body, {"action":"start"|"stop","at":"<ISO>"}; null for any other action or an `at` that isn't a plain timestamp. */
+    public static String timerBody(String action, String at) {
+        if (!("start".equals(action) || "stop".equals(action)) || at == null || !at.matches("[0-9T:.Z+-]{1,40}")) return null;
+        return "{\"action\":\"" + action + "\",\"at\":\"" + at + "\"}";
+    }
+
     /** Only 200 settles a tick. A 404 stays queued (a task made offline may not be on the server yet), and so do 401, 429, 5xx and no answer. */
     public static boolean settles(int status) { return status == 200; }
 
     /** The tick's request, byte for byte: the bearer token is its only credential. No Cookie header can be added on the way. */
-    static byte[] request(URI u, String token) {
+    static byte[] request(URI u, String token) { return request(u, token, null); }
+
+    /** The same, with a JSON body (a timer action, built by timerBody: ASCII only). */
+    static byte[] request(URI u, String token, String body) {
         String host = u.getHost() + (u.getPort() == -1 ? "" : ":" + u.getPort());
+        String b = body == null ? "" : body;
         return ("POST " + u.getRawPath() + " HTTP/1.1\r\nHost: " + host + "\r\nAuthorization: Bearer " + token
-            + "\r\nContent-Length: 0\r\nUser-Agent: CompassWidget\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
+            + (body == null ? "" : "\r\nContent-Type: application/json")
+            + "\r\nContent-Length: " + b.length() + "\r\nUser-Agent: CompassWidget\r\nConnection: close\r\n\r\n" + b).getBytes(StandardCharsets.US_ASCII);
     }
 
     /**
@@ -78,8 +95,11 @@ public final class WidgetUrls {
      * HttpURLConnection, and this request must carry the token alone. https is verified against the host (`verify`, the platform's
      * default verifier on Android); a redirect is just a status (never followed); `timeoutMs` bounds the connect and each read.
      */
-    public static int post(String url, String token, SSLSocketFactory tls, HostnameVerifier verify, int timeoutMs) {
-        if (!validTokenShape(token)) return -1;
+    public static int post(String url, String token, SSLSocketFactory tls, HostnameVerifier verify, int timeoutMs) { return post(url, token, null, tls, verify, timeoutMs); }
+
+    /** The same with a body (a timer action from timerBody); a body that isn't plain ASCII JSON sends nothing. */
+    public static int post(String url, String token, String body, SSLSocketFactory tls, HostnameVerifier verify, int timeoutMs) {
+        if (!validTokenShape(token) || (body != null && !body.matches("[ -~]{2,200}"))) return -1;
         Socket s = null;
         try {
             URI u = new URI(url);
@@ -97,7 +117,7 @@ public final class WidgetUrls {
                 if (verify == null || !verify.verify(host, ssl.getSession())) return -1;
             }
             OutputStream out = s.getOutputStream();
-            out.write(request(u, token));
+            out.write(request(u, token, body));
             out.flush();
             return status(s.getInputStream());
         } catch (Exception e) {

@@ -44,7 +44,7 @@ import org.json.JSONObject;
  *   openExternal({ url })                           http(s), mailto:, tel: in the system
  *   updateWidgets({ json })                        v2.3 (A3): the widget snapshot, at most 64 KB, into the app's private files (atomic); '' removes it; then every widget redraws
  *   setWidgetToken({ token })                      v2.3 (A5): the widget's tick token, sealed under an Android Keystore key; null deletes it
- *   takeWidgetTicks() → { ticks: [{ id, at }] }    v2.3: ticks a widget couldn't send (pending-ticks.json), cleared as they are read
+ *   takeWidgetTicks() → { ticks: [{ id, at, action? }] }  v2.3: ticks a widget couldn't send (pending-ticks.json), cleared as they are read; v2.5: action start|stop = a timer action
  *   events sharedText { text }, notificationTap { url }   (kept until the page listens, so a cold start loses neither)
  * It also decides every top-level navigation of the web view (CompassLink.route): Compass stays in, other pages go to the browser.
  * saveDownload is CompassDownloads' half (not part of the page's contract): the file's base64 in parts, then the system's Save dialog.
@@ -208,7 +208,11 @@ public class CompassNativePlugin extends Plugin {
     @PluginMethod
     public void takeWidgetTicks(PluginCall call) {
         JSArray ticks = new JSArray();
-        for (String[] t : WidgetStore.takeTicks(getContext().getFilesDir())) ticks.put(new JSObject().put("id", t[0]).put("at", t[1]));
+        for (String[] t : WidgetStore.takeTicks(getContext().getFilesDir())) {
+            JSObject o = new JSObject().put("id", t[0]).put("at", t[1]);
+            if (t[2] != null) o.put("action", t[2]); // none: a done tick
+            ticks.put(o);
+        }
         call.resolve(new JSObject().put("ticks", ticks));
     }
 

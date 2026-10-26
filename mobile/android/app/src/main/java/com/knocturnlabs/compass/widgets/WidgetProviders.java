@@ -12,6 +12,7 @@ import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
@@ -27,7 +28,8 @@ import java.util.List;
  * The Compass widgets on Android (v2.3 Task 2b, A1/A2): classic AppWidgetProviders drawing RemoteViews from the snapshot the page writes
  * (WidgetStore). One provider per widget, so each has its own size in the picker: Today small, medium and large, Quick add, Ask Athena,
  * Project pulse and This week. Same content rules as iOS: an Offline-only task or project is never named (the snapshot has no title);
- * there is no Lock Screen widget on Android, so work titles show as on the iOS Home Screen. Taps open MainActivity with an https Compass
+ * there is no Lock Screen widget on Android, so work titles show as on the iOS Home Screen. v2.5: running timers (a Chronometer) lead Today medium and large,
+ * and each Today task row has Start or Stop (TickReceiver, like the tick). Taps open MainActivity with an https Compass
  * link (A6), which CompassNativePlugin routes through CompassLink.open (Compass only); ticks go to TickReceiver. Every PendingIntent is
  * explicit and immutable, and rows are added views, not a collection, so no fill-in intent is needed.
  */
@@ -158,7 +160,10 @@ public final class WidgetProviders {
         return s.isStale(now) ? "Today · open Compass to update" : "Today · " + (rest != null ? rest : WidgetSnapshot.header(now, s.tz));
     }
 
-    private static RemoteViews row(Context c, WidgetSnapshot.Item it) {
+    private static RemoteViews row(Context c, WidgetSnapshot.Item it) { return row(c, it, false); }
+
+    /** `timer`: a trailing Start (or Stop, while its timer runs) button (v2.5, Today only), a tap to TickReceiver like the tick. */
+    private static RemoteViews row(Context c, WidgetSnapshot.Item it, boolean timer) {
         RemoteViews r = new RemoteViews(c.getPackageName(), R.layout.widget_row);
         String name = it.shown();
         r.setInt(R.id.bar, "setColorFilter", horizon(c, it.horizon));
@@ -166,10 +171,35 @@ public final class WidgetProviders {
         r.setTextColor(R.id.title, col(c, it.named() ? R.color.w_text : R.color.w_dim));
         r.setTextViewText(R.id.due, it.dueLabel);
         r.setTextColor(R.id.due, col(c, it.late ? R.color.w_danger : R.color.w_faint));
-        r.setOnClickPendingIntent(R.id.tick, TickReceiver.intent(c, it.id));
+        r.setOnClickPendingIntent(R.id.tick, TickReceiver.intent(c, it.id, null));
         r.setContentDescription(R.id.tick, "Mark done: " + name);
         r.setOnClickPendingIntent(R.id.open, open(c, WidgetUrls.task(it.id)));
         r.setContentDescription(R.id.open, name + ", " + (it.late ? "late, " : "") + it.dueLabel);
+        if (timer) {
+            r.setViewVisibility(R.id.timer, View.VISIBLE);
+            r.setImageViewResource(R.id.timer, it.timerRunning ? R.drawable.widget_stop : R.drawable.widget_play);
+            r.setInt(R.id.timer, "setColorFilter", col(c, it.timerRunning ? R.color.w_accent : R.color.w_dim));
+            r.setOnClickPendingIntent(R.id.timer, TickReceiver.intent(c, it.id, it.timerRunning ? "stop" : "start"));
+            r.setContentDescription(R.id.timer, (it.timerRunning ? "Stop timer: " : "Start timer: ") + name);
+        }
+        return r;
+    }
+
+    /** A running timer (v2.5): the elapsed time (a Chronometer, counting without redraws), its title by the same rules as a task's, Stop for a task's timer
+     *  (a project's is stopped in the app). The title opens the task. */
+    private static RemoteViews timerRow(Context c, WidgetSnapshot.Timer t) {
+        RemoteViews r = new RemoteViews(c.getPackageName(), R.layout.widget_timer_row);
+        long now = System.currentTimeMillis(), started = t.startedMillis(now);
+        r.setChronometer(R.id.elapsed, SystemClock.elapsedRealtime() - Math.max(0, now - started), null, true);
+        r.setTextViewText(R.id.title, t.shown());
+        r.setTextColor(R.id.title, col(c, t.title == null ? R.color.w_dim : R.color.w_text));
+        r.setOnClickPendingIntent(R.id.open, open(c, t.taskId == null ? WidgetUrls.TODAY : WidgetUrls.task(t.taskId)));
+        r.setContentDescription(R.id.open, "Timer running: " + t.shown());
+        if (t.taskId == null) r.setViewVisibility(R.id.stop, View.GONE);
+        else {
+            r.setOnClickPendingIntent(R.id.stop, TickReceiver.intent(c, t.taskId, "stop"));
+            r.setContentDescription(R.id.stop, "Stop timer: " + t.shown());
+        }
         return r;
     }
 
@@ -231,9 +261,11 @@ public final class WidgetProviders {
         RemoteViews v = tap(c, new RemoteViews(c.getPackageName(), R.layout.widget_today_medium), WidgetUrls.TODAY);
         v.setTextViewText(R.id.head, todayHead(s, null));
         v.removeAllViews(R.id.rows);
-        if (s.items.isEmpty()) v.addView(R.id.rows, line(c, "Nothing due. The day is yours.", null));
         int n = Math.min(5, fits(h, 50, 3)); // three at the compact size, up to five when the widget is taller
-        for (int i = 0; i < Math.min(n, s.items.size()); i++) v.addView(R.id.rows, row(c, s.items.get(i)));
+        int timers = Math.min(n > 3 ? 2 : 1, s.timers.size()); // v2.5: the newest running timers take the first rows
+        for (int i = 0; i < timers; i++) v.addView(R.id.rows, timerRow(c, s.timers.get(i)));
+        if (s.items.isEmpty() && timers == 0) v.addView(R.id.rows, line(c, "Nothing due. The day is yours.", null));
+        for (int i = 0; i < Math.min(n - timers, s.items.size()); i++) v.addView(R.id.rows, row(c, s.items.get(i), true));
         ring(v, s.done, s.total, s.done + "/" + s.total, s.done + " of " + s.total + " done today");
         return v;
     }
@@ -246,6 +278,13 @@ public final class WidgetProviders {
         WidgetSnapshot.Project f = s.footerMilestone();
         // Rows by horizon, short first, within what the widget holds: 7 (one fewer with the Blocked line), fewer on a short launcher cell.
         int left = Math.min(s.blocked > 0 ? 6 : 7, fits(h, (f != null ? 96 : 50) + (s.blocked > 0 ? 40 : 0), 7));
+        // v2.5: up to two running timers lead, under their label, each taking a task row.
+        int timers = Math.min(Math.min(2, Math.max(0, left - 1)), s.timers.size());
+        if (timers > 0) {
+            v.addView(R.id.rows, label(c, timers == 1 ? "Timer" : "Timers"));
+            for (int i = 0; i < timers; i++) v.addView(R.id.rows, timerRow(c, s.timers.get(i)));
+            left -= timers;
+        }
         String[] names = { "Short", "Medium", "Long" };
         List<List<WidgetSnapshot.Item>> groups = new ArrayList<>();
         groups.add(s.shortItems); groups.add(s.mediumItems); groups.add(s.longItems);
@@ -254,10 +293,10 @@ public final class WidgetProviders {
             List<WidgetSnapshot.Item> list = groups.get(g);
             if (list.isEmpty()) continue;
             v.addView(R.id.rows, label(c, names[g]));
-            for (int i = 0; i < list.size() && left > 0; i++, left--) v.addView(R.id.rows, row(c, list.get(i)));
+            for (int i = 0; i < list.size() && left > 0; i++, left--) v.addView(R.id.rows, row(c, list.get(i), true));
             any = true;
         }
-        if (!any && s.blocked == 0) v.addView(R.id.rows, line(c, "Nothing due. The day is yours.", null));
+        if (!any && s.blocked == 0 && timers == 0) v.addView(R.id.rows, line(c, "Nothing due. The day is yours.", null));
         if (s.blocked > 0) {
             v.addView(R.id.rows, label(c, "Blocked (" + s.blocked + ")"));
             v.addView(R.id.rows, line(c, s.blocked == 1 ? "1 task waits on another task" : s.blocked + " tasks wait on other tasks", col(c, R.color.w_long)));

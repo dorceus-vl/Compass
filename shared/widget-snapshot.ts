@@ -5,14 +5,16 @@
 import { blockedIds } from './deps.ts';
 import { addDaysYmd, daysBetweenYmd, weekStart, localDay, dashboardMetrics, riskMatrix, type DRaid } from './dashboard.ts';
 import { slip, type Snapshot } from './baseline.ts';
-import type { Horizon, Milestone, Project, Rag, Task } from './types.ts';
+import type { Horizon, Milestone, Project, Rag, Task, TimeEntry } from './types.ts';
 
-export const MAX_ITEMS = 20, MAX_PROJECTS = 10, WEEK_DAYS = 7;
+export const MAX_ITEMS = 20, MAX_PROJECTS = 10, WEEK_DAYS = 7, MAX_TIMERS = 5;
 export const PER_HORIZON = 5; // ponytail: what a large widget can draw; the full list is `items`
 export const MAX_SNAPSHOT_BYTES = 64 * 1024;
 const TITLE_CHARS = 120;
 
-export interface WidgetItem { id: string; title: string | null; due_label: string; late: boolean; horizon: Horizon; work: boolean; offline: boolean; project: string | null }
+export interface WidgetItem { id: string; title: string | null; due_label: string; late: boolean; horizon: Horizon; work: boolean; offline: boolean; project: string | null; timer_running: boolean }
+/** A running timer (v2.5 Task 4): a task's (`task_id`) or a project's (null). `title` follows the items' fail-closed rule; never a note. */
+export interface WidgetTimer { id: string; task_id: string | null; title: string | null; started_at: string; work: boolean }
 export interface WidgetProject {
   id: string; name: string | null; rag: Rag; pct: number;
   next_milestone: { name: string | null; late_days: number } | null;
@@ -22,6 +24,7 @@ export interface WidgetSnapshot {
   v: 1; at: string; tz: string;
   today: { due: number; late: number; done: number; total: number; next: WidgetItem | null };
   items: WidgetItem[];
+  timers: WidgetTimer[];
   horizons: Record<Horizon, WidgetItem[]>;
   blocked: number;
   projects: WidgetProject[];
@@ -35,6 +38,8 @@ export interface WidgetInput {
   raid?: Record<string, DRaid[]>;
   /** The latest baseline's snapshot per project id; a project with none reports `slip_days: null`. */
   baselines?: Record<string, Snapshot>;
+  /** The device's time entries; only running ones (no end, not trashed) reach the snapshot. */
+  time?: TimeEntry[];
   tz: string; hide_work_on_lock: boolean; now: Date;
 }
 
@@ -61,10 +66,29 @@ export function buildWidgetSnapshot(i: WidgetInput): WidgetSnapshot {
   // Fail closed: a task is named only when it has no project, or its project is on the device, live and Cloud. An Offline-only project, a trashed one
   // (trashing a project leaves its tasks in the mirror) and one not pulled yet all give "counted, never named". Today still lists such tasks, so they stay in the counts.
   const offlineTask = (t: Task) => !!t.project_id && byProject.get(t.project_id)?.data_boundary !== 'cloud';
+  const running = (i.time ?? []).filter((e) => !e.ended_at && !e.deleted_at);
+  const timing = new Set(running.map((e) => e.task_id));
   const item = (t: Task): WidgetItem => {
     const off = offlineTask(t), due = t.due_at?.slice(0, 10) ?? null;
-    return { id: t.id, title: off ? null : t.title.slice(0, TITLE_CHARS), due_label: dueLabel(due, today), late: !!due && due < today, horizon: t.horizon, work: t.kind === 'work', offline: off, project: t.project_id };
+    return { id: t.id, title: off ? null : t.title.slice(0, TITLE_CHARS), due_label: dueLabel(due, today), late: !!due && due < today, horizon: t.horizon, work: t.kind === 'work', offline: off, project: t.project_id, timer_running: timing.has(t.id) };
   };
+  // Timers: the same rule. A task entry is named like its task (a task not on the device: never named); a project entry by its project's name while that project
+  // is live and Cloud. An entry on a trashed task, or on a task or project in Trash, is left out.
+  const tasksById = new Map(i.tasks.map((t) => [t.id, t]));
+  const trashedProject = (id: string | null) => !!id && i.projects.some((p) => p.id === id && p.deleted_at);
+  const timers = running.flatMap((e): WidgetTimer[] => {
+    let title: string | null = null;
+    if (e.task_id) {
+      const t = tasksById.get(e.task_id);
+      if (t && (t.deleted_at || trashedProject(t.project_id))) return [];
+      if (t && !offlineTask(t)) title = t.title.slice(0, TITLE_CHARS);
+    } else {
+      if (trashedProject(e.project_id)) return [];
+      const p = e.project_id ? byProject.get(e.project_id) : undefined;
+      if (p && p.data_boundary === 'cloud') title = p.name.slice(0, TITLE_CHARS);
+    }
+    return [{ id: e.id, task_id: e.task_id, title, started_at: e.started_at, work: e.kind === 'work' }];
+  }).sort((a, b) => (a.started_at < b.started_at ? 1 : a.started_at > b.started_at ? -1 : 0)).slice(0, MAX_TIMERS);
   const byDue = (a: Task, b: Task) => (a.due_at ?? '9') < (b.due_at ?? '9') ? -1 : (a.due_at ?? '9') > (b.due_at ?? '9') ? 1 : a.sort_in_column - b.sort_in_column || (a.id < b.id ? -1 : 1);
   const open = top.filter((t) => t.status !== 'done');
   const ready = open.filter((t) => !blocked.has(t.id)).sort(byDue); // blocked ones are counted apart, like Today's own list
@@ -100,6 +124,7 @@ export function buildWidgetSnapshot(i: WidgetInput): WidgetSnapshot {
     v: 1, at: i.now.toISOString(), tz,
     today: { due: dueNow.length, late: late.length, done: doneToday, total: dueNow.length + doneToday, next: next ? item(next) : null },
     items: ready.slice(0, MAX_ITEMS).map(item),
+    timers,
     horizons: { short: hz('short'), medium: hz('medium'), long: hz('long') },
     blocked: open.filter((t) => blocked.has(t.id)).length,
     projects, week, lock: { hide_work: i.hide_work_on_lock },

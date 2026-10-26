@@ -59,7 +59,20 @@ public final class WidgetStore {
         appendTick(dir, id, at);
     }
 
-    /** Ticks a widget couldn't send, oldest first, as {id, at}; the file is cleared as it is read. Malformed entries are dropped. */
+    /** v2.5 Start or Stop on a widget: the change shows at once, and the action waits in pending-ticks.json until the server has it (or the app takes it). */
+    public static synchronized void timer(File dir, String id, String action, String at) throws IOException {
+        if (!validAction(action) || action == null) return;
+        WidgetSnapshot s = read(dir);
+        String after = s == null ? null : s.timing(id, action, at);
+        if (after != null && after.getBytes(StandardCharsets.UTF_8).length <= MAX_BYTES) replace(new File(dir, SNAPSHOT), after.getBytes(StandardCharsets.UTF_8));
+        appendTick(dir, id, at, action);
+    }
+
+    /** A pending entry's action: null is a done tick (files from before timers read the same), "start" or "stop" a timer action. */
+    static boolean validAction(String a) { return a == null || "start".equals(a) || "stop".equals(a); }
+
+    /** What a widget couldn't send, oldest first, as {id, at, action} (action null: a done tick); the file is cleared as it is read. Malformed entries, and an
+     *  unknown action (never read as a done tick), are dropped. */
     public static synchronized List<String[]> takeTicks(File dir) {
         File file = new File(dir, TICKS);
         JSONArray list = ticks(file);
@@ -67,31 +80,62 @@ public final class WidgetStore {
         List<String[]> out = new ArrayList<>();
         for (int i = 0; i < list.length() && out.size() < MAX_TICKS; i++) {
             JSONObject t = list.optJSONObject(i);
-            Object id = t == null ? null : t.opt("id"), at = t == null ? null : t.opt("at");
-            if (id instanceof String && at instanceof String && validId((String) id) && ((String) at).length() <= 40) out.add(new String[] { (String) id, (String) at });
+            Object id = t == null ? null : t.opt("id"), at = t == null ? null : t.opt("at"), action = t == null || t.isNull("action") ? null : t.opt("action");
+            if (action != null && !(action instanceof String && validAction((String) action))) continue;
+            if (id instanceof String && at instanceof String && validId((String) id) && ((String) at).length() <= 40) out.add(new String[] { (String) id, (String) at, (String) action });
         }
         return out;
     }
 
-    /** Keeps a tick for later. The same task twice is kept once; past MAX_TICKS new ones are dropped. */
-    public static synchronized void appendTick(File dir, String id, String at) throws IOException {
-        if (!validId(id) || at == null || at.length() > 40) return;
+    /** Keeps a done tick for later. */
+    public static synchronized void appendTick(File dir, String id, String at) throws IOException { appendTick(dir, id, at, null); }
+
+    /** Keeps a done tick (action null) or a timer action for later. A tap that repeats the last queued action for the same task is kept once (start, stop, start
+     *  stays three, in order); past MAX_TICKS new ones are dropped. */
+    public static synchronized void appendTick(File dir, String id, String at, String action) throws IOException {
+        if (!validId(id) || at == null || at.length() > 40 || !validAction(action)) return;
         File file = new File(dir, TICKS);
         JSONArray list = ticks(file);
         if (list.length() >= MAX_TICKS) return;
-        for (int i = 0; i < list.length(); i++) { JSONObject t = list.optJSONObject(i); if (t != null && id.equals(t.opt("id"))) return; }
-        try { list.put(new JSONObject().put("id", id).put("at", at)); } catch (JSONException e) { return; }
+        for (int i = list.length() - 1; i >= 0; i--) {
+            JSONObject t = list.optJSONObject(i);
+            if (t == null || !id.equals(t.opt("id"))) continue;
+            if (java.util.Objects.equals(action, t.isNull("action") ? null : t.opt("action"))) return;
+            break; // only the last entry for this task counts
+        }
+        try {
+            JSONObject e = new JSONObject().put("id", id).put("at", at);
+            if (action != null) e.put("action", action);
+            list.put(e);
+        } catch (JSONException e) { return; }
         replace(file, list.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Drops a tick the server now has, so the app doesn't send it again. */
-    public static synchronized void removeTick(File dir, String id) throws IOException {
+    /** Drops the task's done ticks the server now has, so the app doesn't send them again. */
+    public static synchronized void removeTick(File dir, String id) throws IOException { removeTick(dir, id, null, null); }
+
+    /** Drops what the server now has (a 200). A done tick (action null) drops the task's done ticks; a timer action drops its own entry (same `at`) and every
+     *  earlier timer action of that task, which the server's answer settles too (a 200 start means none was running; after a 200 stop none is). */
+    public static synchronized void removeTick(File dir, String id, String action, String at) throws IOException {
         File file = new File(dir, TICKS);
         JSONArray list = ticks(file), kept = new JSONArray();
-        for (int i = 0; i < list.length(); i++) { JSONObject t = list.optJSONObject(i); if (t == null || !String.valueOf(id).equals(t.opt("id"))) kept.put(list.opt(i)); }
+        int mine = -1;
+        if (action != null) {
+            for (int i = 0; i < list.length(); i++) { JSONObject t = list.optJSONObject(i); if (timerOf(t, id) && action.equals(t.opt("action")) && String.valueOf(at).equals(t.opt("at"))) mine = i; }
+            if (mine < 0) return;
+        }
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject t = list.optJSONObject(i);
+            boolean drop = action == null ? t != null && String.valueOf(id).equals(t.opt("id")) && t.isNull("action") : i <= mine && timerOf(t, id);
+            if (!drop) kept.put(list.opt(i));
+        }
         if (kept.length() == list.length()) return;
         if (kept.length() == 0) file.delete();
         else replace(file, kept.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static boolean timerOf(JSONObject t, String id) {
+        return t != null && String.valueOf(id).equals(t.opt("id")) && ("start".equals(t.opt("action")) || "stop".equals(t.opt("action")));
     }
 
     static boolean validId(String id) { return id != null && !id.isEmpty() && id.length() <= 64; }

@@ -248,6 +248,10 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
   assert.deepEqual(await takeWidgetTicks(), [{ id: 't1', at: '2026-10-21T10:00:00Z' }, { id: 't2', at: '2026-10-21T10:01:00Z' }], 'only well-formed ticks');
   widgetReply = () => ({});
   assert.deepEqual(await takeWidgetTicks(), []);
+  // v2.5 Task 4: a pending entry may carry a timer action; none is a done tick (old files still read), an unknown one is dropped (never a done by mistake).
+  widgetReply = () => ({ ticks: [{ id: 's1', at: 'a', action: 'start' }, { id: 'd1', at: 'b' }, { id: 'x1', at: 'c', action: 'stop' }, { id: 'z1', at: 'd', action: 'done' }, { id: 'q1', at: 'e', action: 7 }, { id: 'n1', at: 'f', action: null }] });
+  assert.deepEqual(await takeWidgetTicks(), [{ id: 's1', at: 'a', action: 'start' }, { id: 'd1', at: 'b' }, { id: 'x1', at: 'c', action: 'stop' }, { id: 'n1', at: 'f' }], 'start and stop pass through; missing or null is a done tick; anything else is dropped');
+  widgetReply = () => ({});
   // The Swift side declares the same three methods, and the header documents them; the app's entitlements carry the shared Keychain group.
   const swift = readFileSync('mobile/ios/App/App/CompassNative.swift', 'utf8');
   for (const m of ['updateWidgets', 'setWidgetToken', 'takeWidgetTicks']) {
@@ -269,6 +273,11 @@ assert.equal(stepUpInBrowser(Object.assign(new Error('x'), { name: 'NotAllowedEr
     for (const m of src.matchAll(/PendingIntent\.get(?:Activity|Broadcast)\([^;]*;/g)) assert.ok(m[0].includes('FLAG_IMMUTABLE'), `immutable: ${m[0]}`);
   }
   assert.ok(tick.includes('WidgetUrls.doneUrl(') && !/new URL\("http/.test(tick), 'ticks go only to the URL WidgetUrls builds');
+  assert.ok(tick.includes('WidgetUrls.timerUrl(') && tick.includes('WidgetUrls.timerBody('), 'timer actions go only to the URL WidgetUrls builds, with the body it builds');
+  assert.ok(java.includes('.put("action", t[2])'), 'Android takeWidgetTicks passes the action through');
+  const timerIntent = readFileSync('mobile/ios/App/CompassWidgets/TimerIntent.swift', 'utf8');
+  assert.ok(timerIntent.includes('WidgetServer.timerURL(') && timerIntent.includes('WidgetServer.post(') && !/URLSession\.shared/.test(timerIntent), 'iOS timer actions go through WidgetServer (ephemeral session, no cookies)');
+  assert.ok(readFileSync('mobile/ios/App/App.xcodeproj/project.pbxproj', 'utf8').includes('TimerIntent.swift in Sources'), 'TimerIntent.swift is built into the widget extension');
   // The tick goes over WidgetUrls.post (a plain socket: no HttpURLConnection, so Capacitor's process-wide CookieHandler can't add the session).
   const urls = readFileSync(wdir + 'WidgetUrls.java', 'utf8');
   const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/HttpsURLConnection\.getDefaultHostnameVerifier/g, '');

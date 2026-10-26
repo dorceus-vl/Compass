@@ -135,6 +135,28 @@ check(WidgetStore.validToken("abcdefghijklmnop_-ABC123") && WidgetStore.validTok
 for bad in ["", "short", String(repeating: "a", count: 201), "has space in it 1234567", "quote\"1234567890123456", "naïve-token-1234567890123"] { check(!WidgetStore.validToken(bad), "token refused: \(bad)") }
 // A bad token is refused before the Keychain is touched (no entitlement needed to see that).
 do { try WidgetStore.setToken("bad token", group: nil); check(false, "bad token stored") } catch { check(error as? WidgetStore.Failure == .badToken, "bad token error") }
+// v2.5 pending timer actions: the action rides along, none is a done tick, an unknown one (or a non-string) is dropped; a repeat of the last action for a task is
+// kept once, start/stop/start stays three; a 200 drops its own entry and the earlier timer actions of that task, never a done tick or another task's.
+try Data("[{\"id\":\"a\",\"at\":\"1\",\"action\":\"start\"},{\"id\":\"b\",\"at\":\"2\"},{\"id\":\"c\",\"at\":\"3\",\"action\":\"stop\"},{\"id\":\"d\",\"at\":\"4\",\"action\":\"done\"},{\"id\":\"e\",\"at\":\"5\",\"action\":7}]".utf8).write(to: ticks)
+check(WidgetStore.takeTicks(in: dir) == [["id": "a", "at": "1", "action": "start"], ["id": "b", "at": "2"], ["id": "c", "at": "3", "action": "stop"]], "actions pass through, unknown dropped")
+try WidgetStore.appendTick("t", at: "1", action: "start", in: dir)
+try WidgetStore.appendTick("t", at: "2", action: "start", in: dir)
+try WidgetStore.appendTick("t", at: "3", action: "stop", in: dir)
+try WidgetStore.appendTick("t", at: "4", action: "start", in: dir)
+try WidgetStore.appendTick("t", at: "5", in: dir)
+try WidgetStore.appendTick("t", at: "6", in: dir)
+try WidgetStore.appendTick("t", at: "7", action: "bogus", in: dir)
+try WidgetStore.appendTick("u", at: "8", action: "start", in: dir)
+let pending = try JSONSerialization.jsonObject(with: Data(contentsOf: ticks)) as! [[String: String]]
+check(pending == [["id": "t", "at": "1", "action": "start"], ["id": "t", "at": "3", "action": "stop"], ["id": "t", "at": "4", "action": "start"], ["id": "t", "at": "5"], ["id": "u", "at": "8", "action": "start"]], "pending file shape: \(pending)")
+try WidgetStore.removeTick("t", action: "stop", at: "nope", in: dir)
+check((try JSONSerialization.jsonObject(with: Data(contentsOf: ticks)) as! [Any]).count == 5, "no exact match: nothing dropped")
+try WidgetStore.removeTick("t", action: "stop", at: "3", in: dir)
+check(WidgetStore.takeTicks(in: dir) == [["id": "t", "at": "4", "action": "start"], ["id": "t", "at": "5"], ["id": "u", "at": "8", "action": "start"]], "a settled stop drops itself and the earlier start")
+try WidgetStore.appendTick("t", at: "1", action: "start", in: dir)
+try WidgetStore.appendTick("t", at: "2", in: dir)
+try WidgetStore.removeTick("t", in: dir)
+check(WidgetStore.takeTicks(in: dir) == [["id": "t", "at": "1", "action": "start"]], "a settled done tick leaves timer actions")
 print("WidgetStore: all checks passed")
 SWIFT
 swiftc -o "$out/widgets" ios/App/App/WidgetStore.swift "$out/w/main.swift"
@@ -235,6 +257,37 @@ check(CompassURL.task("a&b=c#d").host == "compass.knocturnlabs.com" && URLCompon
 check(CompassURL.dashboard("p-1").absoluteString == "https://compass.knocturnlabs.com/projects/p-1/dashboard", "dashboard link")
 check(CompassURL.dashboard("../x?y").absoluteString == "https://compass.knocturnlabs.com/projects/%2E%2E%2Fx%3Fy/dashboard", "dashboard id encoded")
 for u in [CompassURL.today, CompassURL.quickAdd, CompassURL.athena] { check(u.scheme == "https" && u.host == "compass.knocturnlabs.com", "host: \(u)") }
+// v2.5 timers: decoded from the fixture with fail-closed titles; Start and Stop change the file at once; older files without timers still decode.
+check(s.running.map(\.id) == ["e-vendor", "e-secret", "e-home"] && s.running[1].title == nil && s.running[2].taskId == nil && s.running[0].work, "timers decoded")
+check(s.items.first { $0.id == "t-vendor" }!.running && !s.items.first { $0.id == "t-status" }!.running, "timer_running decoded")
+check(s.running[1].shown(lock: false, hideWork: true) == "Running timer" && s.running[0].shown(lock: true, hideWork: true) == "Work task" && s.running[0].shown(lock: false, hideWork: true) == "Call the vendor about the test env", "timer titles")
+check(s.hides(s.running[0]) && !s.hides(s.running[2]), "timer redaction marks")
+let old = s.encoded()!.replacingOccurrences(of: "\"timer_running\":true,", with: "").replacingOccurrences(of: "\"timer_running\":false,", with: "").replacingOccurrences(of: "\"timer_running\":true", with: "").replacingOccurrences(of: "\"timer_running\":false", with: "")
+let oldData = try JSONSerialization.data(withJSONObject: { var o = try! JSONSerialization.jsonObject(with: Data(old.utf8)) as! [String: Any]; o.removeValue(forKey: "timers"); return o }())
+let older = Snapshot.decode(oldData)
+check(older != nil && older!.running.isEmpty && older!.items.allSatisfy { !$0.running }, "a v2.3 file still decodes")
+let started = s.timing("t-status", "start", at: Snapshot.date("2026-10-21T15:10:00.000Z")!)
+check(started.running.first?.taskId == "t-status" && started.running.first?.startedAt == "2026-10-21T15:10:00.000Z" && started.running.first?.title == "Send the status report", "start adds a timer first")
+check(started.items.first { $0.id == "t-status" }!.running && started.horizons.medium.first { $0.id == "t-status" }!.running, "start marks the rows")
+check(s.timing("t-vendor", "start") == s && s.timing("nope", "start") == s && s.timing("t-vendor", "bogus") == s, "start on a running or unknown task, or a bad action: unchanged")
+check(s.timing("t-secret", "start") == s, "already running (offline task)")
+let stopped = s.timing("t-vendor", "stop")
+check(!stopped.running.contains { $0.taskId == "t-vendor" } && stopped.running.count == 2 && !stopped.items.first { $0.id == "t-vendor" }!.running && stopped.today.next?.running == false, "stop removes it")
+check(["t-status", "t-dentist", "t-sow", "t-cab"].reduce(stopped) { $0.timing($1, "start") }.running.count == 5, "at most 5 timers")
+try fixture.write(to: dir.appendingPathComponent(WidgetStore.snapshotName))
+WidgetStore.timer("t-status", action: "start", at: Snapshot.date("2026-10-21T15:10:00.000Z")!, in: dir)
+check(Snapshot.load(from: dir) == started, "timer rewrites the file")
+check(WidgetStore.takeTicks(in: dir) == [["id": "t-status", "at": "2026-10-21T15:10:00.000Z", "action": "start"]], "timer action queued")
+// Its address and body: the same host rule as a tick, a JSON body, still no cookies.
+check(WidgetServer.timerURL("t-1", server: prod)?.absoluteString == "https://compass.knocturnlabs.com/api/widget/tasks/t-1/timer", "timer url")
+check(WidgetServer.timerURL("a/../b", server: prod)?.absoluteString == "https://compass.knocturnlabs.com/api/widget/tasks/a%2F%2E%2E%2Fb/timer", "timer id encoded")
+check(WidgetServer.timerURL("t-1", server: local, allowLocal: true)?.absoluteString == "http://localhost:8790/api/widget/tasks/t-1/timer" && WidgetServer.timerURL("t-1", server: local) == nil, "timer local only in debug")
+for bad in ["https://example.com", "http://compass.knocturnlabs.com", "https://compass.knocturnlabs.com.evil.com", "https://compass.knocturnlabs.com:8443"] {
+    check(WidgetServer.timerURL("t-1", server: URL(string: bad)!, allowLocal: true) == nil, "timer server refused: \(bad)")
+}
+check(WidgetServer.timerBody("start", at: "x").flatMap { String(data: $0, encoding: .utf8) } == "{\"action\":\"start\",\"at\":\"x\"}" && WidgetServer.timerBody("done", at: "x") == nil, "timer body")
+let treq = WidgetServer.request(prod, token: "tok", body: WidgetServer.timerBody("stop", at: "x"))
+check(treq.httpBody != nil && treq.value(forHTTPHeaderField: "Content-Type") == "application/json" && !treq.httpShouldHandleCookies && treq.value(forHTTPHeaderField: "Authorization") == "Bearer tok", "timer request shape")
 print("Widget snapshot: all checks passed")
 SWIFT
 swiftc -o "$out/snap" ios/App/App/WidgetStore.swift ios/App/CompassWidgets/Snapshot.swift "$out/x/main.swift"

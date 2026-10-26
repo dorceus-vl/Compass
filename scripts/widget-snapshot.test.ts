@@ -2,8 +2,8 @@
 // node --experimental-strip-types scripts/widget-snapshot.test.ts --write    rewrites scripts/fixtures/widget-snapshot.sample.json (what Task 1's Swift Codable and previews read)
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { buildWidgetSnapshot, dueLabel, MAX_ITEMS, MAX_PROJECTS, MAX_SNAPSHOT_BYTES, WEEK_DAYS, type WidgetInput } from '../shared/widget-snapshot.ts';
-import type { Milestone, Project, Task } from '../shared/types.ts';
+import { buildWidgetSnapshot, dueLabel, MAX_ITEMS, MAX_PROJECTS, MAX_SNAPSHOT_BYTES, MAX_TIMERS, WEEK_DAYS, type WidgetInput } from '../shared/widget-snapshot.ts';
+import type { Milestone, Project, Task, TimeEntry } from '../shared/types.ts';
 
 const TZ = 'America/Toronto';
 const NOW = new Date('2026-10-21T15:00:00Z'); // Wed 21 Oct 2026, 11:00 in Toronto
@@ -15,6 +15,8 @@ const project = (id: string, o: Partial<Project> = {}): Project => ({
   id, name: `Project ${id}`, kind: 'personal', status: 'active', rag: 'green', rag_reason: null, sponsor: 'SECRET SPONSOR', objectives: null, scope_in: null, scope_out: null, success_criteria: null, phase: null,
   start_at: null, end_at: null, budget_planned: null, budget_spent: null, data_boundary: 'cloud', colour: null, sort: 0, enc_v: 0, created_at: '2026-10-01T12:00:00Z', updated_at: '2026-10-01T12:00:00Z', deleted_at: null, ...o });
 const ms = (id: string, project_id: string, o: Partial<Milestone> = {}): Milestone => ({ id, project_id, name: `Milestone ${id}`, due_at: null, done_at: null, gate: 0, sort: 0, enc_v: 0, created_at: '2026-10-01T12:00:00Z', updated_at: '2026-10-01T12:00:00Z', deleted_at: null, ...o });
+const entry = (id: string, o: Partial<TimeEntry> = {}): TimeEntry => ({ id, task_id: null, project_id: null, kind: 'personal', started_at: '2026-10-21T14:00:00.000Z', ended_at: null, note: 'SECRET TIME NOTE',
+  source: 'timer', auto_stopped: 0, enc_v: 0, created_at: '2026-10-21T14:00:00.000Z', updated_at: '2026-10-21T14:00:00.000Z', deleted_at: null, ...o });
 const build = (o: Partial<WidgetInput> = {}) => buildWidgetSnapshot({ tasks: [], projects: [], milestones: [], tz: TZ, hide_work_on_lock: true, now: NOW, ...o });
 
 // Labels: the app's own words; "late" ones count back from today.
@@ -91,6 +93,32 @@ assert.deepEqual(gone.items.map((x) => [x.id, x.title, x.offline]), [['g1', null
 assert.equal(gone.today.due, 4, 'Today lists them, so they are counted');
 assert.ok(!/TRASHED|MISSING/.test(JSON.stringify(gone)) && gone.projects.length === 0);
 
+// Timers (v2.5 Task 4): running entries only, the same fail-closed titles as items; an entry on a trashed task or in a trashed project is left out; at most 5, newest first.
+assert.deepEqual(build().timers, [], 'no time given: no timers');
+const tm = build({
+  projects: [project('cl', { kind: 'work', name: 'Cloud work' }), project('off', { kind: 'work', data_boundary: 'offline', name: 'OFFLINE NAME' }), project('bin', { name: 'TRASHED NAME', deleted_at: '2026-10-20T00:00:00Z' }), project('home', { name: 'Home' })],
+  tasks: [task('a', { title: 'No project task', due_at: '2026-10-21' }), task('b', { project_id: 'cl', kind: 'work', title: 'Cloud task' }), task('c', { project_id: 'off', kind: 'work', title: 'OFFLINE TITLE', due_at: '2026-10-21' }),
+    task('d', { project_id: 'nowhere', title: 'MISSING PROJECT TITLE' }), task('e', { title: 'TRASHED TASK', deleted_at: '2026-10-20T00:00:00Z' }), task('f', { project_id: 'bin', title: 'TRASHED PROJECT TASK' }), task('g', { title: 'Stopped one', due_at: '2026-10-21' })],
+  time: [
+    entry('e-a', { task_id: 'a', started_at: '2026-10-21T14:01:00.000Z' }), entry('e-b', { task_id: 'b', kind: 'work', started_at: '2026-10-21T14:02:00.000Z' }),
+    entry('e-c', { task_id: 'c', kind: 'work', started_at: '2026-10-21T14:03:00.000Z' }), entry('e-d', { task_id: 'd', started_at: '2026-10-21T13:00:00.000Z' }),
+    entry('e-e', { task_id: 'e' }), entry('e-f', { task_id: 'f' }), entry('e-g', { task_id: 'g', ended_at: '2026-10-21T14:30:00.000Z' }), entry('e-x', { task_id: 'a', deleted_at: '2026-10-21T14:10:00.000Z' }),
+    entry('p-cl', { project_id: 'cl', kind: 'work', started_at: '2026-10-21T12:00:00.000Z' }), entry('p-off', { project_id: 'off', kind: 'work', started_at: '2026-10-21T11:00:00.000Z' }),
+    entry('p-bin', { project_id: 'bin' }), entry('p-gone', { project_id: 'not-here', started_at: '2026-10-21T10:00:00.000Z' }),
+  ],
+});
+assert.deepEqual(tm.timers.map((x) => [x.id, x.task_id, x.title, x.work]), [
+  ['e-c', 'c', null, true], ['e-b', 'b', 'Cloud task', true], ['e-a', 'a', 'No project task', false], ['e-d', 'd', null, false], ['p-cl', null, 'Cloud work', true],
+], 'newest first, at most 5 (two older ones cut), fail-closed titles, trashed task/project and stopped or trashed entries left out');
+assert.equal(MAX_TIMERS, 5);
+assert.equal(tm.timers[0].started_at, '2026-10-21T14:03:00.000Z');
+const all = build({ projects: [project('off', { kind: 'work', data_boundary: 'offline', name: 'OFFLINE NAME' })], time: [entry('p-off', { project_id: 'off', kind: 'work' }), entry('p-gone', { project_id: 'not-here' })] });
+assert.deepEqual(all.timers.map((x) => [x.id, x.title]), [['p-off', null], ['p-gone', null]], 'an Offline-only or missing project entry is never named');
+assert.ok(!/OFFLINE|MISSING|TRASHED|SECRET/.test(JSON.stringify(tm)), 'no Offline-only, missing or trashed name, and never a note');
+const run = Object.fromEntries(tm.items.map((x) => [x.id, x.timer_running]));
+assert.deepEqual([run.a, run.c, run.g], [true, true, false], 'items say whether their timer runs');
+assert.equal(build({ tasks: [task('a', { due_at: '2026-10-21' })] }).items[0].timer_running, false);
+
 // hide_work comes from the setting.
 assert.deepEqual(build({ hide_work_on_lock: false }).lock, { hide_work: false });
 assert.deepEqual(build().lock, { hide_work: true });
@@ -141,6 +169,8 @@ const sample = build({
   ],
   raid: { 'p-branch': [raidRow({}), raidRow({}), raidRow({ probability: 4, impact: 4 })] },
   baselines: { 'p-branch': { tasks: [], milestones: [{ id: 'm-pilot', due_at: '2026-10-09' }], project: { start_at: null, end_at: null } } },
+  time: [entry('e-vendor', { task_id: 't-vendor', kind: 'work', started_at: '2026-10-21T14:35:00.000Z' }), entry('e-secret', { task_id: 't-secret', kind: 'work', started_at: '2026-10-21T14:20:00.000Z' }),
+    entry('e-home', { project_id: 'p-home', started_at: '2026-10-21T13:00:00.000Z' }), entry('e-done', { task_id: 't-sow', kind: 'work', ended_at: '2026-10-21T13:30:00.000Z' })],
 });
 const path = new URL('./fixtures/widget-snapshot.sample.json', import.meta.url);
 const text = JSON.stringify(sample, null, 2) + '\n';

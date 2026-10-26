@@ -334,7 +334,62 @@ public class Check {
         check(WidgetUrls.post("https://localhost:" + tp2 + "/api/widget/tasks/t-1/done", tok, client.getSocketFactory(), (h, sess) -> false, 3000) == -1, "host check fails: -1");
         check(!waitFor(refused).contains("Bearer"), "host check fails: the token never leaves");
         check(WidgetUrls.post("https://localhost:" + tp2 + "/x", tok, (SSLSocketFactory) SSLSocketFactory.getDefault(), (h, sess) -> true, 3000) == -1, "an untrusted certificate: -1");
+        // v2.5 timer actions: the body rides after the headers; still the token alone, no cookie.
+        String tb = WidgetUrls.timerBody("start", "2026-10-21T15:10:00.000Z");
+        check(eq(tb, "{\"action\":\"start\",\"at\":\"2026-10-21T15:10:00.000Z\"}") && WidgetUrls.timerBody("done", "x") == null && WidgetUrls.timerBody("stop", "a\"b") == null && WidgetUrls.timerBody("stop", null) == null, "timer body");
+        String treq = new String(WidgetUrls.request(new URI("https://compass.knocturnlabs.com/api/widget/tasks/t-1/timer"), tok, tb), StandardCharsets.US_ASCII);
+        check(treq.equals("POST /api/widget/tasks/t-1/timer HTTP/1.1\r\nHost: compass.knocturnlabs.com\r\nAuthorization: Bearer " + tok + "\r\nContent-Type: application/json\r\nContent-Length: " + tb.length() + "\r\nUser-Agent: CompassWidget\r\nConnection: close\r\n\r\n" + tb), "timer request bytes");
+        AtomicReference<String> tgot = new AtomicReference<>();
+        int tport = stub("HTTP/1.1 200 OK", tgot, null);
+        check(WidgetUrls.post("http://127.0.0.1:" + tport + "/api/widget/tasks/t-1/timer", tok, tb, null, null, 2000) == 200, "timer post 200");
+        String trq = waitFor(tgot);
+        check(trq.startsWith("POST /api/widget/tasks/t-1/timer HTTP/1.1\r\n") && trq.contains("\r\nContent-Length: " + tb.length() + "\r\n") && !trq.toLowerCase().contains("cookie"), "stub got the timer action, no cookie");
+        check(WidgetUrls.post("http://127.0.0.1:" + tport + "/x", tok, "{\"a\":\"\u00e9\"}", null, null, 500) == -1, "a non-ASCII body sends nothing");
         CookieHandler.setDefault(null);
+        check(eq(WidgetUrls.timerUrl("t-1", prod, false), "https://compass.knocturnlabs.com/api/widget/tasks/t-1/timer") && eq(WidgetUrls.timerUrl("../x", prod, false), "https://compass.knocturnlabs.com/api/widget/tasks/%2E%2E%2Fx/timer"), "timer url");
+        check(eq(WidgetUrls.timerUrl("t-1", "http://localhost:8790", true), "http://localhost:8790/api/widget/tasks/t-1/timer") && WidgetUrls.timerUrl("t-1", "http://localhost:8790", false) == null, "timer local only when allowed");
+        for (String bad : new String[] { "https://example.com", "http://compass.knocturnlabs.com", "https://compass.knocturnlabs.com.evil.com", "https://compass.knocturnlabs.com:8443" }) check(WidgetUrls.timerUrl("t-1", bad, true) == null, "timer server refused: " + bad);
+
+        // v2.5 snapshot timers: parsed with fail-closed titles; Start and Stop change the file at once; a file without timers still reads.
+        check(s.timers.size() == 3 && s.timers.get(0).id.equals("e-vendor") && s.timers.get(0).work && s.timers.get(1).title == null && s.timers.get(1).shown().equals("Running timer") && s.timers.get(2).taskId == null && s.timers.get(2).shown().equals("Home projects"), "timers parsed");
+        check(s.timers.get(0).startedMillis(0) == java.time.Instant.parse("2026-10-21T14:35:00Z").toEpochMilli(), "timer start time");
+        check(s.items.get(1).id.equals("t-vendor") && s.items.get(1).timerRunning && !s.items.get(0).timerRunning, "timer_running parsed");
+        check(bare.timers.isEmpty(), "no timers in an older file");
+        WidgetSnapshot st = WidgetSnapshot.parse(s.timing("t-status", "start", "2026-10-21T15:10:00.000Z"));
+        check(st.timers.size() == 4 && st.timers.get(0).taskId.equals("t-status") && st.timers.get(0).startedAt.equals("2026-10-21T15:10:00.000Z") && eq(st.timers.get(0).title, "Send the status report"), "start adds a timer first");
+        check(st.items.get(0).timerRunning && st.mediumItems.get(0).timerRunning, "start marks the rows");
+        check(s.timing("t-vendor", "start", "x") == null && s.timing("nope", "start", "x") == null && s.timing("t-vendor", "bogus", "x") == null, "already running, unknown, bad action: unchanged");
+        WidgetSnapshot sp = WidgetSnapshot.parse(s.timing("t-vendor", "stop", "x"));
+        check(sp.timers.size() == 2 && !sp.items.get(1).timerRunning && !sp.next.timerRunning, "stop removes it");
+        WidgetSnapshot cap = sp;
+        for (String t : new String[] { "t-status", "t-dentist", "t-sow", "t-cab" }) cap = WidgetSnapshot.parse(cap.timing(t, "start", "2026-10-21T15:10:00.000Z"));
+        check(cap.timers.size() == 5, "at most 5 timers");
+
+        // v2.5 pending file: actions pass through (none is a done tick, unknown dropped); a repeat of the last action for a task is kept once; a 200 drops its
+        // own entry and the earlier timer actions of that task, never a done tick.
+        File td = Files.createTempDirectory("timers").toFile();
+        Files.write(new File(td, WidgetStore.TICKS).toPath(), "[{\"id\":\"a\",\"at\":\"1\",\"action\":\"start\"},{\"id\":\"b\",\"at\":\"2\"},{\"id\":\"c\",\"at\":\"3\",\"action\":\"stop\"},{\"id\":\"d\",\"at\":\"4\",\"action\":\"done\"},{\"id\":\"e\",\"at\":\"5\",\"action\":7},{\"id\":\"f\",\"at\":\"6\",\"action\":null}]".getBytes());
+        List<String[]> tk = WidgetStore.takeTicks(td);
+        check(tk.size() == 4 && eq(tk.get(0)[2], "start") && tk.get(1)[2] == null && eq(tk.get(2)[2], "stop") && tk.get(3)[0].equals("f") && tk.get(3)[2] == null, "actions pass through, unknown dropped");
+        WidgetStore.appendTick(td, "t", "1", "start"); WidgetStore.appendTick(td, "t", "2", "start"); WidgetStore.appendTick(td, "t", "3", "stop");
+        WidgetStore.appendTick(td, "t", "4", "start"); WidgetStore.appendTick(td, "t", "5"); WidgetStore.appendTick(td, "t", "6"); WidgetStore.appendTick(td, "t", "7", "bogus");
+        WidgetStore.appendTick(td, "u", "8", "start");
+        String pend = new String(Files.readAllBytes(new File(td, WidgetStore.TICKS).toPath()), StandardCharsets.UTF_8);
+        check(new org.json.JSONArray(pend).length() == 5 && pend.contains("\"at\":\"3\",\"action\":\"stop\"") && !pend.contains("\"at\":\"2\"") && !pend.contains("bogus"), "pending file shape: " + pend);
+        WidgetStore.removeTick(td, "t", "stop", "nope");
+        check(new org.json.JSONArray(new String(Files.readAllBytes(new File(td, WidgetStore.TICKS).toPath()), StandardCharsets.UTF_8)).length() == 5, "no exact match: nothing dropped");
+        WidgetStore.removeTick(td, "t", "stop", "3");
+        tk = WidgetStore.takeTicks(td);
+        check(tk.size() == 3 && tk.get(0)[1].equals("4") && eq(tk.get(0)[2], "start") && tk.get(1)[1].equals("5") && tk.get(1)[2] == null && tk.get(2)[0].equals("u"), "a settled stop drops itself and the earlier start");
+        WidgetStore.appendTick(td, "t", "1", "start"); WidgetStore.appendTick(td, "t", "2");
+        WidgetStore.removeTick(td, "t");
+        tk = WidgetStore.takeTicks(td);
+        check(tk.size() == 1 && eq(tk.get(0)[2], "start"), "a settled done tick leaves timer actions");
+        WidgetStore.write(td, sample);
+        WidgetStore.timer(td, "t-status", "start", "2026-10-21T15:10:00.000Z");
+        check(WidgetStore.read(td).timers.size() == 4 && WidgetStore.read(td).items.get(0).timerRunning, "timer rewrites the file");
+        tk = WidgetStore.takeTicks(td);
+        check(tk.size() == 1 && tk.get(0)[0].equals("t-status") && eq(tk.get(0)[2], "start"), "timer action queued");
 
         System.out.println("Widgets (Android): all checks passed");
     }

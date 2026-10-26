@@ -69,6 +69,8 @@ struct TaskRow: View {
     let item: Snapshot.Item
     var hide = false
     var tick = true
+    /// v2.5: a trailing Start (or Stop, while its timer runs) button (TimerIntent), on the Today widgets.
+    var timer = false
     var height: CGFloat = 24
     var body: some View {
         let name = item.shown(lock: false, hideWork: false)
@@ -100,6 +102,48 @@ struct TaskRow: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(spoken), \(item.late ? "late, " : "")\(item.dueLabel)")
+            if timer {
+                Button(intent: TimerIntent(taskId: item.id, action: item.running ? "stop" : "start")) {
+                    Image(systemName: item.running ? "stop.fill" : "play.fill").font(.system(size: 10)).foregroundStyle(item.running ? Theme.accent : Theme.dim)
+                        .frame(width: 28).frame(maxHeight: .infinity).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(item.running ? "Stop timer" : "Start timer"): \(spoken)")
+            }
+        }
+        .font(.system(size: 12))
+        .frame(height: height)
+    }
+}
+
+/// A running timer (v2.5): the elapsed time counting live (`Text(date, style: .timer)`, no timeline reloads), its title (redacted on a locked device while it is
+/// work and hide_work is on), and Stop for a task's timer (a project's is stopped in the app). The title opens the task.
+struct TimerRow: View {
+    let timer: Snapshot.RunningTimer
+    var hide = false
+    var height: CGFloat = 24
+    var body: some View {
+        let name = timer.shown(lock: false, hideWork: false), spoken = hide ? "Work task" : name
+        HStack(spacing: 6) {
+            Link(destination: timer.taskId.map(CompassURL.task) ?? CompassURL.today) {
+                HStack(spacing: 6) {
+                    Image(systemName: "timer").font(.system(size: 11)).foregroundStyle(Theme.accent).frame(width: 27, alignment: .leading)
+                    Text(name).foregroundStyle(timer.title == nil ? Theme.dim : Theme.text).lineLimit(1).privacySensitive(hide)
+                    Spacer(minLength: 4)
+                    Text(timer.started, style: .timer).font(Theme.label(10)).foregroundStyle(Theme.accent).monospacedDigit().multilineTextAlignment(.trailing).frame(maxWidth: 56, alignment: .trailing)
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Timer running: \(spoken)")
+            if let id = timer.taskId {
+                Button(intent: TimerIntent(taskId: id, action: "stop")) {
+                    Image(systemName: "stop.fill").font(.system(size: 10)).foregroundStyle(Theme.accent).frame(width: 28).frame(maxHeight: .infinity).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop timer: \(spoken)")
+            }
         }
         .font(.system(size: 12))
         .frame(height: height)

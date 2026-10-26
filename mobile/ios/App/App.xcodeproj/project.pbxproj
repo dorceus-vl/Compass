@@ -30,6 +30,7 @@
 		C3A55E00000000000D6E7010 /* WeekWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A55E00000000000D6E7006 /* WeekWidget.swift */; };
 		C3A55E00000000000D6E7011 /* ProjectEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A55E00000000000D6E7007 /* ProjectEntity.swift */; };
 		C3A55E00000000000D6E7012 /* MarkDoneIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A55E00000000000D6E7008 /* MarkDoneIntent.swift */; };
+		C3A55E00000000000D6E7025 /* TimerIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A55E00000000000D6E7024 /* TimerIntent.swift */; };
 		C3A55E00000000000D6E7013 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A55E00000000000D6E7009 /* Snapshot.swift */; };
 		C3A55E00000000000D6E7014 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A55E00000000000D6E700A /* Theme.swift */; };
 		C3A55E00000000000D6E7015 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B1C2D3E4F5061728394A5C /* WidgetStore.swift */; };
@@ -99,6 +100,7 @@
 		C3A55E00000000000D6E7006 /* WeekWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WeekWidget.swift; sourceTree = "<group>"; };
 		C3A55E00000000000D6E7007 /* ProjectEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectEntity.swift; sourceTree = "<group>"; };
 		C3A55E00000000000D6E7008 /* MarkDoneIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkDoneIntent.swift; sourceTree = "<group>"; };
+		C3A55E00000000000D6E7024 /* TimerIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TimerIntent.swift; sourceTree = "<group>"; };
 		C3A55E00000000000D6E7009 /* Snapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		C3A55E00000000000D6E700A /* Theme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C3A55E00000000000D6E7016 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -214,6 +216,7 @@
 				C3A55E00000000000D6E7006 /* WeekWidget.swift */,
 				C3A55E00000000000D6E7007 /* ProjectEntity.swift */,
 				C3A55E00000000000D6E7008 /* MarkDoneIntent.swift */,
+				C3A55E00000000000D6E7024 /* TimerIntent.swift */,
 				C3A55E00000000000D6E7009 /* Snapshot.swift */,
 				C3A55E00000000000D6E700A /* Theme.swift */,
 				C3A55E00000000000D6E7016 /* Info.plist */,
@@ -426,6 +429,7 @@
 				C3A55E00000000000D6E7010 /* WeekWidget.swift in Sources */,
 				C3A55E00000000000D6E7011 /* ProjectEntity.swift in Sources */,
 				C3A55E00000000000D6E7012 /* MarkDoneIntent.swift in Sources */,
+				C3A55E00000000000D6E7025 /* TimerIntent.swift in Sources */,
 				C3A55E00000000000D6E7013 /* Snapshot.swift in Sources */,
 				C3A55E00000000000D6E7014 /* Theme.swift in Sources */,
 				C3A55E00000000000D6E7015 /* WidgetStore.swift in Sources */,

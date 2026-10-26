@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One task: the tick area (horizon bar and circle, the row's full height) marks it done; the title and due label open it. -->
+<!-- One task: the tick area (horizon bar and circle, the row's full height) marks it done; the title and due label open it; v2.5: Start or Stop its timer (Today only). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="30dp" android:orientation="horizontal" android:gravity="center_vertical">
     <LinearLayout android:id="@+id/tick" android:layout_width="wrap_content" android:layout_height="match_parent"
@@ -14,4 +14,6 @@
         <TextView android:id="@+id/due" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp"
             android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/w_faint" android:maxLines="1" />
     </LinearLayout>
+    <ImageView android:id="@+id/timer" android:layout_width="30dp" android:layout_height="match_parent" android:scaleType="center"
+        android:src="@drawable/widget_play" android:visibility="gone" />
 </LinearLayout>

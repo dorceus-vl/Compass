@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A running timer (v2.5): the elapsed time (a Chronometer counting on its own), its title (opens the task), and Stop for a task's timer. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="30dp" android:orientation="horizontal" android:gravity="center_vertical">
+    <LinearLayout android:id="@+id/open" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:layout_width="27dp" android:layout_height="12dp" android:src="@drawable/widget_play" android:scaleType="fitStart"
+            android:tint="@color/w_accent" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:textSize="12sp" android:textColor="@color/w_text" android:maxLines="1" android:ellipsize="end" />
+        <Chronometer android:id="@+id/elapsed" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp"
+            android:fontFamily="monospace" android:textSize="10sp" android:textColor="@color/w_accent" android:maxLines="1" />
+    </LinearLayout>
+    <ImageView android:id="@+id/stop" android:layout_width="30dp" android:layout_height="match_parent" android:scaleType="center"
+        android:src="@drawable/widget_stop" android:tint="@color/w_accent" />
+</LinearLayout>

@@ -29,3 +29,8 @@ export function findToken<T extends { token_hash: string; revoked_at: string | n
 export const overLimit = (lastMinute: number, lastDay: number): boolean => lastMinute >= MAX_PER_MINUTE || lastDay >= MAX_PER_DAY;
 /** The device's name as shown in Settings: trimmed, 1 to 60 characters; anything else is the default. */
 export const deviceName = (v: unknown): string => (typeof v === 'string' && v.trim() && v.trim().length <= 60 ? v.trim() : 'iPhone or iPad');
+/** The widget's timer action (v2.5 Task 4, T8): exactly 'start' or 'stop' in the body; anything else is null (400). */
+export const timerAction = (body: unknown): 'start' | 'stop' | null => {
+  const a = body && typeof body === 'object' ? (body as { action?: unknown }).action : undefined;
+  return a === 'start' || a === 'stop' ? a : null;
+};

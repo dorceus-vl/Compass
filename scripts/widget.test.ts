@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { newToken, hashToken, sameHash, findToken, overLimit, deviceName, MAX_PER_MINUTE, MAX_PER_DAY } from '../worker/lib/widget.ts';
+import { newToken, hashToken, sameHash, findToken, overLimit, deviceName, timerAction, MAX_PER_MINUTE, MAX_PER_DAY } from '../worker/lib/widget.ts';
 
 // A token is 256 random bits, base64url (the shape the iOS Keychain check accepts: 16 to 200 of A-Za-z0-9-_), never repeated.
 const t = newToken();
@@ -40,4 +40,8 @@ assert.equal(deviceName('  Vlad iPhone '), 'Vlad iPhone');
 assert.equal(deviceName('x'.repeat(61)), 'iPhone or iPad');
 assert.equal(deviceName(''), 'iPhone or iPad');
 assert.equal(deviceName(7), 'iPhone or iPad');
+// The timer action (v2.5 Task 4, T8): exactly 'start' or 'stop'; anything else is refused.
+assert.equal(timerAction({ action: 'start' }), 'start');
+assert.equal(timerAction({ action: 'stop', at: '2026-10-25T10:00:00.000Z' }), 'stop');
+for (const bad of [null, undefined, {}, { action: 'Start' }, { action: 'done' }, { action: 1 }, { action: ['start'] }, 'start']) assert.equal(timerAction(bad), null, `refused: ${JSON.stringify(bad)}`);
 console.log('widget: all checks passed');

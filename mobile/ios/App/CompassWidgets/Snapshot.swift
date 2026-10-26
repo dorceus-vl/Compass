@@ -6,6 +6,14 @@ import Foundation
 struct Snapshot: Codable, Equatable {
     struct Item: Codable, Equatable, Identifiable {
         let id: String; let title: String?; let dueLabel: String; let late: Bool; let horizon: String; let work: Bool; let offline: Bool; let project: String?
+        /// v2.5: whether this task's timer runs (absent in older files: no).
+        var timerRunning: Bool? = nil
+        var running: Bool { timerRunning == true }
+    }
+    /// A running timer (v2.5): a task's (`taskId`) or a project's (nil). `title` is nil where the builder wouldn't name it (Offline-only, not on the device).
+    struct RunningTimer: Codable, Equatable, Identifiable {
+        let id: String; let taskId: String?; let title: String?; let startedAt: String; let work: Bool
+        var started: Date { Snapshot.date(startedAt) ?? Date() }
     }
     struct Today: Codable, Equatable { var due: Int; var late: Int; var done: Int; var total: Int; var next: Item? }
     struct Horizons: Codable, Equatable { var short: [Item]; var medium: [Item]; var long: [Item] }
@@ -19,6 +27,9 @@ struct Snapshot: Codable, Equatable {
 
     let v: Int; let at: String; let tz: String
     var today: Today; var items: [Item]; var horizons: Horizons; let blocked: Int; var projects: [Project]; var week: [Day]; let lock: Lock
+    /// v2.5: absent in older files (none running).
+    var timers: [RunningTimer]? = nil
+    var running: [RunningTimer] { timers ?? [] }
 
     static func decode(_ data: Data) -> Snapshot? {
         let d = JSONDecoder(); d.keyDecodingStrategy = .convertFromSnakeCase
@@ -61,6 +72,27 @@ struct Snapshot: Codable, Equatable {
         return s
     }
 
+    // MARK: timers (v2.5, the optimistic half of TimerIntent)
+
+    /// The snapshot right after a Start or Stop tap on a task. Start: its rows say running and a timer from `at` leads the list (at most 5, as the builder
+    /// cuts); a task already running, or not in the snapshot, is unchanged. Stop: the task's timers leave and its rows say stopped.
+    func timing(_ taskId: String, _ action: String, at: Date = Date()) -> Snapshot {
+        var s = self
+        let mark = { (list: inout [Item], on: Bool) in for i in list.indices where list[i].id == taskId { list[i].timerRunning = on } }
+        let on = action == "start"
+        if on {
+            guard let it = (items + horizons.short + horizons.medium + horizons.long + [today.next].compactMap { $0 }).first(where: { $0.id == taskId }),
+                  !it.running, !running.contains(where: { $0.taskId == taskId }) else { return self }
+            s.timers = Array(([RunningTimer(id: "widget-\(taskId)", taskId: taskId, title: it.offline ? nil : it.title, startedAt: Snapshot.iso(at), work: it.work)] + running).prefix(5))
+        } else {
+            guard action == "stop" else { return self }
+            s.timers = running.filter { $0.taskId != taskId }
+        }
+        mark(&s.items, on); mark(&s.horizons.short, on); mark(&s.horizons.medium, on); mark(&s.horizons.long, on)
+        if s.today.next?.id == taskId { s.today.next?.timerRunning = on }
+        return s
+    }
+
     // MARK: what a widget shows
 
     /// The large widget's footer: the latest of the projects' next milestones that can be named (an Offline project's can't); ties keep project order.
@@ -76,6 +108,7 @@ struct Snapshot: Codable, Equatable {
     /// Whether the system should redact this task's words on a locked device (StandBy, the Lock Screen): work, while hide_work is on.
     func hides(_ item: Item) -> Bool { lock.hideWork && item.work }
     func hides(_ project: Project) -> Bool { lock.hideWork && project.work }
+    func hides(_ timer: RunningTimer) -> Bool { lock.hideWork && timer.work }
     /// The snapshot was written on another day than `now` (in its zone): its "Today" is yesterday's until the app writes again.
     func isStale(_ now: Date) -> Bool { atDay != Snapshot.ymd(now, tz: tz) }
     var atDay: String? { Snapshot.date(at).map { Snapshot.ymd($0, tz: tz) } }
@@ -131,6 +164,14 @@ extension Snapshot.Item {
     }
 }
 
+extension Snapshot.RunningTimer {
+    /// The words for a running timer: its title, "Work task" on the Lock Screen while hide_work is on, and "Running timer" where the builder gave no title.
+    func shown(lock: Bool, hideWork: Bool) -> String {
+        guard let title else { return "Running timer" }
+        return lock && hideWork && work ? "Work task" : title
+    }
+}
+
 extension Snapshot.Project {
     var shownName: String { offline ? "Offline-only project" : (name ?? "Offline-only project") }
 }
@@ -181,12 +222,26 @@ enum WidgetServer {
         return c.url
     }
 
-    /// The request: a bearer token, no cookies, no body, 8 seconds.
-    static func request(_ url: URL, token: String) -> URLRequest {
+    /// `POST <server>/api/widget/tasks/<id>/timer` (v2.5, T8); nil under the same rules as `doneURL`.
+    static func timerURL(_ id: String, server: URL, allowLocal: Bool = false) -> URL? {
+        guard let done = doneURL(id, server: server, allowLocal: allowLocal), var c = URLComponents(url: done, resolvingAgainstBaseURL: false) else { return nil }
+        c.percentEncodedPath = String(c.percentEncodedPath.dropLast("/done".count)) + "/timer"
+        return c.url
+    }
+
+    /// A timer action's body: `{"action":"start"|"stop","at":"<ISO>"}`; nil for any other action.
+    static func timerBody(_ action: String, at: String) -> Data? {
+        guard action == "start" || action == "stop" else { return nil }
+        return try? JSONSerialization.data(withJSONObject: ["action": action, "at": at], options: [.sortedKeys])
+    }
+
+    /// The request: a bearer token, no cookies, 8 seconds; no body for a tick, a JSON body for a timer action.
+    static func request(_ url: URL, token: String, body: Data? = nil) -> URLRequest {
         var r = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
         r.httpMethod = "POST"
         r.httpShouldHandleCookies = false
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body { r.httpBody = body; r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         return r
     }
 
@@ -195,14 +250,14 @@ enum WidgetServer {
     static func settles(_ status: Int?) -> Bool { status == 200 }
 
     /// Sends the tick; true when the server settled it. The token goes only to `url` (built by `doneURL`) and a redirect is never followed.
-    static func post(_ url: URL, token: String) async -> Bool {
+    static func post(_ url: URL, token: String, body: Data? = nil) async -> Bool {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 8
         config.timeoutIntervalForResource = 8
         config.httpCookieStorage = nil
         let session = URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        guard let (_, response) = try? await session.data(for: request(url, token: token)) else { return false }
+        guard let (_, response) = try? await session.data(for: request(url, token: token, body: body)) else { return false }
         return settles((response as? HTTPURLResponse)?.statusCode)
     }
 
@@ -222,5 +277,19 @@ extension WidgetStore {
             if out.count <= maxBytes { try out.write(to: url, options: writeOptions) }
         }
         try? appendTick(id, at: Snapshot.iso(at), in: dir)
+    }
+}
+
+extension WidgetStore {
+    /// TimerIntent's local half (v2.5): the widget shows the change at once, and the action waits in the pending file until the server has it (or the app takes it).
+    static func timer(_ id: String, action: String, at: Date = Date(), in dir: URL) {
+        guard action == "start" || action == "stop" else { return }
+        let file = dir.appendingPathComponent(snapshotName)
+        try? coordinated(file) { url in
+            guard let data = try? Data(contentsOf: url), let s = Snapshot.decode(data), let json = s.timing(id, action, at: at).encoded() else { return }
+            let out = Data(json.utf8)
+            if out.count <= maxBytes { try out.write(to: url, options: writeOptions) }
+        }
+        try? appendTick(id, at: Snapshot.iso(at), action: action, in: dir)
     }
 }

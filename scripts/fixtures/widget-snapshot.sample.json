@@ -15,7 +15,8 @@
       "horizon": "short",
       "work": true,
       "offline": false,
-      "project": "p-branch"
+      "project": "p-branch",
+      "timer_running": true
     }
   },
   "items": [
@@ -27,7 +28,8 @@
       "horizon": "medium",
       "work": true,
       "offline": false,
-      "project": "p-branch"
+      "project": "p-branch",
+      "timer_running": false
     },
     {
       "id": "t-vendor",
@@ -37,7 +39,8 @@
       "horizon": "short",
       "work": true,
       "offline": false,
-      "project": "p-branch"
+      "project": "p-branch",
+      "timer_running": true
     },
     {
       "id": "t-secret",
@@ -47,7 +50,8 @@
       "horizon": "short",
       "work": true,
       "offline": true,
-      "project": "p-secret"
+      "project": "p-secret",
+      "timer_running": true
     },
     {
       "id": "t-dentist",
@@ -57,7 +61,8 @@
       "horizon": "long",
       "work": false,
       "offline": false,
-      "project": "p-home"
+      "project": "p-home",
+      "timer_running": false
     },
     {
       "id": "t-sow",
@@ -67,7 +72,8 @@
       "horizon": "short",
       "work": true,
       "offline": false,
-      "project": "p-vendor"
+      "project": "p-vendor",
+      "timer_running": false
     },
     {
       "id": "t-cab",
@@ -77,7 +83,31 @@
       "horizon": "medium",
       "work": true,
       "offline": false,
-      "project": "p-vendor"
+      "project": "p-vendor",
+      "timer_running": false
+    }
+  ],
+  "timers": [
+    {
+      "id": "e-vendor",
+      "task_id": "t-vendor",
+      "title": "Call the vendor about the test env",
+      "started_at": "2026-10-21T14:35:00.000Z",
+      "work": true
+    },
+    {
+      "id": "e-secret",
+      "task_id": "t-secret",
+      "title": null,
+      "started_at": "2026-10-21T14:20:00.000Z",
+      "work": true
+    },
+    {
+      "id": "e-home",
+      "task_id": null,
+      "title": "Home projects",
+      "started_at": "2026-10-21T13:00:00.000Z",
+      "work": false
     }
   ],
   "horizons": {
@@ -90,7 +120,8 @@
         "horizon": "short",
         "work": true,
         "offline": false,
-        "project": "p-branch"
+        "project": "p-branch",
+        "timer_running": true
       },
       {
         "id": "t-secret",
@@ -100,7 +131,8 @@
         "horizon": "short",
         "work": true,
         "offline": true,
-        "project": "p-secret"
+        "project": "p-secret",
+        "timer_running": true
       },
       {
         "id": "t-sow",
@@ -110,7 +142,8 @@
         "horizon": "short",
         "work": true,
         "offline": false,
-        "project": "p-vendor"
+        "project": "p-vendor",
+        "timer_running": false
       }
     ],
     "medium": [
@@ -122,7 +155,8 @@
         "horizon": "medium",
         "work": true,
         "offline": false,
-        "project": "p-branch"
+        "project": "p-branch",
+        "timer_running": false
       },
       {
         "id": "t-cab",
@@ -132,7 +166,8 @@
         "horizon": "medium",
         "work": true,
         "offline": false,
-        "project": "p-vendor"
+        "project": "p-vendor",
+        "timer_running": false
       }
     ],
     "long": [
@@ -144,7 +179,8 @@
         "horizon": "long",
         "work": false,
         "offline": false,
-        "project": "p-home"
+        "project": "p-home",
+        "timer_running": false
       }
     ]
   },

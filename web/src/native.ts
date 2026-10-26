@@ -13,7 +13,8 @@
 //                                                                                                 '' removes it; rejects with code "too_big")
 //     setWidgetToken  v2.3 (W6, A5): the widget's tick token   { token: string | null }      {}  (iOS: a Keychain item shared with the widget extension; Android: sealed under an Android
 //                                                                                                 Keystore key; null deletes it; the page never stores it)
-//     takeWidgetTicks v2.3: ticks a widget queued offline      {}                            { ticks: { id, at }[] }  (pending-ticks.json, cleared as it is read)
+//     takeWidgetTicks v2.3: ticks a widget queued offline      {}                            { ticks: { id, at, action? }[] }  (pending-ticks.json, cleared as it is read;
+//                                                                                                 v2.5: action 'start' | 'stop' is a timer action, none is a done tick)
 //     event sharedText { text }       event notificationTap { url }
 //   Tauri (Mac): command open_external { url }; command notify_permission → 'granted' | 'denied'; event compass-auth { url } (payload);
 //     command notify { title, body, url } (a banner; the page reads GET /api/push/outbox, ruling N3); command close_quick_add
@@ -149,12 +150,19 @@ export async function setWidgetToken(token: string | null): Promise<void> {
   if (!inWidgetShell()) throw new Error('Widgets are only in the iPhone, iPad and Android apps.');
   await callCap('setWidgetToken', { token });
 }
-/** The ticks a widget couldn't send (no network), oldest first; empty outside the phone and tablet shells. */
-export async function takeWidgetTicks(): Promise<{ id: string; at: string }[]> {
+export type WidgetTick = { id: string; at: string; action?: 'start' | 'stop' };
+/** What a widget couldn't send (no network), oldest first: done ticks (no action) and timer actions (v2.5); empty outside the phone and tablet shells.
+ *  An entry with an unknown action is dropped, never read as a done tick. */
+export async function takeWidgetTicks(): Promise<WidgetTick[]> {
   if (!inWidgetShell()) return [];
   try {
     const r = (await callCap('takeWidgetTicks')) as { ticks?: unknown } | null;
-    return Array.isArray(r?.ticks) ? r.ticks.filter((t): t is { id: string; at: string } => !!t && typeof (t as any).id === 'string' && typeof (t as any).at === 'string') : [];
+    if (!Array.isArray(r?.ticks)) return [];
+    return r.ticks.flatMap((t: any): WidgetTick[] => {
+      if (!t || typeof t.id !== 'string' || typeof t.at !== 'string') return [];
+      if (t.action == null) return [{ id: t.id, at: t.at }];
+      return t.action === 'start' || t.action === 'stop' ? [{ id: t.id, at: t.at, action: t.action }] : [];
+    });
   } catch { return []; }
 }
 
