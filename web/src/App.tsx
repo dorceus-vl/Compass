@@ -15,6 +15,8 @@ import { Time } from './views/Time.tsx';
 import { Projects } from './views/Projects.tsx';
 import { ProjectPage } from './views/Project.tsx';
 import { ProgramPage } from './views/Program.tsx';
+import { Goals } from './views/Goals.tsx';
+import { GoalPage } from './views/Goal.tsx';
 import { SettingsView } from './views/Settings.tsx';
 import { TrashView } from './views/Trash.tsx';
 import { InboxView } from './views/Inbox.tsx';
@@ -81,7 +83,7 @@ export function App() {
     ? <p className="quick-out">Open Compass and sign in first.</p>
     : <><Palette onClose={closeQuickAdd} onAdded={() => void replay().finally(closeQuickAdd)} /><Toasts /><ConfirmDialog /></>;
   if (auth === 'out') return <SignIn onSignedIn={() => setAuth('in')} />;
-  const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, calendar: <Calendar />, workload: <Workload />, time: <Time />, timeline: <Timeline />, projects: <Projects />, programs: <Projects mode="programs" />, program: <ProgramPage key={params.id} id={params.id} tab={params.tab} />,
+  const view = { today: <Today />, board: <Board />, list: <List />, upcoming: <Upcoming />, calendar: <Calendar />, workload: <Workload />, time: <Time />, timeline: <Timeline />, projects: <Projects />, goals: <Goals />, goal: <GoalPage key={params.id} id={params.id} />, programs: <Projects mode="programs" />, program: <ProgramPage key={params.id} id={params.id} tab={params.tab} />,
     project: <ProjectPage id={params.id} tab={params.tab} />, settings: <SettingsView onSignedOut={() => setAuth('out')} />, trash: <TrashView />, kelly: <KellyLog />, inbox: <InboxView />, meetings: <MeetingsView />, review: <ReviewView />, library: <LibraryView />, libpage: <LibraryPageView slug={params.slug} />, athena: <AthenaView id={params.id} />, knowledge: <KnowledgeView key={params.id ?? 'all'} id={params.id} />, meeting: <MeetingView key={params.id} id={params.id} />, series: <MeetingSeriesView key={params.id} id={params.id} /> }[path] ?? <Today />;
   return (
     <>

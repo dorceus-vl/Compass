@@ -1216,3 +1216,38 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .tm-export{display:grid;gap:10px}
 .tm-export .row{align-items:flex-end}
 .prog-time{margin:0}
+/* v2.6 goals: /goals and /goals/:id (tokens only; motion is transform, off under reduced motion by the global rule) */
+.gl{display:grid;gap:16px}
+.gl-list,.gl-krs,.gl-hist ul{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.gl-row{display:grid;gap:8px;padding:12px 0;border-top:1px solid var(--border-soft)}
+.gl-row:first-child{border-top:0;padding-top:0}
+.gl-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.gl-title{font-weight:700;color:var(--text);text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
+.gl-title:hover{color:var(--accent-bright)}
+.gl-when{font-size:12px;color:var(--text-faint);margin-left:auto}
+.gl-barrow{display:flex;gap:10px;align-items:center}
+.gl-bar{position:relative;flex:1;height:8px;border-radius:999px;background:var(--field);border:1px solid var(--field-border)}
+.gl-bar i{position:absolute;inset:0;border-radius:999px;background:var(--accent);transform-origin:left;transform:scaleX(var(--p));transition:transform var(--dur-quick) var(--ease-out)}
+.gl-bar b{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;border-radius:2px;background:var(--text-dim)}
+.gl-pct{font-size:12px;color:var(--text-dim);min-width:4ch;text-align:right}
+.gl-dots{display:flex;gap:6px;flex-wrap:wrap}
+.gl-dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex:none;vertical-align:middle;border:1.5px solid var(--text-faint)}
+.gl-dot.on_track{background:var(--ok);border-color:var(--ok)}
+.gl-dot.at_risk{background:var(--warn);border-color:var(--warn)}
+.gl-dot.off_track{background:var(--danger);border-color:var(--danger)}
+.gl-meta,.gl-kr,.gl-close{display:grid;gap:12px}
+.gl-dates{align-items:flex-end}.gl-dates>.qf{flex:1 1 140px}
+.gl-krtitle{flex:1;min-width:0;font-weight:600}
+.gl-trend{width:100%;max-width:360px;height:48px}
+.gl-trend polyline{fill:none;stroke:var(--accent);stroke-width:1.75;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.gl-hist summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--text-dim);font-size:13px}
+.gl-hist li{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--text-dim)}
+.gl-note{flex:1 1 200px;color:var(--text);overflow-wrap:anywhere}
+.gl-dlg{max-width:520px;width:calc(100vw - 32px)}
+.gl-form{display:grid;gap:10px}
+.gl-conf{border:0;padding:0;margin:0;display:flex;gap:14px;flex-wrap:wrap}
+.gl-conf .tap{min-height:44px}
+.gl-acts{justify-content:flex-end}
+.gl .btn,.gl-dlg .btn,.gl .field,.gl-dlg .field,.gl .seg button{min-height:44px}
+.gl-dlg textarea.field,.gl textarea.field{min-height:0}
+.gl .btn:focus-visible,.gl-title:focus-visible,.gl-hist summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

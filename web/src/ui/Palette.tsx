@@ -11,7 +11,7 @@ import { askCopilot } from '../views/Athena.tsx';
 import { taskColor, projectColor } from './colors.ts';
 import { NewFromTemplate } from './Templates.tsx';
 
-const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/calendar', 'Calendar'], ['/workload', 'Workload'], ['/time', 'Time'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/programs', 'Programs'], ['/library', 'Library'], ['/knowledge', 'Knowledge'], ['/settings', 'Settings'], ['/trash', 'Trash']];
+const JUMPS: [string, string][] = [['/', 'Today'], ['/board', 'Board'], ['/list', 'List'], ['/upcoming', 'Upcoming'], ['/calendar', 'Calendar'], ['/workload', 'Workload'], ['/time', 'Time'], ['/timeline', 'Timeline'], ['/projects', 'Projects'], ['/programs', 'Programs'], ['/goals', 'Goals'], ['/library', 'Library'], ['/knowledge', 'Knowledge'], ['/settings', 'Settings'], ['/trash', 'Trash']];
 
 export function Palette({ onClose, prefill, onAdded }: { onClose: () => void; prefill?: { title: string; notes: string | null }; onAdded?: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);

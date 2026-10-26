@@ -41,11 +41,12 @@ const ICONS: Record<string, ReactNode> = {
 };
 ICONS.workload = ICONS.bars; // NAV keys double as icon names
 ICONS.time = ICONS.sheet; // a timesheet
+ICONS.goals = <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12h.01" strokeWidth={3} /></>; // a target
 export const Icon = ({ name }: { name: string }) => <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{ICONS[name]}</svg>;
 
 const NAV = [
   ['today', '/', 'Today'], ['inbox', '/inbox', 'Inbox'], ['board', '/board', 'Board'], ['list', '/list', 'List'], ['upcoming', '/upcoming', 'Upcoming'], ['calendar', '/calendar', 'Calendar'], ['workload', '/workload', 'Workload'], ['time', '/time', 'Time'],
-  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['library', '/library', 'Library'], ['knowledge', '/knowledge', 'Knowledge'], ['athena', '/athena', 'Athena'],
+  ['timeline', '/timeline', 'Timeline'], ['projects', '/projects', 'Projects'], ['goals', '/goals', 'Goals'], ['library', '/library', 'Library'], ['knowledge', '/knowledge', 'Knowledge'], ['athena', '/athena', 'Athena'],
 ] as const;
 
 /** Slides one absolutely positioned pill (transform only) to the nav's active link (`sel`, default `a.on`); size is set inline and not animated. Hidden when no link is active. */
@@ -70,7 +71,7 @@ export function useSlider(nav: { current: HTMLElement | null }, pill: { current:
 export function Shell({ children, onPalette }: { children: ReactNode; onPalette: () => void }) {
   const { path } = useRoute();
   const fresh = useInbox().items.filter((i) => i.state === 'new').length;
-  const on = (k: string) => (path === k || (k === 'projects' && (path === 'project' || path === 'programs' || path === 'program')) || (k === 'library' && path === 'libpage') || (k === 'meetings' && (path === 'meeting' || path === 'series')) ? 'on' : '');
+  const on = (k: string) => (path === k || (k === 'projects' && (path === 'project' || path === 'programs' || path === 'program')) || (k === 'goals' && path === 'goal') || (k === 'library' && path === 'libpage') || (k === 'meetings' && (path === 'meeting' || path === 'series')) ? 'on' : '');
   const portrait = useAthenaMedia()?.portrait_id;
   const rail = useRef<HTMLElement>(null), railPill = useRef<HTMLSpanElement>(null), tab = useRef<HTMLElement>(null), tabPill = useRef<HTMLSpanElement>(null);
   useSlider(rail, railPill, path); useSlider(tab, tabPill, path);
@@ -94,7 +95,7 @@ export function Shell({ children, onPalette }: { children: ReactNode; onPalette:
         <Link to="/" className={on('today')} aria-current={on('today') ? 'page' : undefined}><Icon name="today" />Today</Link><Link to="/board" className={on('board')} aria-current={on('board') ? 'page' : undefined}><Icon name="board" />Board</Link>
         <button type="button" className="add" onClick={onPalette} aria-label="Quick add"><Icon name="plus" /></button>
         <Link to="/projects" className={on('projects')} aria-current={on('projects') ? 'page' : undefined}><Icon name="projects" />Projects</Link>
-        <Link to="/settings" className={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') || on('workload') || on('time')} aria-current={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') || on('workload') || on('time') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
+        <Link to="/settings" className={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') || on('workload') || on('time') || on('goals')} aria-current={on('settings') || on('kelly') || on('inbox') || on('library') || on('knowledge') || on('athena') || on('calendar') || on('workload') || on('time') || on('goals') ? 'page' : undefined} aria-label={fresh ? `More, ${fresh} new in the inbox` : 'More'}><Icon name="more" />More{fresh > 0 && <span className="badge">{fresh}</span>}</Link>
       </nav>
     </div>
   );
