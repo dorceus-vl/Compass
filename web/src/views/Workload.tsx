@@ -12,7 +12,7 @@ import { toast } from '../ui/dialogs.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { usePrograms, membersOf } from './Programs.tsx';
 import { useTimers } from '../ui/TimerButton.tsx';
-import { actualWeeks } from '../../../shared/time.ts';
+import { actualWeeks, goneProjects } from '../../../shared/time.ts';
 
 // Workload (v2.4, P5): estimated hours per week against capacity, drawn from the device mirror, so it works offline.
 // Capacity lives in settings (cached in IndexedDB `meta` for offline reading); changing it is online-only.
@@ -48,11 +48,10 @@ function useWorkloadSettings() {
 
 const PATTERNS = ['solid', 'hatch', 'dots', 'lines'] as const;
 /** One fill per project: its colour with one of four patterns (never colour alone); "No project" is grey cross-hatch. */
-function Fill({ id, color, kind }: { id: string; color: string; kind: (typeof PATTERNS)[number] | 'cross' | 'actual' }) {
+function Fill({ id, color, kind }: { id: string; color: string; kind: (typeof PATTERNS)[number] | 'cross' }) {
   return (
-    <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform={kind === 'hatch' || kind === 'cross' ? 'rotate(45)' : kind === 'actual' ? 'rotate(-45)' : undefined}>
-      <rect width="6" height="6" fill={color} opacity={kind === 'solid' ? 1 : kind === 'actual' ? 0.35 : 0.55} />
-      {kind === 'actual' && <rect width="6" height="2.5" fill={color} />}
+    <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform={kind === 'hatch' || kind === 'cross' ? 'rotate(45)' : undefined}>
+      <rect width="6" height="6" fill={color} opacity={kind === 'solid' ? 1 : 0.55} />
       {kind === 'hatch' && <rect width="2" height="6" fill="var(--card)" />}
       {kind === 'dots' && <circle cx="3" cy="3" r="1.2" fill="var(--card)" />}
       {kind === 'lines' && <rect y="2" width="6" height="1.5" fill="var(--card)" />}
@@ -64,7 +63,7 @@ function Fill({ id, color, kind }: { id: string; color: string; kind: (typeof PA
 const M = { l: 32, r: 12, t: 30, b: 26 };
 type Seg = { key: string; name: string; color: string };
 
-/** The first `past` weeks are logged time (Actual): their own stripe pattern and a label over the group, then the planned weeks. */
+/** The first `past` weeks are logged time (Actual): each project keeps its own pattern, the bars get a dashed outline and a label over the group; then the planned weeks. */
 function StackedBars({ id, w, weeks, past, kind, segs, selected, onPick, describedBy }: { id: string; w: number; weeks: WWeek[]; past: number; kind: Kind; segs: Seg[]; selected: string | null; onPick: (start: string) => void; describedBy: string }) {
   const h = 220, iw = w - M.l - M.r, ih = h - M.t - M.b, n = weeks.length, slot = iw / n, bw = Math.min(30, slot * 0.62);
   const maxH = Math.max(1, ...weeks.map((x) => Math.max(x.minutes[kind], x.capacity[kind]) / 60));
@@ -73,8 +72,7 @@ function StackedBars({ id, w, weeks, past, kind, segs, selected, onPick, describ
   return (
     <div className="wl-plot">
       <svg className="chart-svg" role="img" aria-label={`${kind === 'work' ? 'Work' : 'Personal'} hours logged in each of the last ${past} weeks, then planned in each of the next ${n - past}, against capacity`} aria-describedby={describedBy} width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-        <defs>{segs.map((s, i) => <Fill key={s.key} id={`${id}-p${i}`} color={s.color} kind={s.key === '' ? 'cross' : PATTERNS[i % PATTERNS.length]} />)}
-          {segs.map((s, i) => <Fill key={`a${s.key}`} id={`${id}-a${i}`} color={s.color} kind="actual" />)}</defs>
+        <defs>{segs.map((s, i) => <Fill key={s.key} id={`${id}-p${i}`} color={s.color} kind={s.key === '' ? 'cross' : PATTERNS[i % PATTERNS.length]} />)}</defs>
         {past > 0 && <g className="wl-actual">
           <text x={M.l + (slot * past) / 2} y={10} textAnchor="middle" className="ch-t">Actual</text>
           <text x={M.l + slot * past + (slot * (n - past)) / 2} y={10} textAnchor="middle" className="ch-t">Planned</text>
@@ -91,7 +89,7 @@ function StackedBars({ id, w, weeks, past, kind, segs, selected, onPick, describ
             {segs.map((s, k) => {
               const m = by.get(s.key); if (!m) return null;
               const y0 = y(acc / 60), y1 = y((acc + m) / 60); acc += m;
-              return <rect key={s.key} x={cx - bw / 2} y={y1} width={bw} height={Math.max(0, y0 - y1)} fill={`url(#${id}-${i < past ? 'a' : 'p'}${k})`} stroke="var(--card)" strokeWidth={0.75} />;
+              return <rect key={s.key} x={cx - bw / 2} y={y1} width={bw} height={Math.max(0, y0 - y1)} fill={`url(#${id}-p${k})`} className={i < past ? 'wl-act' : undefined} stroke="var(--card)" strokeWidth={0.75} />;
             })}
             <line x1={M.l + slot * i + 2} x2={M.l + slot * (i + 1) - 2} y1={y(cap)} y2={y(cap)} className="wl-cap" />
             {over > 0 && <text x={cx} y={y(Math.max(acc, wk.capacity[kind]) / 60) - 16} textAnchor="middle" className="ch-v wl-over"><tspan x={cx}>+{hrs(over)}</tspan><tspan x={cx} dy="11">over</tspan></text>}
@@ -105,7 +103,7 @@ function StackedBars({ id, w, weeks, past, kind, segs, selected, onPick, describ
       ))}
       <ul className="chart-legend" aria-hidden="true">
         {segs.map((s, i) => <li key={s.key}><svg width="14" height="12"><rect width="14" height="12" rx="2" fill={`url(#${id}-p${i})`} /></svg>{s.name}</li>)}
-        {past > 0 && <li><svg width="14" height="12"><rect width="14" height="12" rx="2" fill={`url(#${id}-a0)`} /></svg>Actual (logged)</li>}
+        {past > 0 && <li><svg width="14" height="12"><rect x="1" y="1" width="12" height="10" rx="2" fill="none" className="wl-act" /></svg>Actual (logged): dashed outline</li>}
         <li><svg width="24" height="10"><line x1="1" x2="23" y1="5" y2="5" className="wl-cap" /></svg>Capacity</li>
       </ul>
     </div>
@@ -141,8 +139,8 @@ export function Workload() {
   const live = useMemo(() => projects.filter((p) => !p.deleted_at), [projects]);
   const ids = filter === 'all' ? undefined : filter.startsWith('g:') ? { project_ids: membersOf(filter.slice(2), live).map((p) => p.id) } : { project_ids: [filter.slice(2)] };
   const wl = useMemo(() => workload(tasks, s, today, tz, 12, ids), [tasks, s, today, tz, filter, live]); // eslint-disable-line react-hooks/exhaustive-deps
-  // T9: the 4 weeks before this one, from logged time; a trashed project's own entries count nowhere.
-  const past = useMemo(() => actualWeeks(entries.filter((e) => !e.project_id || live.some((p) => p.id === e.project_id)), tasks, s, today, tz, 4, ids), [entries, tasks, s, today, tz, filter, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  // T9: the 4 weeks before this one, from logged time; a project in Trash takes its entries and its tasks' with it (shared/time.ts).
+  const past = useMemo(() => actualWeeks(entries, tasks, s, today, tz, 4, ids, goneProjects(projects)), [entries, tasks, s, today, tz, filter, projects]); // eslint-disable-line react-hooks/exhaustive-deps
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
   const proj = useMemo(() => new Map(live.map((p) => [p.id, p])), [live]);
   if (!ready) return null;

@@ -54,6 +54,12 @@ export function isoToZoned(iso: string, tz: string): string {
 // Task 3: reporting. Pure, over the device mirror (or the report's server load), so every screen works offline.
 // Totals leave out trashed entries and entries whose task is trashed or missing; a task entry follows its task's current project.
 
+/** The first minute after `from` whose local day is no longer `day` (binary search over 26 h; days are monotonic in time). */
+function dayEnd(from: number, day: string, tz: string): number {
+  let lo = from, hi = from + 26 * 3_600_000;
+  while (hi - lo > 60_000) { const mid = lo + Math.floor((hi - lo) / 120_000) * 60_000; if (localDay(new Date(mid).toISOString(), tz) === day) lo = mid; else hi = mid; }
+  return hi;
+}
 /** Minutes per local day (YYYY-MM-DD in tz), split at local midnights; the pieces add up to entryMinutes. */
 export function splitByDay(e: Span, tz: string, nowMs: number): Record<string, number> {
   const out: Record<string, number> = {};
@@ -61,10 +67,11 @@ export function splitByDay(e: Span, tz: string, nowMs: number): Record<string, n
   let cur = s, done = 0;
   for (let i = 0; done < total && i < 400; i++) { // ponytail: 400 days per entry at most; entries are capped at 24 h (running ones auto-stop at 12 h)
     const day = localDay(new Date(cur).toISOString(), tz);
-    const next = Date.parse(zonedToIso(`${addDaysYmd(day, 1)}T00:00`, tz)!);
-    const upto = next > cur ? Math.min(total, Math.floor((next - s) / 60_000)) : total;
+    let next = Date.parse(zonedToIso(`${addDaysYmd(day, 1)}T00:00`, tz)!);
+    if (next <= cur) next = dayEnd(cur, day, tz); // local midnight doesn't exist (a DST change at 00:00): find where the day really ends
+    const upto = Math.min(total, Math.floor((next - s) / 60_000));
     if (upto > done) out[day] = (out[day] ?? 0) + upto - done;
-    done = upto; cur = next > cur ? next : cur + 3_600_000;
+    done = upto; cur = next;
   }
   return out;
 }
@@ -72,24 +79,30 @@ export function splitByDay(e: Span, tz: string, nowMs: number): Record<string, n
 type TTask = { id: string; project_id: string | null; deleted_at: string | null };
 /** What the report's server load reads of an entry (never the note). */
 export type REntry = Pick<TimeEntry, 'task_id' | 'project_id' | 'started_at' | 'ended_at' | 'deleted_at'>;
-/** The project an entry counts for: its own (a project entry) or its live task's current one; undefined when it counts nowhere. */
-export function entryProject(e: REntry, byId: Map<string, TTask>): string | null | undefined {
+/** Ids of projects in Trash (`gone`): their entries, and their tasks' entries, count nowhere, like a trashed task's. */
+export type Gone = ReadonlySet<string>;
+const NONE: Gone = new Set();
+export const goneProjects = (projects: { id: string; deleted_at: string | null }[]): Gone => new Set(projects.filter((p) => p.deleted_at).map((p) => p.id));
+/** The one rule for where an entry counts: its own project (a project entry) or its live task's current one; undefined when it counts nowhere
+ *  (the entry or its task is trashed or missing, or the project is in `gone`). */
+export function entryProject(e: REntry, byId: Map<string, TTask>, gone: Gone = NONE): string | null | undefined {
   if (e.deleted_at) return undefined;
-  if (!e.task_id) return e.project_id;
-  const t = byId.get(e.task_id);
-  return t && !t.deleted_at ? t.project_id : undefined;
+  let p: string | null;
+  if (!e.task_id) p = e.project_id;
+  else { const t = byId.get(e.task_id); if (!t || t.deleted_at) return undefined; p = t.project_id; }
+  return p && gone.has(p) ? undefined : p;
 }
 const index = <T extends { id: string }>(tasks: T[]) => new Map(tasks.map((t) => [t.id, t]));
 const inRange = (e: REntry, nowMs: number, range?: { from: string; to: string; tz: string }) =>
   !range ? entryMinutes(e, nowMs) : Object.entries(splitByDay(e, range.tz, nowMs)).reduce((n, [d, m]) => (d >= range.from && d <= range.to ? n + m : n), 0);
 
-export function projectMinutes(entries: REntry[], tasks: TTask[], projectId: string, nowMs: number, range?: { from: string; to: string; tz: string }): number {
+export function projectMinutes(entries: REntry[], tasks: TTask[], projectId: string, nowMs: number, range?: { from: string; to: string; tz: string }, gone: Gone = NONE): number {
   const byId = index(tasks);
-  return entries.reduce((n, e) => (entryProject(e, byId) === projectId ? n + inRange(e, nowMs, range) : n), 0);
+  return entries.reduce((n, e) => (entryProject(e, byId, gone) === projectId ? n + inRange(e, nowMs, range) : n), 0);
 }
-export function programMinutes(entries: REntry[], tasks: TTask[], projectIds: string[], nowMs: number): number {
+export function programMinutes(entries: REntry[], tasks: TTask[], projectIds: string[], nowMs: number, gone: Gone = NONE): number {
   const byId = index(tasks), keep = new Set(projectIds);
-  return entries.reduce((n, e) => { const p = entryProject(e, byId); return p && keep.has(p) ? n + entryMinutes(e, nowMs) : n; }, 0);
+  return entries.reduce((n, e) => { const p = entryProject(e, byId, gone); return p && keep.has(p) ? n + entryMinutes(e, nowMs) : n; }, 0);
 }
 
 export interface Accuracy { tasks: number; logged: number; estimated: number; ratio: number | null; label: string }
@@ -109,7 +122,7 @@ export function accuracy(entries: REntry[], tasks: Task[], projectIds: string[] 
 }
 
 /** T9: the n Monday weeks before today's week, oldest first, from logged time; whole capacity (past weeks are whole). A project entry has task_id ''. */
-export function actualWeeks(entries: TimeEntry[], tasks: Task[], s: Settings['workload'], today: string, tz: string, n = 4, filter?: { project_ids: string[] }): WWeek[] {
+export function actualWeeks(entries: TimeEntry[], tasks: Task[], s: Settings['workload'], today: string, tz: string, n = 4, filter?: { project_ids: string[] }, gone: Gone = NONE): WWeek[] {
   const first = addDaysYmd(weekStart(today), -7 * n), end = weekStart(today);
   const endMs = Date.parse(zonedToIso(`${end}T00:00`, tz)!); // a running entry counts up to this week's start; later minutes are not in these weeks
   const byId = index(tasks), keep = filter && new Set(filter.project_ids);
@@ -119,7 +132,7 @@ export function actualWeeks(entries: TimeEntry[], tasks: Task[], s: Settings['wo
     return { start, capacity: { work: Math.round(cap.work * 60), personal: Math.round(cap.personal * 60) }, work: [], personal: [], minutes: { work: 0, personal: 0 }, over: { work: 0, personal: 0 } };
   });
   for (const e of entries) {
-    const p = entryProject(e, byId);
+    const p = entryProject(e, byId, gone);
     if (p === undefined || (keep && !(p && keep.has(p))) || e.started_at >= new Date(endMs).toISOString()) continue;
     for (const [d, m] of Object.entries(splitByDay(e, tz, endMs))) {
       if (d < first || d >= end) continue;
@@ -135,12 +148,12 @@ export function actualWeeks(entries: TimeEntry[], tasks: Task[], s: Settings['wo
 
 export interface GridRow { project_id: string | null; days: number[]; total: number }
 /** Minutes per project (null: no project) per day of the Monday week; rows by total, "No project" last. */
-export function weekGrid(entries: TimeEntry[], tasks: Task[], weekStartYmd: string, tz: string, nowMs: number): { rows: GridRow[]; dayTotals: number[]; total: number } {
+export function weekGrid(entries: TimeEntry[], tasks: Task[], weekStartYmd: string, tz: string, nowMs: number, gone: Gone = NONE): { rows: GridRow[]; dayTotals: number[]; total: number } {
   const byId = index(tasks), rows = new Map<string | null, GridRow>(), dayTotals = [0, 0, 0, 0, 0, 0, 0];
   const end = addDaysYmd(weekStartYmd, 7);
   let total = 0;
   for (const e of entries) {
-    const p = entryProject(e, byId);
+    const p = entryProject(e, byId, gone);
     if (p === undefined) continue;
     for (const [d, m] of Object.entries(splitByDay(e, tz, nowMs))) {
       if (d < weekStartYmd || d >= end) continue;
@@ -159,10 +172,10 @@ const csvCell = (v: string | number) => {
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 };
-/** One row per live entry, oldest first: local start and end in tz (a running entry has no end), minutes, project, task, note. */
-export function toCsv(entries: TimeEntry[], names: { task: (id: string) => string; project: (id: string | null) => string }, tasks: Task[], tz: string, nowMs: number): string {
-  const byId = index(tasks), local = (iso: string) => isoToZoned(iso, tz).replace('T', ' ');
-  const rows = entries.filter((e) => entryProject(e, byId) !== undefined).sort((a, b) => a.started_at.localeCompare(b.started_at))
-    .map((e) => [local(e.started_at), e.ended_at ? local(e.ended_at) : '', entryMinutes(e, nowMs), names.project(entryProject(e, byId)!), e.task_id ? names.task(e.task_id) : '', e.note ?? '']);
-  return [['Start', 'End', 'Minutes', 'Project', 'Task', 'Note'], ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
+/** One row per entry that counts, oldest first (spec §3): local date of the start, local HH:mm start and end in tz (a running entry has no end), minutes, kind, project, task, note, source. */
+export function toCsv(entries: TimeEntry[], names: { task: (id: string) => string; project: (id: string | null) => string }, tasks: Task[], tz: string, nowMs: number, gone: Gone = NONE): string {
+  const byId = index(tasks), hm = (iso: string) => isoToZoned(iso, tz).slice(11, 16);
+  const rows = entries.flatMap((e) => { const p = entryProject(e, byId, gone); return p === undefined ? [] : [{ e, p }]; }).sort((a, b) => a.e.started_at.localeCompare(b.e.started_at))
+    .map(({ e, p }) => [isoToZoned(e.started_at, tz).slice(0, 10), hm(e.started_at), e.ended_at ? hm(e.ended_at) : '', entryMinutes(e, nowMs), e.kind, names.project(p), e.task_id ? names.task(e.task_id) : '', e.note ?? '', e.source]);
+  return [['Date', 'Start', 'End', 'Minutes', 'Kind', 'Project', 'Task', 'Note', 'Source'], ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
 }

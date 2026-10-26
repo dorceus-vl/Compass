@@ -138,7 +138,7 @@ export function programDoc(m: ProgramReportModel): TemplateDoc {
     sections: [
       sec('Overall status', fields(['Your RAG', RAG_WORD[m.rag]], ['Reason', m.rag_reason], ['Worst project RAG', RAG_WORD[m.worst]]), ...(m.sentence ? [p(m.sentence + '.')] : [])),
       sec('Executive summary', p(m.summary || `${m.projects.length} project${m.projects.length === 1 ? '' : 's'}; ${m.upcoming.length} milestone${m.upcoming.length === 1 ? '' : 's'} due in the next 30 days.`)),
-      sec('Projects', table(['Project', 'RAG', 'Done', 'Schedule', 'Next milestone', ...(timed ? ['Time logged'] : [])],
+      sec('Projects', table(['Project', 'RAG', 'Done', 'Schedule', 'Next milestone', ...(timed ? ['Time logged (all time)'] : [])],
         m.projects.map((x) => [x.name, RAG_WORD[x.rag], `${x.pct_done}%`, schedule(x.slip), x.next_milestone ? `${x.next_milestone.name} (${x.next_milestone.due_at})` : '', ...(timed ? [formatEstimate(x.minutes ?? 0)] : [])]), 'No projects in this program.')),
       sec('Milestones in the next 30 days', table(['Due', 'Milestone', 'Project'], m.upcoming.map((u) => [u.due_at, u.name, pname(u.project_id)]), 'No milestone due in the next 30 days.')),
       sec('Top risks', table(['Risk', 'Project', 'Score'], m.risks.map((r) => [r.title, r.project, r.score ?? 'unrated']), 'No open risks.')),

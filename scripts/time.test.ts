@@ -121,10 +121,27 @@ console.log('time: ok');
     e('c4', { task_id: 'gone', started_at: '2026-10-21T14:30:00.000Z' }),
   ], { task: (id) => ({ w: 'Write plan', h: 'Home' } as Record<string, string>)[id] ?? 'Task', project: (id) => (id === 'P' ? 'Proj, One' : 'No project') }, [...wt, ...pt], TZ, now);
   assert.equal(csv, [
-    'Start,End,Minutes,Project,Task,Note',
-    `2026-10-19 08:00,2026-10-19 08:20,20,"Proj, One",,'=SUM(A1)`,
-    '2026-10-20 09:00,2026-10-20 10:30,90,"Proj, One",Write plan,"Call, ""vendor""\nand notes"',
-    '2026-10-28 10:30,,30,No project,Home,',
+    'Date,Start,End,Minutes,Kind,Project,Task,Note,Source',
+    `2026-10-19,08:00,08:20,20,personal,"Proj, One",,'=SUM(A1),timer`,
+    '2026-10-20,09:00,10:30,90,personal,"Proj, One",Write plan,"Call, ""vendor""\nand notes",timer',
+    '2026-10-28,10:30,,30,personal,No project,Home,,timer',
   ].join('\r\n'));
+
+  // One trash rule (fix round 1): a project in Trash takes its own entries and its tasks' entries out of every total, the grid, Actual weeks and the CSV.
+  const { entryProject, goneProjects } = await import('../shared/time.ts');
+  const gone = goneProjects([{ id: 'P', deleted_at: T }, { id: 'Q', deleted_at: null }]);
+  const byId = new Map(wt.map((t) => [t.id, t]));
+  assert.equal(entryProject(e('x', { task_id: 'w' }), byId, gone), undefined, 'a task in a trashed project counts nowhere');
+  assert.equal(entryProject(e('x', { project_id: 'P', note: 'x' }), byId, gone), undefined, 'a trashed project\'s own entry counts nowhere');
+  assert.equal(entryProject(e('x', { task_id: 'h' }), byId, gone), null, 'an unfiled task still counts under No project');
+  assert.equal(entryProject(e('x', { task_id: 'w' }), byId), 'P', 'without the set it counts');
+  assert.equal(weekGrid(we, wt, '2026-10-19', TZ, now, gone).total, 0);
+  assert.deepEqual(actualWeeks(we, wt, wl, '2026-10-28', TZ, 4, undefined, gone).map((x) => x.minutes.work), [0, 0, 0, 0]);
+  assert.equal(toCsv(we, { task: () => 't', project: () => 'p' }, wt, TZ, now, gone).split('\r\n').length, 4, 'header and the three unfiled entries');
+  assert.equal(projectMinutes(pe, pt, 'P', now, undefined, gone), 0);
+  assert.equal(programMinutes(pe, pt, ['P', 'Q'], now, gone), 60);
+
+  // splitByDay where local midnight doesn't exist (Santiago springs forward at 00:00 on 6 Sep 2026): 23:30 to 02:30 local is 30 + 90.
+  assert.deepEqual(splitByDay({ started_at: '2026-09-06T03:30:00.000Z', ended_at: '2026-09-06T05:30:00.000Z' }, 'America/Santiago', now), { '2026-09-05': 30, '2026-09-06': 90 });
   console.log('time reporting: ok');
 }

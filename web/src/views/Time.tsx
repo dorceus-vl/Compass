@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { weekStart, addDaysYmd, localDay } from '../../../shared/dashboard.ts';
-import { weekGrid, splitByDay, entryProject, toCsv, formatElapsed } from '../../../shared/time.ts';
+import { weekGrid, splitByDay, entryProject, toCsv, formatElapsed, goneProjects } from '../../../shared/time.ts';
 import { useStore } from '../store/useStore.ts';
 import { useSettingsBits } from '../settings-cache.ts';
 import { todayIn } from '../dates.ts';
@@ -28,21 +28,20 @@ export function Time() {
 
   const live = useMemo(() => new Map(projects.filter((p) => !p.deleted_at).map((p) => [p.id, p])), [projects]);
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
-  // A trashed project's own entries count nowhere (its tasks' entries still follow the task).
-  const mine = useMemo(() => entries.filter((e) => !e.project_id || live.has(e.project_id)), [entries, live]);
-  const grid = useMemo(() => weekGrid(mine, tasks, week, tz, now), [mine, tasks, week, tz, now]);
-  const pname = (id: string | null) => (id && live.get(id)?.name) || (id ? 'Project in Trash' : 'No project');
+  const gone = useMemo(() => goneProjects(projects), [projects]); // a project in Trash: its entries and its tasks' count nowhere (shared/time.ts)
+  const grid = useMemo(() => weekGrid(entries, tasks, week, tz, now, gone), [entries, tasks, week, tz, now, gone]);
+  const pname = (id: string | null) => (id && live.get(id)?.name) || (id ? 'Project' : 'No project');
   const tname = (id: string) => byId.get(id)?.title ?? 'Task';
 
   const day = (i: number) => addDaysYmd(week, i);
-  const picked = cell ? mine.filter((e) => entryProject(e, byId) === cell.p && (splitByDay(e, tz, now)[day(cell.d)] ?? 0) > 0).sort((a, b) => a.started_at.localeCompare(b.started_at)) : [];
+  const picked = cell ? entries.filter((e) => entryProject(e, byId, gone) === cell.p && (splitByDay(e, tz, now)[day(cell.d)] ?? 0) > 0).sort((a, b) => a.started_at.localeCompare(b.started_at)) : [];
   const go = (n: number) => { setMon(addDaysYmd(week, 7 * n)); setCell(null); };
 
   const okRange = YMD.test(from) && YMD.test(to) && from <= to;
   const exportCsv = () => {
-    const rows = mine.filter((e) => { const d = localDay(e.started_at, tz); return d >= from && d <= to; });
+    const rows = entries.filter((e) => { const d = localDay(e.started_at, tz); return d >= from && d <= to; });
     if (!rows.length) { toast('No time logged in those dates'); return; }
-    saveText('﻿' + toCsv(rows, { task: tname, project: pname }, tasks, tz, now), `compass-time-${from}-${to}.csv`, 'text/csv;charset=utf-8'); // the BOM lets Excel read UTF-8
+    saveText('﻿' + toCsv(rows, { task: tname, project: pname }, tasks, tz, now, gone), `compass-time-${from}-${to}.csv`, 'text/csv;charset=utf-8'); // the BOM lets Excel read UTF-8
   };
 
   if (!ready) return null;
@@ -84,7 +83,7 @@ export function Time() {
           <button type="button" className="btn primary" disabled={!okRange} onClick={exportCsv}>Export CSV</button>
         </div>
         {!okRange && <p className="sub" role="note" style={{ color: 'var(--danger)' }}>Pick a start date on or before the end date.</p>}
-        <p className="hint">Entries that start in these dates, with local start and end times in your time zone, minutes, project, task and note.</p>
+        <p className="hint">Entries that start in these dates: the date, start and end times in your time zone, minutes, kind, project, task, note and source (timer, manual or widget).</p>
       </div>
     </div>
   );
