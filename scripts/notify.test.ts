@@ -60,6 +60,7 @@ db.exec('DELETE FROM time_entries'); entry('e5', ago(5));
 entry('e13', ago(13)); db.exec('DELETE FROM push_outbox');
 await notifyTimers(env, at);
 const e13 = rows("SELECT ended_at, auto_stopped, updated_at FROM time_entries WHERE id = 'e13'")[0];
-assert.deepEqual([e13.ended_at, e13.auto_stopped, e13.updated_at], [new Date(+at - 1 * 3600e3).toISOString(), 1, at.toISOString()]);
+assert.deepEqual([e13.ended_at, e13.auto_stopped], [new Date(+at - 1 * 3600e3).toISOString(), 1]);
+assert.ok(e13.updated_at !== at.toISOString() && Math.abs(Date.parse(e13.updated_at) - Date.now()) < 60_000, 'updated_at is the real now, not the scheduled time (devices past that instant still pull it)');
 assert.deepEqual(rows("SELECT id FROM push_outbox").map((r) => r.id), ['timer:e5:4h']); // e5 again (outbox was cleared), not e13
 console.log('notify ok');

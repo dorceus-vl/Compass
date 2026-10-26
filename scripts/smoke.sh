@@ -1873,10 +1873,14 @@ X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$X
 # export opens the work note; audit rows carry no note
 curl "${H[@]}" $B/api/export | js "d.time_entries.some(e=>e.id==='$TEW'&&e.note==='Smoke time note $R'&&!('enc_v' in e))" | grep -qx true || fail "t0: export did not open the time entries"
 D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'time.%' AND detail LIKE '%Smoke%'" | js 'd[0].results[0].n' | grep -qx 0 || fail "t0: an audit row carries a note"
+# a live task whose project is in Trash can't take time (409 time_target)
+TB="{\"title\":\"Smoke time in project $R\",\"kind\":\"personal\",\"project_id\":\"$TPJ\"}"; TPT=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+curl "${H[@]}" -X DELETE $B/api/projects/$TPJ >/dev/null
+X=$(tpost time "{\"task_id\":\"$TPT\"}"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q time_target || fail "t0: a task in a trashed project: $X"
 # clean up (local D1 only)
 D1X "DELETE FROM time_entries WHERE created_at >= '$T0'" >/dev/null
-curl "${H[@]}" -X DELETE $B/api/projects/$TPJ >/dev/null
-echo "smoke: (t0) time: start 201 running, same task 409 timer_running, sixth 409 timer_limit, stop twice same end, future end / 25 h / no project note 400, done task 409 time_target, work note ciphertext (personal plain), since returns a trashed entry, note edit after a stop keeps it stopped, stale edit 409 time_conflict, Trash lists and restores it (running beside a new one 409), Empty Trash removes a purged task's entries, export opens them"
+curl "${H[@]}" -X DELETE $B/api/tasks/$TPT >/dev/null
+echo "smoke: (t0) time: start 201 running, same task 409 timer_running, sixth 409 timer_limit, stop twice same end, future end / 25 h / no project note 400, done task or trashed project 409 time_target, work note ciphertext (personal plain), since returns a trashed entry, note edit after a stop keeps it stopped, stale edit 409 time_conflict, Trash lists and restores it (running beside a new one 409), Empty Trash removes a purged task's entries, export opens them"
 # (t1) v2.5 Task 2: forgotten timers. A timer running 5 h gets one outbox push (key timer:<id>:4h, body without the task title) and a second cron adds none; one running
 # 13 h is stopped at start + 12 h with auto_stopped = 1. Quiet hours are switched off while it runs. Local D1 only; the seeded rows are removed.
 T1Q=$(curl "${H[@]}" $B/api/settings | js '[d.quiet_from,d.quiet_to].join()'); curl "${H[@]}" -X PATCH $B/api/settings -d '{"quiet_from":"00:00","quiet_to":"00:00"}' >/dev/null
@@ -1918,7 +1922,7 @@ D1X "DELETE FROM time_entries WHERE id LIKE 'smk-t2-%'; DELETE FROM task_events 
 echo "smoke: (t2) reports: the project report's input has its time without notes and its summary the time numbers; the program summary has time logged per project, no note or name"
 # (t3) v2.5 Task 4: widget timers (T8). A token (dev step-up); POST timer start -> 200 and a running entry with source widget starting at the posted at (a future at
 # clamped); again -> 409 audited refused; a stop on a task completed meanwhile -> 200 stopped; stop -> 200
-# stopped; stop with none running -> 200 stopped false; a bad action 400; a done task 404; a bad token 401 with no audit row; the guard lets only POST on .../timer
+# stopped; stop with none running -> 409 not_running (audited refused, no entry); a bad action 400; a done task 404; a bad token 401 with no audit row; the guard lets only POST on .../timer
 # through; the audit rows (widget.timer) carry ids and no task text. Everything it made is removed.
 wtimer() { curl -s -w '\n%{http_code}' -X POST "$B/api/widget/tasks/$2/timer" -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3"; } # no cookie, no Origin
 D1X "DELETE FROM audit_log WHERE actor='widget'" >/dev/null
@@ -1935,7 +1939,13 @@ X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q t
 TB="{\"action\":\"stop\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}"
 X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.stopped)" = true ] || fail "t3: stop: $X"
 [ "$(D1X "SELECT count(*) AS n FROM time_entries WHERE task_id='$T3T' AND ended_at IS NULL AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 0 ] || fail "t3: the stop left it running"
-X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.stopped)" = false ] || fail "t3: a stop with none running: $X"
+X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q not_running || fail "t3: a stop with none running: $X"
+# offline start, online stop: the stop reaches the server first with nothing running -> 409 not_running (not settled, so the widget keeps both queued), no entry, audited refused
+TB="{\"title\":\"Smoke t3 offline $R\"}"; T3O=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+TB="{\"action\":\"stop\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}"
+X=$(wtimer "$T3K" $T3O "$TB"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q not_running || fail "t3: an offline-style stop: $X"
+[ "$(D1X "SELECT count(*) AS n FROM time_entries WHERE task_id='$T3O'" | js 'd[0].results[0].n')" = 0 ] || fail "t3: a stop with nothing running made an entry"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND action='widget.timer' AND target='$T3O' AND detail LIKE '%\"refused\":\"not_running\"%'" | js 'd[0].results[0].n')" = 1 ] || fail "t3: the not_running stop is not audited as refused"
 X=$(wtimer "$T3K" $T3T '{"action":"done"}'); [ "$(kst "$X")" = 400 ] || fail "t3: a bad action is not 400: $X"
 # a future at is clamped (now + 5 min at most); a stop on a task completed meanwhile still lands (200, stopped)
 TB="{\"title\":\"Smoke t3 future $R\"}"; T3F=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
@@ -1959,9 +1969,9 @@ nos -X POST "$B/api/widget/tasks/$T3T/timer/" -H "Authorization: Bearer $T3K" ||
 nos -X POST "$B/api/widget/tasks/$T3T/timers" -H "Authorization: Bearer $T3K" || fail "t3: another path got past the guard"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND action='widget.timer' AND detail LIKE '%\"ok\":true%' AND detail LIKE '%\"action\":\"start\"%'" | js 'd[0].results[0].n')" = 2 ] || fail "t3: the two starts are not audited once each"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND (detail LIKE '%Smoke t3%' OR target LIKE '%Smoke t3%')" | js 'd[0].results[0].n')" = 0 ] || fail "t3: task text reached the audit log"
-D1X "DELETE FROM time_entries WHERE task_id IN ('$T3T','$T3D','$T3F'); DELETE FROM widget_tokens WHERE id = '$T3ID'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
-for x in $T3T $T3D $T3F; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
-echo "smoke: (t3) widget timers: start 200 (a running widget entry at the posted at; a future at clamped), stop on a done task 200 and stopped, a second 409 audited refused, stop 200, stop with none 200 stopped false, bad action 400, done or missing task 404, bad tokens 401 with no audit row, the guard lets only POST on .../timer through, audit rows hold ids and no text"
+D1X "DELETE FROM time_entries WHERE task_id IN ('$T3T','$T3D','$T3F','$T3O'); DELETE FROM widget_tokens WHERE id = '$T3ID'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
+for x in $T3T $T3D $T3F $T3O; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+echo "smoke: (t3) widget timers: start 200 (a running widget entry at the posted at; a future at clamped), stop on a done task 200 and stopped, a second 409 audited refused, stop 200, stop with none 409 not_running (refused, no entry), bad action 400, done or missing task 404, bad tokens 401 with no audit row, the guard lets only POST on .../timer through, audit rows hold ids and no text"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

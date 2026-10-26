@@ -131,6 +131,7 @@ Widget timers (v2.5; needs the Worker deployed with migration 0018 and "Tick tas
 - Medium and large Today widget (iPhone, and Android 4x2 / 4x4): tap the timer button on a task; it shows running at once and a running entry appears under Time in the app (source widget). Tap Stop: the entry ends.
 - A running timer on the Lock Screen widgets shows elapsed time only, never a task title (a work task says "Work task").
 - Airplane mode: start a timer from the widget, then stop it; open Compass online: both are sent, the entry starts at the time you tapped Start and ends when you tapped Stop (not when the app opened).
+- Airplane mode: start a timer from the widget; turn Airplane mode off, then stop it from the widget: the stop is refused (nothing is running on the server yet), so both stay queued; open Compass: both are sent with the tap times and one entry runs from Start to Stop.
 - A project timer (started in the app) shows on the widget without a Stop button; stop it in the app.
 - Start a timer from the widget offline, start another on the same task in the app, then go online: the second start is refused with a toast and its queued stop goes with it; one entry remains.
 

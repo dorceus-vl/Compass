@@ -61,7 +61,8 @@ export async function writeWidgets(): Promise<void> {
 
 /** What a widget couldn't deliver (offline, revoked, over the limit, a task the server didn't know yet) goes through the normal offline queue, which knows unsynced ids;
  *  a task already done, or truly gone from the device, is dropped here. In order: a done tick completes the task; a timer `start` starts one (a second timer on the task
- *  or the five-timer limit is the server's 409, which the queue drops quietly); a `stop` stops the task's running timer if there is one, even on a done task.
+ *  or the five-timer limit is the server's 409, which the queue drops quietly); a `stop` stops the task's running timer if it started at or before the tap (else the stop is stale
+ *  and dropped), even on a done task; with nothing running it does nothing.
  *  Timer actions keep the tap time (`at`), which the server clamps. */
 async function sendTicks(): Promise<void> {
   for (const t of await takeWidgetTicks()) {
@@ -71,7 +72,7 @@ async function sendTicks(): Promise<void> {
     if (!t.action) await completeTask(t.id).catch(() => {});
     else {
       const run = (await idb.all<TimeEntry>('time').catch(() => [] as TimeEntry[])).find((e) => e.task_id === id && !e.ended_at && !e.deleted_at);
-      if (t.action === 'stop') { if (run) await stopTimer(run.id, t.at).catch(() => {}); }
+      if (t.action === 'stop') { if (run && run.started_at <= t.at) await stopTimer(run.id, t.at).catch(() => {}); }
       else if (!run) await startTimer({ task_id: id }, 'widget', t.at).catch(() => {});
     }
   }

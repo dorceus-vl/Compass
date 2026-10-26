@@ -53,6 +53,13 @@ export function zonedToIso(local: string, tz: string): string | null {
   const first = wall - offsetMs(wall, tz);
   return new Date(wall - offsetMs(first, tz)).toISOString(); // second pass settles a DST edge
 }
+/** "Add time": the day's 09:00 in `tz` plus the duration; when that would end after now (today), it ends now instead (the server refuses a future end). */
+export function manualSpan(ymd: string, minutes: number, tz: string, nowMs: number): { started_at: string; ended_at: string } | null {
+  const nine = zonedToIso(`${ymd}T09:00`, tz);
+  if (!nine) return null;
+  const end = Math.min(Date.parse(nine) + minutes * 60_000, nowMs);
+  return { started_at: new Date(end - minutes * 60_000).toISOString(), ended_at: new Date(end).toISOString() };
+}
 /** The datetime-local value of an instant in `tz`. */
 export function isoToZoned(iso: string, tz: string): string {
   const ms = Date.parse(iso);

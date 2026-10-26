@@ -77,7 +77,8 @@ widget.post('/tasks/:id/done', async (c) => {
 });
 
 // T8: start or stop the task's timer (a stop also on a done task). `at` is when the widget was tapped (clamped like any time; a start is never in the future). The start and stop rules are
-// POST /api/time's own (createEntry, stopEntry): 409 timer_running / timer_limit come back as they are, audited as refused. Stop with none running is 200, stopped false.
+// POST /api/time's own (createEntry, stopEntry): 409 timer_running / timer_limit come back as they are, audited as refused. Stop with none running is 409 not_running
+// (refused), so under "only 200 settles" a queued offline start and this stop both stay queued and the app drains them in order with their tap times.
 widget.post('/tasks/:id/timer', async (c) => {
   const auth = await widgetToken(c);
   if ('res' in auth) return auth.res;
@@ -99,9 +100,10 @@ widget.post('/tasks/:id/timer', async (c) => {
     return c.json({ ok: true, entry_id: (r.body.entry as { id: string }).id });
   }
   const run = await env.DB.prepare('SELECT id FROM time_entries WHERE task_id = ?1 AND ended_at IS NULL AND deleted_at IS NULL LIMIT 1').bind(id).first<{ id: string }>();
-  if (run) await stopEntry(env, run.id, at ?? new Date().toISOString()); // idempotent: a stop racing another lands once
+  if (!run) return refuse(409, 'not_running', { error: 'not_running', message: 'No timer is running on that task' });
+  await stopEntry(env, run.id, at ?? new Date().toISOString()); // idempotent: a stop racing another lands once
   await audit(env, 'widget', 'widget.timer', id, { token: tok.id, action, ok: true });
-  return c.json({ ok: true, stopped: !!run });
+  return c.json({ ok: true, stopped: true });
 });
 
 export default widget;

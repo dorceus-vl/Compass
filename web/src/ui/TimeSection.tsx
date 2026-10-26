@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Project, Task, TimeEntry } from '../../../shared/types.ts';
-import { MAX_ENTRY_MINUTES, MAX_NOTE, taskLogged, zonedToIso, isoToZoned } from '../../../shared/time.ts';
+import { MAX_ENTRY_MINUTES, MAX_NOTE, taskLogged, zonedToIso, isoToZoned, manualSpan } from '../../../shared/time.ts';
 import { parseEstimate, formatEstimate } from '../../../shared/workload.ts';
 import { addTime, editTime, deleteTime } from '../store/useStore.ts';
 import { useSettingsBits } from '../settings-cache.ts';
@@ -63,7 +63,7 @@ export function EntryRow({ e, tz, title }: { e: TimeEntry; tz: string; title?: s
   );
 }
 
-/** Date (09:00 local in settings.tz), duration ("1h 30m") and a note. Shared by the task sheet and the project's "Log time". */
+/** Date (09:00 local in settings.tz, or ending now when that is still ahead today), duration ("1h 30m") and a note. Shared by the task sheet and the project's "Log time". */
 export function LogTimeForm({ tz, dayHours, onAdd, noteRequired = false, submitLabel = 'Add time' }:
   { tz: string; dayHours: number; onAdd: (started_at: string, ended_at: string, note: string | null) => Promise<void> | void; noteRequired?: boolean; submitLabel?: string }) {
   const [date, setDate] = useState(() => todayIn(tz));
@@ -73,12 +73,13 @@ export function LogTimeForm({ tz, dayHours, onAdd, noteRequired = false, submitL
   useEffect(() => setDate(todayIn(tz)), [tz]);
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
-    const min = parseEstimate(dur, dayHours), start = zonedToIso(`${date}T09:00`, tz);
-    if (!start) { setMsg('Pick a date'); return; }
+    const min = parseEstimate(dur, dayHours);
+    if (!zonedToIso(`${date}T09:00`, tz)) { setMsg('Pick a date'); return; }
     if (min == null || min < 1 || min > MAX_ENTRY_MINUTES) { setMsg('Use a duration up to 24 hours, like 1h 30m'); return; }
     if (noteRequired && !note.trim()) { setMsg('Add a note: what was the time for?'); return; }
     setMsg('');
-    try { await onAdd(start, new Date(Date.parse(start) + min * 60_000).toISOString(), note.trim() || null); }
+    const span = manualSpan(date, min, tz, Date.now())!; // today: ends now when 09:00 + duration is still ahead
+    try { await onAdd(span.started_at, span.ended_at, note.trim() || null); }
     catch (e) { setMsg((e as Error).message || "Couldn't add the time"); return; }
     setDur(''); setNote('');
   };

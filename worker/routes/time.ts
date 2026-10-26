@@ -30,7 +30,8 @@ export async function createEntry(env: Env, body: Record<string, unknown>, sourc
   if (note && note.length > MAX_NOTE) return bad(`note is at most ${MAX_NOTE} characters`);
   let kind: Kind | undefined;
   if (hasTask) {
-    kind = (await env.DB.prepare(`SELECT kind FROM tasks WHERE id = ?1 AND deleted_at IS NULL AND status != 'done'`).bind(body.task_id).first<{ kind: Kind }>())?.kind;
+    kind = (await env.DB.prepare(`SELECT kind FROM tasks WHERE id = ?1 AND deleted_at IS NULL AND status != 'done'
+      AND (project_id IS NULL OR project_id IN (SELECT id FROM projects WHERE deleted_at IS NULL))`).bind(body.task_id).first<{ kind: Kind }>())?.kind;
   } else {
     if (!note) return bad('a project entry needs a note');
     kind = (await env.DB.prepare('SELECT kind FROM projects WHERE id = ?1 AND deleted_at IS NULL').bind(body.project_id).first<{ kind: Kind }>())?.kind;

@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/time.test.ts
 import assert from 'node:assert/strict';
-import { clampTs, stopAt, MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS, entryMinutes, formatElapsed, taskLogged, zonedToIso, isoToZoned } from '../shared/time.ts';
+import { clampTs, stopAt, MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS, entryMinutes, formatElapsed, taskLogged, zonedToIso, isoToZoned, manualSpan } from '../shared/time.ts';
 import type { Task, TimeEntry } from '../shared/types.ts';
 
 assert.deepEqual([MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS], [5, 1440, 500, 300_000]);
@@ -47,6 +47,13 @@ assert.equal(zonedToIso('2026-12-01T09:00', 'America/New_York'), '2026-12-01T14:
 assert.equal(zonedToIso('2026-10-28T09:00', 'UTC'), '2026-10-28T09:00:00.000Z');
 assert.equal(zonedToIso('2026-10-28T09:00', 'Asia/Kolkata'), '2026-10-28T03:30:00.000Z');
 assert.equal(zonedToIso('bad', 'UTC'), null);
+// manualSpan: today 10:00 with 1h30m ends now; yesterday keeps 09:00; before 09:00 today ends now
+{ const now = Date.parse('2026-10-28T14:00:00.000Z'); // 10:00 in New York
+  assert.deepEqual(manualSpan('2026-10-28', 90, 'America/New_York', now), { started_at: '2026-10-28T12:30:00.000Z', ended_at: '2026-10-28T14:00:00.000Z' });
+  assert.deepEqual(manualSpan('2026-10-27', 90, 'America/New_York', now), { started_at: '2026-10-27T13:00:00.000Z', ended_at: '2026-10-27T14:30:00.000Z' });
+  const early = Date.parse('2026-10-28T11:00:00.000Z'); // 07:00 in New York
+  assert.deepEqual(manualSpan('2026-10-28', 30, 'America/New_York', early), { started_at: '2026-10-28T10:30:00.000Z', ended_at: '2026-10-28T11:00:00.000Z' });
+  assert.equal(manualSpan('bad', 30, 'UTC', now), null); }
 assert.equal(isoToZoned('2026-12-01T14:00:00.000Z', 'America/New_York'), '2026-12-01T09:00');
 assert.equal(isoToZoned('2026-10-28T03:30:00.000Z', 'Asia/Kolkata'), '2026-10-28T09:00');
 assert.equal(isoToZoned('2026-10-28T23:30:00.000Z', 'UTC'), '2026-10-28T23:30');
