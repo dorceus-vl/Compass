@@ -127,6 +127,13 @@ Widgets (v2.3; needs the Worker deployed with migration 0016 for ticking)
 - Privacy: with "Hide work titles on the Lock Screen" on, a work task shows "Work task" on the Lock Screen widgets and is redacted in StandBy (and on a locked iPhone's Home Screen); an Offline-only project's task never shows a title. Turn the switch off and a work title shows.
 - Android: install the debug build (above), open Compass and sign in, long-press the Home Screen, Widgets, Compass, and add Today (2x2, 4x2, 4x4), Quick add, Ask Athena, Project pulse (pick a project when asked; touch and hold to change) and, on a tablet, This week. Turn on "Tick tasks from widgets" in Settings, Widgets (passkey), tick a circle on the 4x2 Today widget, and check the task is done in Compass. Midnight rollover: leave a device overnight, or change the date and time past midnight; the widgets should read the new day (or say "open Compass to update") without opening the app.
 
+Widget timers (v2.5; needs the Worker deployed with migration 0018 and "Tick tasks from widgets" on)
+- Medium and large Today widget (iPhone, and Android 4x2 / 4x4): tap the timer button on a task; it shows running at once and a running entry appears under Time in the app (source widget). Tap Stop: the entry ends.
+- A running timer on the Lock Screen widgets shows elapsed time only, never a task title (a work task says "Work task").
+- Airplane mode: start a timer from the widget, then stop it; open Compass online: both are sent, the entry starts at the time you tapped Start and ends when you tapped Stop (not when the app opened).
+- A project timer (started in the app) shows on the widget without a Stop button; stop it in the app.
+- Start a timer from the widget offline, start another on the same task in the app, then go online: the second start is refused with a toast and its queued stop goes with it; one entry remains.
+
 Android only
 - Real Knocturn ID round trip on the Samsung: passkey in the Custom Tab, back at `compass://auth`. Passkeys need `https://knocturnlabs.com/.well-known/assetlinks.json` to name the app (deployed in Task 6 Step 4).
 - App Link verification (`~/Library/Android/sdk/platform-tools/adb shell pm get-app-links com.knocturnlabs.compass` says verified; needs `https://compass.knocturnlabs.com/.well-known/assetlinks.json` deployed (Task 6 Step 4) and the signing key's fingerprint in it).
