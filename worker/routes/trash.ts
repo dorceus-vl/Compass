@@ -9,9 +9,10 @@ import { MAX_BASELINES } from '../../shared/baseline.ts';
 import { MAX_STAKEHOLDERS } from '../../shared/stakeholders.ts';
 import { MAX_PROGRAMS } from '../../shared/program.ts';
 import { MAX_RUNNING } from '../../shared/time.ts';
+import { MAX_KRS } from '../../shared/goals.ts';
 
 const trash = new Hono<{ Bindings: Env; Variables: Variables }>();
-const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders', programs: 'programs', time_entries: 'time_entries' } as const;
+const TABLES = { tasks: 'tasks', projects: 'projects', milestones: 'milestones', raid_items: 'raid_items', change_requests: 'change_requests', decisions: 'decisions', lessons: 'lessons', documents: 'documents', ai_threads: 'ai_threads', knowledge_collections: 'knowledge_collections', knowledge_items: 'knowledge_items', templates: 'templates', baselines: 'baselines', stakeholders: 'stakeholders', programs: 'programs', time_entries: 'time_entries', goals: 'goals', key_results: 'key_results' } as const;
 // Phase 3 rows show "name · project": the list query joins the project (name, enc_v) and this opens it.
 const PM_TABLES = ['raid_items', 'change_requests', 'decisions', 'lessons', 'documents', 'ai_threads'] as const;
 const TRASH_DAYS = 30, AUDIT_DAYS = 90, SESSION_DAYS = 30;
@@ -57,6 +58,12 @@ trash.get('/', async (c) => {
   pm.time_entries = await Promise.all(te.results.map(async ({ task_title, task_enc_v, project_name, project_enc_v, ...r }) => ({
     ...r, label: task_title !== null ? (await open(c.env, 'tasks', { title: task_title, enc_v: task_enc_v })).title : project_name === null ? null : (await open(c.env, 'projects', { name: project_name, enc_v: project_enc_v })).name,
   })));
+  // v2.6 (G2): a deleted goal by title and period; a deleted key result by title and its goal's title. Links and check-ins are not listed: they follow their parent.
+  const gl = await c.env.DB.prepare('SELECT id, kind, title, starts_on, ends_on, deleted_at, enc_v FROM goals WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all<{ enc_v: number }>();
+  pm.goals = await openAll(c.env, 'goals', gl.results);
+  const kr = await c.env.DB.prepare('SELECT x.id, x.goal_id, x.title, x.deleted_at, x.enc_v, g.title AS goal_title, g.enc_v AS goal_enc_v FROM key_results x JOIN goals g ON g.id = x.goal_id WHERE x.deleted_at IS NOT NULL ORDER BY x.deleted_at DESC')
+    .all<{ goal_title: string; goal_enc_v: number; enc_v: number }>();
+  pm.key_results = await Promise.all((await openAll(c.env, 'key_results', kr.results)).map(async ({ goal_enc_v, ...r }) => ({ ...r, goal_title: (await open(c.env, 'goals', { title: r.goal_title, enc_v: goal_enc_v })).title })));
   return c.json({ tasks: await openAll(c.env, 'tasks', t.results), projects: await openAll(c.env, 'projects', p.results), milestones: await openAll(c.env, 'milestones', m.results), ...pm, purge_after_days: TRASH_DAYS });
 });
 
@@ -85,6 +92,13 @@ trash.post('/:table/:id/restore', async (c) => {
       FROM time_entries b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL AND b.ended_at IS NULL`).bind(id).first<{ n: number; onTask: number }>();
     if (n && n.onTask > 0) return c.json({ error: 'timer_running', message: 'A timer is already running on that task' }, 409);
     if (n && n.n >= MAX_RUNNING) return c.json({ error: 'timer_limit', message: `${MAX_RUNNING} timers can run at once` }, 409);
+  }
+  // v2.6 (G5): a key result comes back only under a live goal with room for it.
+  if (table === 'key_results') {
+    const n = await c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM key_results o WHERE o.goal_id = b.goal_id AND o.deleted_at IS NULL) AS n,
+      (SELECT COUNT(*) FROM goals g WHERE g.id = b.goal_id AND g.deleted_at IS NULL) AS live FROM key_results b WHERE b.id = ?1 AND b.deleted_at IS NOT NULL`).bind(id).first<{ n: number; live: number }>();
+    if (n && !n.live) return c.json({ error: 'goal_gone', message: 'Restore its goal first' }, 409);
+    if (n && n.n >= MAX_KRS) return c.json({ error: 'kr_limit', message: `A goal keeps ${MAX_KRS} key results at most` }, 409);
   }
   let r;
   try {
@@ -115,7 +129,7 @@ trash.post('/empty', async (c) => {
 
 /**
  * Cron: rows in Trash for 30 days are deleted (all = everything in Trash, for Empty Trash).
- * Order respects the foreign keys: knowledge passages and items first (KN17), events, time entries (v2.5), task parents, tasks, copilot messages then threads, library imports then documents,
+ * Order respects the foreign keys: knowledge passages and items first (KN17), events, time entries (v2.5), goal check-ins, links, key results and goals (v2.6), task parents, tasks, copilot messages then threads, library imports then documents,
  * knowledge collections (before the documents their items came from),
  * project logs (RAID, changes, lessons, decisions), baselines and stakeholders (v2.2), milestones, project links (tasks, meeting reviews, programs), projects, then programs (v2.4, P8).
  */
@@ -135,13 +149,20 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   // KN18: likewise an email item whose task goes while it sits in an Offline-only project; in any other project its content was already allowed where it is, so it stays.
   const goneRows = `(deleted_at IS NOT NULL AND deleted_at < ?1) OR project_id IN (${goneProjects})`;
   const gonePrograms = 'SELECT id FROM programs WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
+  // v2.6 (G8): a key result goes with its goal; a link or check-in with its key result, and a link also with its task or project.
+  const goneGoals = 'SELECT id FROM goals WHERE deleted_at IS NOT NULL AND deleted_at < ?1';
+  const goneKrs = `SELECT id FROM key_results WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR goal_id IN (${goneGoals})`;
   const q = (sql: string) => env.DB.prepare(sql).bind(cutoff);
   // One transaction: a concurrent trash or restore can't slip between the steps.
-  const [kchunks, kitems, events, times, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , , projects, clips, , programs] = await env.DB.batch([
+  const [kchunks, kitems, events, times, checkins, links, krs, goals, , , tasks, messages, threads, kcolls, , , docs, raid, changes, lessons, decisions, baselines, stakeholders, milestones, , , , , projects, clips, , programs] = await env.DB.batch([
     q(`DELETE FROM knowledge_chunks WHERE item_id IN (${goneItems}) OR collection_id IN (${goneColls}) RETURNING id`), // first, while tasks and reviews still name their project; their vectors go below
     q(`DELETE FROM knowledge_items WHERE id IN (${goneItems})`),
     q(`DELETE FROM task_events WHERE task_id IN (${goneTasks})`),
     q(`DELETE FROM time_entries WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR task_id IN (${goneTasks}) OR project_id IN (${goneProjects})`), // v2.5 (T11): before the tasks and projects they point at (FK)
+    q(`DELETE FROM goal_checkins WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR kr_id IN (${goneKrs})`), // v2.6 (G8): children first, all before tasks and projects (FK)
+    q(`DELETE FROM goal_links WHERE (deleted_at IS NOT NULL AND deleted_at < ?1) OR kr_id IN (${goneKrs}) OR task_id IN (${goneTasks}) OR project_id IN (${goneProjects})`),
+    q(`DELETE FROM key_results WHERE id IN (${goneKrs})`),
+    q(`DELETE FROM goals WHERE id IN (${goneGoals})`),
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING id`),
@@ -175,7 +196,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
   const tts = (messages.results as { id: string }[]).map(({ id }) => `athena-tts/${id}`); // R2 deletes up to 1,000 keys a call; a missing key is fine
   for (let i = 0; i < tts.length; i += 1000) await env.FILES.delete(tts.slice(i, i + 1000)).catch(() => console.warn('[trash] could not delete an answer\'s audio'));
   return {
-    task_events: events.meta.changes, time_entries: times.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
+    task_events: events.meta.changes, time_entries: times.meta.changes, goal_checkins: checkins.meta.changes, goal_links: links.meta.changes, key_results: krs.meta.changes, goals: goals.meta.changes, tasks: tasks.results.length, ai_messages: messages.results.length, ai_threads: threads.meta.changes, documents: docs.results.length,
     raid_items: raid.meta.changes, change_requests: changes.meta.changes, lessons: lessons.meta.changes, decisions: decisions.meta.changes,
     baselines: baselines.meta.changes, stakeholders: stakeholders.meta.changes, milestones: milestones.meta.changes, projects: projects.meta.changes, programs: programs.meta.changes, athena_clips: clips.results.length,
     knowledge_chunks: kchunks.results.length, knowledge_items: kitems.meta.changes, knowledge_collections: kcolls.meta.changes,

@@ -30,6 +30,10 @@ export const ENC_COLS = {
   programs: ['name', 'rag_reason', 'notes'],
   // v2.5. Times, ids, source and flags stay plain.
   time_entries: ['note'],
+  // v2.6. Children seal by their goal's kind; numbers, dates, type, status and confidence stay plain. Links hold ids only.
+  goals: ['title', 'description'],
+  key_results: ['title', 'unit'],
+  goal_checkins: ['note'],
 } as const;
 export type EncTable = keyof typeof ENC_COLS;
 type Row = { enc_v?: number; kind?: string | null }; // typed rows (Project, Milestone) have no index signature

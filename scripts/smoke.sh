@@ -1972,6 +1972,63 @@ nos -X POST "$B/api/widget/tasks/$T3T/timers" -H "Authorization: Bearer $T3K" ||
 D1X "DELETE FROM time_entries WHERE task_id IN ('$T3T','$T3D','$T3F','$T3O'); DELETE FROM widget_tokens WHERE id = '$T3ID'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
 for x in $T3T $T3D $T3F $T3O; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
 echo "smoke: (t3) widget timers: start 200 (a running widget entry at the posted at; a future at clamped), stop on a done task 200 and stopped, a second 409 audited refused, stop 200, stop with none 409 not_running (refused, no entry), bad action 400, done or missing task 404, bad tokens 401 with no audit row, the guard lets only POST on .../timer through, audit rows hold ids and no text"
+# (k0) v2.6 Task 1: goals. A work goal and a number key result; an eleventh key result is 409 kr_limit; a personal task on a work goal is 409 goal_kind; a second link to the
+# same task is 409 link_exists; a check-in without a value is 400 bad_checkin and one with a value moves current_value; work titles are ciphertext in D1 (personal plain);
+# a stale goal edit is 409 goal_conflict; GET since returns a trashed goal; Trash lists it and the restore brings its key results back; a goal 31 days in Trash and a linked
+# task 31 days in Trash are purged with their children first; export opens the four tables. Everything it made is removed.
+kp() { curl "${H[@]}" -w '\n%{http_code}' -X POST "$B/api/$1" -d "$2"; }
+TB="{\"kind\":\"work\",\"title\":\"Smoke goal $R\",\"starts_on\":\"2026-10-01\",\"ends_on\":\"2026-12-31\"}"; X=$(kp goals "$TB"); [ "$(kst "$X")" = 201 ] || fail "k0: create a goal: $X"
+KG=$(kbody "$X" | js d.goal.id); KGU=$(kbody "$X" | js d.goal.updated_at)
+[ "$(kst "$(kp goals '{"kind":"work","title":"Smoke bad","starts_on":"2026-12-31","ends_on":"2026-10-01"}')")" = 400 ] || fail "k0: an end before the start is not 400"
+X=$(kp goals/$KG/krs '{"title":"Smoke clients","type":"number","start_value":0,"target_value":10,"unit":"clients"}'); [ "$(kst "$X")" = 201 ] && [ "$(kbody "$X" | js d.kr.current_value)" = 0 ] || fail "k0: a number key result: $X"
+KK=$(kbody "$X" | js d.kr.id)
+[ "$(kst "$(kp goals/$KG/krs '{"title":"Smoke same","type":"number","start_value":5,"target_value":5}')")" = 400 ] || fail "k0: start equal to target is not 400"
+X=$(kp goals/$KG/krs '{"title":"Smoke tasks","type":"tasks"}'); KKT=$(kbody "$X" | js d.kr.id)
+for i in 3 4 5 6 7 8 9 10; do TB="{\"title\":\"Smoke kr $i\",\"type\":\"done\"}"; X=$(kp goals/$KG/krs "$TB"); [ "$(kst "$X")" = 201 ] || fail "k0: key result $i: $X"; done
+X=$(kp goals/$KG/krs '{"title":"Smoke kr 11","type":"done"}'); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q kr_limit || fail "k0: the eleventh key result: $X"
+TB="{\"title\":\"Smoke goal own $R\",\"kind\":\"personal\"}"; KTP=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+TB="{\"title\":\"Smoke goal work $R\",\"kind\":\"work\"}"; KTW=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+X=$(kp goals/krs/$KKT/links "{\"task_id\":\"$KTP\"}"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q goal_kind || fail "k0: a personal task on a work goal: $X"
+X=$(kp goals/krs/$KKT/links "{\"task_id\":\"$KTW\"}"); [ "$(kst "$X")" = 201 ] || fail "k0: link a work task: $X"
+KL=$(kbody "$X" | js d.link.id)
+X=$(kp goals/krs/$KKT/links "{\"task_id\":\"$KTW\"}"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q link_exists || fail "k0: a second link to the same task: $X"
+X=$(kp goals/krs/$KK/checkins '{"confidence":"on_track"}'); [ "$(kst "$X")" = 400 ] && kbody "$X" | grep -q bad_checkin || fail "k0: a check-in without a value: $X"
+[ "$(kst "$(kp goals/krs/$KKT/checkins '{"confidence":"on_track","value":3}')")" = 400 ] || fail "k0: a value on a tasks key result is not 400"
+TB="{\"confidence\":\"at_risk\",\"value\":4,\"note\":\"Smoke check-in $R\"}"; X=$(kp goals/krs/$KK/checkins "$TB")
+[ "$(kst "$X")" = 201 ] && [ "$(kbody "$X" | js "d.kr.current_value+'|'+d.checkin.note")" = "4|Smoke check-in $R" ] || fail "k0: a check-in: $X"
+[ "$(D1X "SELECT current_value AS a FROM key_results WHERE id='$KK'" | js 'd[0].results[0].a')" = 4 ] || fail "k0: the check-in did not move current_value"
+RAWK=$(D1X "SELECT g.title||'|'||g.enc_v||'|'||k.unit||'|'||c.note AS a FROM goals g JOIN key_results k ON k.goal_id=g.id JOIN goal_checkins c ON c.kr_id=k.id WHERE g.id='$KG'" | js 'd[0].results[0].a')
+case "$RAWK" in *Smoke*|*clients*) fail "k0: work goal text is plain in D1: $RAWK";; esac
+TB="{\"kind\":\"personal\",\"title\":\"Smoke own goal $R\",\"starts_on\":\"2026-10-01\",\"ends_on\":\"2026-12-31\"}"; KGP=$(kbody "$(kp goals "$TB")" | js d.goal.id)
+[ "$(D1X "SELECT title||'|'||enc_v AS a FROM goals WHERE id='$KGP'" | js 'd[0].results[0].a')" = "Smoke own goal $R|0" ] || fail "k0: a personal goal is not plain"
+curl "${H[@]}" $B/api/goals | js "d.goals.some(g=>g.id==='$KG'&&g.title==='Smoke goal $R')&&d.checkins.some(c=>c.note==='Smoke check-in $R')&&d.links.some(l=>l.id==='$KL')" | grep -qx true || fail "k0: the list does not open the goal"
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/goals/$KG -d '{"title":"Smoke goal renamed"}'); [ "$(kst "$X")" = 200 ] || fail "k0: PATCH: $X"
+TB="{\"title\":\"Smoke stale\",\"updated_at\":\"$KGU\"}"; X=$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/goals/$KG -d "$TB"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q goal_conflict || fail "k0: a stale edit: $X"
+[ "$(kst "$(curl "${H[@]}" -w '\n%{http_code}' -X PATCH $B/api/goals/krs/$KKT -d '{"unit":"x"}')")" = 400 ] || fail "k0: a unit on a tasks key result is not 400"
+# trash and restore: children come back with the goal (G2)
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X DELETE $B/api/goals/$KG)" = 200 ] || fail "k0: trash a goal"
+curl "${H[@]}" "$B/api/goals?since=$T0" | js "d.goals.some(g=>g.id==='$KG'&&g.deleted_at)" | grep -qx true || fail "k0: since does not return the trashed goal"
+curl "${H[@]}" $B/api/trash | js "d.goals.some(g=>g.id==='$KG'&&g.title==='Smoke goal renamed')" | grep -qx true || fail "k0: Trash does not list the goal"
+[ "$(kst "$(kp goals/$KG/krs '{"title":"Smoke late","type":"done"}')")" = 404 ] || fail "k0: a key result on a trashed goal is not 404"
+[ "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST $B/api/trash/goals/$KG/restore)" = 200 ] || fail "k0: restore the goal"
+curl "${H[@]}" $B/api/goals | js "d.krs.filter(k=>k.goal_id==='$KG').length" | grep -qx 10 || fail "k0: the restored goal lost key results"
+# a trashed key result can't come back past the cap
+curl "${H[@]}" -X DELETE $B/api/goals/krs/$KK >/dev/null; [ "$(kst "$(kp goals/$KG/krs '{"title":"Smoke fill","type":"done"}')")" = 201 ] || fail "k0: fill the freed slot"
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/key_results/$KK/restore); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q kr_limit || fail "k0: restore past the cap: $X"
+# purge: a linked task 31 days in Trash takes its links first; a goal 31 days in Trash takes its key results, links and check-ins
+D31=$(node -pe 'new Date(Date.now()-31*864e5).toISOString()')
+curl "${H[@]}" -X DELETE $B/api/tasks/$KTW >/dev/null; D1X "UPDATE tasks SET deleted_at = '$D31' WHERE id='$KTW'" >/dev/null
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.purged.goal_links)" -ge 1 ] || fail "k0: Empty Trash with a linked task: $X"
+curl "${H[@]}" -X DELETE $B/api/goals/$KG >/dev/null; D1X "UPDATE goals SET deleted_at = '$D31' WHERE id='$KG'" >/dev/null
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.purged.goals)" -ge 1 ] || fail "k0: Empty Trash with a goal: $X"
+[ "$(D1X "SELECT (SELECT count(*) FROM key_results WHERE goal_id='$KG')+(SELECT count(*) FROM goal_checkins WHERE kr_id='$KK') AS n" | js 'd[0].results[0].n')" = 0 ] || fail "k0: a child survived its goal's purge"
+# export opens the tables; audit rows carry no text
+curl "${H[@]}" $B/api/export | js "d.goals.some(g=>g.id==='$KGP'&&!('enc_v' in g))&&Array.isArray(d.key_results)&&Array.isArray(d.goal_links)&&Array.isArray(d.goal_checkins)" | grep -qx true || fail "k0: export misses the goal tables"
+D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'goal.%' AND detail LIKE '%Smoke%'" | js 'd[0].results[0].n' | grep -qx 0 || fail "k0: an audit row carries text"
+# clean up (local D1 only)
+D1X "DELETE FROM goal_checkins WHERE created_at >= '$T0'; DELETE FROM goal_links WHERE created_at >= '$T0'; DELETE FROM key_results WHERE created_at >= '$T0'; DELETE FROM goals WHERE created_at >= '$T0'" >/dev/null
+curl "${H[@]}" -X DELETE $B/api/tasks/$KTP >/dev/null
+echo "smoke: (k0) goals: create 201, end before start 400, number kr start = target 400, eleventh kr 409 kr_limit, other kind 409 goal_kind, duplicate link 409 link_exists, check-in without value 400 and with one moves current_value, work text ciphertext (personal plain), stale edit 409 goal_conflict, since returns a trashed goal, Trash lists and restores it with its key results, a kr restore past the cap 409, Empty Trash purges a linked task's links and a goal's children, export opens the four tables"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

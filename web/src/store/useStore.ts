@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { idb, type Store } from './db.ts';
 import { enqueue, onChange, notify } from './sync.ts';
-import type { Task, Project, Milestone, Status, TimeEntry, Kind } from '../../../shared/types.ts';
+import type { Task, Project, Milestone, Status, TimeEntry, Kind, Goal, KeyResult, GoalLink, GoalCheckin, KrType, Confidence } from '../../../shared/types.ts';
 import { clampTs, stopAt } from '../../../shared/time.ts';
 
 export function useStore() {
-  const [state, set] = useState<{ tasks: Task[]; projects: Project[]; milestones: Milestone[]; time: TimeEntry[]; ready: boolean }>({ tasks: [], projects: [], milestones: [], time: [], ready: false });
+  const [state, set] = useState<{ tasks: Task[]; projects: Project[]; milestones: Milestone[]; time: TimeEntry[]; goals: Goal[]; krs: KeyResult[]; goalLinks: GoalLink[]; checkins: GoalCheckin[]; ready: boolean }>(
+    { tasks: [], projects: [], milestones: [], time: [], goals: [], krs: [], goalLinks: [], checkins: [], ready: false });
+  const live = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at); // v2.6: children of a trashed goal stay; shared/goals.ts hides them (G2)
   const refresh = async () => set({ tasks: await idb.all<Task>('tasks'), projects: await idb.all<Project>('projects'), milestones: await idb.all<Milestone>('milestones'),
-    time: (await idb.all<TimeEntry>('time')).filter((e) => !e.deleted_at), ready: true });
+    time: live(await idb.all<TimeEntry>('time')), goals: live(await idb.all<Goal>('goals')), krs: live(await idb.all<KeyResult>('krs')),
+    goalLinks: live(await idb.all<GoalLink>('goal_links')), checkins: live(await idb.all<GoalCheckin>('checkins')), ready: true });
   useEffect(() => { void refresh(); return onChange(() => void refresh()); }, []);
   return { ...state, refresh };
 }
@@ -121,4 +124,71 @@ export async function deleteTime(id: string): Promise<void> {
   id = await resolveId('time', id);
   await idb.del('time', id); notify();
   await enqueue({ method: 'DELETE', path: `/time/${id}` });
+}
+
+// v2.6 goals: optimistic rows with temp ids through the queue, as time entries; replies are `goal`, `kr`, `link`, `checkin` (G7).
+export async function addGoal(input: Pick<Goal, 'kind' | 'title' | 'starts_on' | 'ends_on'> & { description?: string | null }): Promise<string> {
+  const t = now();
+  const g: Goal = { id: tmp(), description: null, status: 'active', sort: 0, enc_v: 0, created_at: t, updated_at: t, deleted_at: null, ...input };
+  await enqueue({ method: 'POST', path: '/goals', json: input, tempId: g.id, store: 'goals' }, g);
+  return g.id;
+}
+export async function editGoal(id: string, patch: Partial<Pick<Goal, 'title' | 'description' | 'starts_on' | 'ends_on' | 'status' | 'sort'>>): Promise<void> {
+  id = await resolveId('goals', id);
+  const cur = await idb.get<Goal>('goals', id); if (!cur) return;
+  await idb.put('goals', { ...cur, ...patch, updated_at: now() }); notify();
+  await enqueue({ method: 'PATCH', path: `/goals/${id}`, json: patch });
+}
+export async function deleteGoal(id: string): Promise<void> {
+  id = await resolveId('goals', id);
+  await idb.del('goals', id); notify();
+  await enqueue({ method: 'DELETE', path: `/goals/${id}` });
+}
+/** G3: the values follow the type; a number key result passes start, target and unit. */
+export async function addKr(goalId: string, input: { title: string; type: KrType; start_value?: number; target_value?: number; unit?: string | null }): Promise<void> {
+  goalId = await resolveId('goals', goalId);
+  const t = now(), n = input.type === 'number';
+  const values = input.type === 'tasks' ? { start_value: null, target_value: null, current_value: null }
+    : input.type === 'percent' ? { start_value: 0, target_value: 100, current_value: 0 }
+    : input.type === 'done' ? { start_value: 0, target_value: 1, current_value: 0 }
+    : { start_value: input.start_value ?? 0, target_value: input.target_value ?? 1, current_value: input.start_value ?? 0 };
+  const k: KeyResult = { id: tmp(), goal_id: goalId, title: input.title, type: input.type, ...values, unit: n ? input.unit ?? null : null, sort: 0, enc_v: 0, created_at: t, updated_at: t, deleted_at: null };
+  await enqueue({ method: 'POST', path: `/goals/${goalId}/krs`, json: input, tempId: k.id, store: 'krs' }, k);
+}
+export async function editKr(id: string, patch: Partial<Pick<KeyResult, 'title' | 'start_value' | 'target_value' | 'unit' | 'sort'>>): Promise<void> {
+  id = await resolveId('krs', id);
+  const cur = await idb.get<KeyResult>('krs', id); if (!cur) return;
+  await idb.put('krs', { ...cur, ...patch, updated_at: now() }); notify();
+  await enqueue({ method: 'PATCH', path: `/goals/krs/${id}`, json: patch });
+}
+export async function deleteKr(id: string): Promise<void> {
+  id = await resolveId('krs', id);
+  await idb.del('krs', id); notify();
+  await enqueue({ method: 'DELETE', path: `/goals/krs/${id}` });
+}
+export async function linkKr(krId: string, target: { task_id: string } | { project_id: string }): Promise<void> {
+  krId = await resolveId('krs', krId);
+  const owner = 'task_id' in target ? { task_id: await resolveId('tasks', target.task_id), project_id: null } : { task_id: null, project_id: await resolveId('projects', target.project_id) };
+  const t = now();
+  const l: GoalLink = { id: tmp(), kr_id: krId, ...owner, created_at: t, updated_at: t, deleted_at: null };
+  await enqueue({ method: 'POST', path: `/goals/krs/${krId}/links`, json: owner.task_id ? { task_id: owner.task_id } : { project_id: owner.project_id }, tempId: l.id, store: 'goal_links' }, l);
+}
+export async function unlink(id: string): Promise<void> {
+  id = await resolveId('goal_links', id);
+  await idb.del('goal_links', id); notify();
+  await enqueue({ method: 'DELETE', path: `/goals/links/${id}` });
+}
+/** G4: a check-in on a number, percent or done key result also moves its value here at once. */
+export async function checkIn(krId: string, input: { value: number | null; confidence: Confidence; note: string | null }): Promise<void> {
+  krId = await resolveId('krs', krId);
+  const t = now();
+  const c: GoalCheckin = { id: tmp(), kr_id: krId, ...input, at: t, enc_v: 0, created_at: t, updated_at: t, deleted_at: null };
+  const kr = await idb.get<KeyResult>('krs', krId);
+  if (kr && input.value !== null && kr.type !== 'tasks') await idb.put('krs', { ...kr, current_value: input.value, updated_at: t });
+  await enqueue({ method: 'POST', path: `/goals/krs/${krId}/checkins`, json: { ...input, at: t }, tempId: c.id, store: 'checkins' }, c);
+}
+export async function deleteCheckin(id: string): Promise<void> {
+  id = await resolveId('checkins', id);
+  await idb.del('checkins', id); notify();
+  await enqueue({ method: 'DELETE', path: `/goals/checkins/${id}` });
 }

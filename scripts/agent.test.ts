@@ -57,3 +57,4 @@ const agentSrc = readFileSync(new URL('../worker/routes/agent.ts', import.meta.u
 const shape = /type AgentTask = \{([^}]*)\}/.exec(agentSrc)?.[1] ?? '';
 assert.deepEqual(shape.split(';').map((f) => f.split(':')[0]!.trim()).filter(Boolean).sort(), ['due_at', 'horizon', 'id', 'priority', 'project', 'status', 'title']);
 assert.ok(!/time_entries|\/time\b/.test(agentSrc + readFileSync(new URL('../worker/lib/agent.ts', import.meta.url), 'utf8')), 'Kelly never sees time entries');
+assert.ok(!/goals|key_results|goal_links|goal_checkins|\/goals\b/.test(agentSrc + readFileSync(new URL('../worker/lib/agent.ts', import.meta.url), 'utf8')), 'Kelly never sees goals');

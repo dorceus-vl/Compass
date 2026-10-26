@@ -1,15 +1,15 @@
-// A thin IndexedDB wrapper: one database, six object stores, promises. No library.
-const NAME = 'compass', VERSION = 2; // 2 (v2.5): `time`
-export type Store = 'tasks' | 'projects' | 'milestones' | 'time' | 'meta' | 'queue';
+// A thin IndexedDB wrapper: one database, ten object stores, promises. No library.
+const NAME = 'compass', VERSION = 3; // 2 (v2.5): `time`; 3 (v2.6): the goal stores
+export type Store = 'tasks' | 'projects' | 'milestones' | 'time' | 'goals' | 'krs' | 'goal_links' | 'checkins' | 'meta' | 'queue';
 let dbp: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   return (dbp ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(NAME, VERSION);
-    // Any upgrade (a fresh install, or v1 gaining `time`) creates whichever stores are missing.
+    // Any upgrade (a fresh install, v1 gaining `time`, v2 gaining the goal stores) creates whichever stores are missing.
     req.onupgradeneeded = () => {
       const db = req.result, has = (s: string) => db.objectStoreNames.contains(s);
-      for (const s of ['tasks', 'projects', 'milestones', 'time', 'meta'] as const) if (!has(s)) db.createObjectStore(s, { keyPath: 'id' });
+      for (const s of ['tasks', 'projects', 'milestones', 'time', 'goals', 'krs', 'goal_links', 'checkins', 'meta'] as const) if (!has(s)) db.createObjectStore(s, { keyPath: 'id' });
       if (!has('queue')) db.createObjectStore('queue', { keyPath: 'seq', autoIncrement: true });
     };
     req.onblocked = () => void import('../ui/dialogs.tsx').then((d) => d.toast('Close other Compass tabs to finish updating')); // a v1 tab has no onversionchange, so it holds the upgrade until closed

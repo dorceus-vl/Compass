@@ -13,8 +13,9 @@ type TrashAnswer = {
   lessons: InProject<Lesson>[]; documents: InProject<DocumentRow>[]; ai_threads: InProject<AiThread>[];
   templates?: { id: string; name: string; deleted_at: string | null }[]; baselines?: InProject<{ id: string; name: string; deleted_at: string | null }>[]; stakeholders?: InProject<{ id: string; name: string; deleted_at: string | null }>[]; programs?: { id: string; name: string; kind: string; deleted_at: string | null }[]; knowledge_collections?: KnowledgeCollection[]; knowledge_items?: (KnowledgeItem & { collection_name: string })[];
   time_entries?: { id: string; started_at: string; ended_at: string | null; deleted_at: string | null; label: string | null }[];
+  goals?: { id: string; title: string; starts_on: string; ends_on: string; deleted_at: string | null }[]; key_results?: { id: string; title: string; goal_title: string; deleted_at: string | null }[];
 };
-type Table = 'tasks' | 'projects' | 'milestones' | 'raid_items' | 'change_requests' | 'decisions' | 'lessons' | 'documents' | 'ai_threads' | 'knowledge_collections' | 'knowledge_items' | 'templates' | 'baselines' | 'stakeholders' | 'programs' | 'time_entries';
+type Table = 'tasks' | 'projects' | 'milestones' | 'raid_items' | 'change_requests' | 'decisions' | 'lessons' | 'documents' | 'ai_threads' | 'knowledge_collections' | 'knowledge_items' | 'templates' | 'baselines' | 'stakeholders' | 'programs' | 'time_entries' | 'goals' | 'key_results';
 type TrashRow = { id: string; deleted_at: string | null; title?: string; name?: string; text?: string; project_name?: string | null };
 
 export function TrashView() {
@@ -40,6 +41,8 @@ export function TrashView() {
   };
   const kc = t.knowledge_collections ?? [], ki = (t.knowledge_items ?? []).map((i) => ({ ...i, project_name: i.collection_name }));
   const tp = t.templates ?? [], bl = t.baselines ?? [], sh = t.stakeholders ?? [];
+  // v2.6: "Goal title · 2026-10-01 to 2026-12-31"; a key result shows its goal like a project
+  const gl = (t.goals ?? []).map((g) => ({ ...g, title: `${g.title} · ${g.starts_on} to ${g.ends_on}` })), kr = (t.key_results ?? []).map((k) => ({ ...k, project_name: k.goal_title }));
   // "1h 20m · Task title" (a running entry says so instead of a length)
   const te = (t.time_entries ?? []).map((e) => ({ id: e.id, deleted_at: e.deleted_at, title: `${e.ended_at ? formatEstimate(Math.round((Date.parse(e.ended_at) - Date.parse(e.started_at)) / 60_000)) : 'Running'} · ${e.label ?? 'Time entry'}` }));
   const total = te.length + (t.programs ?? []).length + tp.length + bl.length + sh.length + kc.length + ki.length + t.tasks.length + t.projects.length + t.milestones.length + t.raid_items.length + t.change_requests.length + t.decisions.length + t.lessons.length + t.documents.length + t.ai_threads.length;
@@ -50,7 +53,7 @@ export function TrashView() {
       {total === 0 && <p style={{ color: 'var(--text-faint)' }}>Trash is empty.</p>}
       {section('Tasks', 'tasks', t.tasks)}{section('Projects', 'projects', t.projects)}{section('Milestones', 'milestones', t.milestones)}
       {section('RAID', 'raid_items', t.raid_items)}{section('Changes', 'change_requests', t.change_requests)}{section('Decisions', 'decisions', t.decisions)}
-      {section('Lessons', 'lessons', t.lessons)}{section('Documents', 'documents', t.documents)}{section('Athena threads', 'ai_threads', t.ai_threads)}{section('Knowledge collections', 'knowledge_collections', kc)}{section('Knowledge items', 'knowledge_items', ki)}{section('Templates', 'templates', tp)}{section('Baselines', 'baselines', bl)}{section('Stakeholders', 'stakeholders', sh)}{section('Programs', 'programs', t.programs ?? [])}{section('Time entries', 'time_entries', te)}
+      {section('Lessons', 'lessons', t.lessons)}{section('Documents', 'documents', t.documents)}{section('Athena threads', 'ai_threads', t.ai_threads)}{section('Knowledge collections', 'knowledge_collections', kc)}{section('Knowledge items', 'knowledge_items', ki)}{section('Templates', 'templates', tp)}{section('Baselines', 'baselines', bl)}{section('Stakeholders', 'stakeholders', sh)}{section('Programs', 'programs', t.programs ?? [])}{section('Time entries', 'time_entries', te)}{section('Goals', 'goals', gl)}{section('Key results', 'key_results', kr)}
       <dialog ref={dlg} onClose={() => setWord('')}><p>This deletes everything in Trash for good. Type <b>EMPTY</b> to continue; your passkey is asked next.</p>
         <input className="field" aria-label="Type EMPTY to confirm" value={word} onChange={(e) => setWord(e.target.value)} />
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}><button type="button" className="btn" onClick={() => dlg.current?.close()}>Cancel</button>

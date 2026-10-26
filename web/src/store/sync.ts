@@ -2,9 +2,10 @@ import { api, ApiError, SignedOut, online } from '../api.ts';
 import { idb } from './db.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { planPull, rewriteTmp, tmpIds } from './merge.ts';
-import type { Task, Project, Milestone, TimeEntry } from '../../../shared/types.ts';
+import type { Task, Project, Milestone, TimeEntry, Goal, KeyResult, GoalLink, GoalCheckin } from '../../../shared/types.ts';
 
-type Entity = 'tasks' | 'projects' | 'milestones' | 'time';
+type Entity = 'tasks' | 'projects' | 'milestones' | 'time' | 'goals' | 'krs' | 'goal_links' | 'checkins';
+type GoalsReply = { goals: Goal[]; krs: KeyResult[]; links: GoalLink[]; checkins: GoalCheckin[] };
 /** A queued write. `tempId` maps an optimistic create to the server's id when the reply comes back. */
 export interface QueuedOp { seq?: number; method: 'POST' | 'PATCH' | 'DELETE'; path: string; json?: unknown; tempId?: string; store?: Entity }
 const listeners = new Set<() => void>();
@@ -26,14 +27,25 @@ async function applyPlan<T extends { id: string; updated_at: string; deleted_at?
   await Promise.all(plan.del.map((id) => idb.del(store, id)));
 }
 
+/** v2.6: the four goal stores from one reply; `complete` when the reply is the whole live list (a refetch after a refusal). */
+async function applyGoals(r: GoalsReply, claimed: Set<string>, complete: boolean) {
+  const [g, k, l, c] = await Promise.all([idb.all<Goal>('goals'), idb.all<KeyResult>('krs'), idb.all<GoalLink>('goal_links'), idb.all<GoalCheckin>('checkins')]);
+  await applyPlan('goals', g, r.goals, claimed, complete);
+  await applyPlan('krs', k, r.krs, claimed, complete);
+  await applyPlan('goal_links', l, r.links, claimed, complete);
+  await applyPlan('checkins', c, r.checkins, claimed, complete);
+}
+
 export function pull(): Promise<void> {
   return exclusive(async () => {
     const since = (await idb.get<{ id: string; at: string }>('meta', 'last_pull'))?.at;
     const sinceTime = (await idb.get<{ id: string; at: string }>('meta', 'last_pull_time'))?.at; // T6: its own mark
-    const [t, p, te] = await Promise.all([
+    const sinceGoals = (await idb.get<{ id: string; at: string }>('meta', 'last_pull_goals'))?.at; // v2.6 (G7): one mark for the four goal tables
+    const [t, p, te, gs] = await Promise.all([
       api<{ tasks: Task[] }>(`/tasks?status=all${since ? `&since=${encodeURIComponent(since)}` : ''}`),
       api<{ projects: Project[] }>('/projects'),
       api<{ entries: TimeEntry[] }>(`/time${sinceTime ? `?since=${encodeURIComponent(sinceTime)}` : ''}`),
+      api<GoalsReply>(`/goals${sinceGoals ? `?since=${encodeURIComponent(sinceGoals)}` : ''}`),
     ]);
     const ms = (await Promise.all(p.projects.map((pr) => api<{ milestones: Milestone[] }>(`/projects/${pr.id}`).then((r) => r.milestones)))).flat();
     // Local rows first, then the queue: a create queues before its row is written, so any row seen here is already claimed below.
@@ -43,11 +55,13 @@ export function pull(): Promise<void> {
     await applyPlan('projects', lp, p.projects, claimed, true);
     await applyPlan('milestones', lm, ms, claimed, true);
     await applyPlan('time', ltime, te.entries, claimed, false); // incremental, like tasks
+    await applyGoals(gs, claimed, false);
     // Server clock, so client skew cannot make a later pull skip rows.
     const latest = (rows: { updated_at: string }[]) => rows.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '');
-    const last = latest(t.tasks), lastTime = latest(te.entries);
+    const last = latest(t.tasks), lastTime = latest(te.entries), lastGoals = latest([...gs.goals, ...gs.krs, ...gs.links, ...gs.checkins]);
     if (last) await idb.put('meta', { id: 'last_pull', at: last });
     if (lastTime) await idb.put('meta', { id: 'last_pull_time', at: lastTime });
+    if (lastGoals) await idb.put('meta', { id: 'last_pull_goals', at: lastGoals });
     notify();
   });
 }
@@ -77,14 +91,27 @@ async function adopt(op: QueuedOp, real: { id: string }) {
     for (const e of await idb.all<TimeEntry>('time')) {
       if (e.task_id === tmp || e.project_id === tmp) await idb.put('time', { ...e, task_id: e.task_id === tmp ? real.id : e.task_id, project_id: e.project_id === tmp ? real.id : e.project_id });
     }
+    for (const l of await idb.all<GoalLink>('goal_links')) {
+      if (l.task_id === tmp || l.project_id === tmp) await idb.put('goal_links', { ...l, task_id: l.task_id === tmp ? real.id : l.task_id, project_id: l.project_id === tmp ? real.id : l.project_id });
+    }
+  }
+  if (store === 'goals') for (const k of await idb.all<KeyResult>('krs')) if (k.goal_id === tmp) await idb.put('krs', { ...k, goal_id: real.id });
+  if (store === 'krs') {
+    for (const l of await idb.all<GoalLink>('goal_links')) if (l.kr_id === tmp) await idb.put('goal_links', { ...l, kr_id: real.id });
+    for (const c of await idb.all<GoalCheckin>('checkins')) if (c.kr_id === tmp) await idb.put('checkins', { ...c, kr_id: real.id });
   }
   if (store === 'projects') for (const m of await idb.all<Milestone>('milestones')) if (m.project_id === tmp) await idb.put('milestones', { ...m, project_id: real.id });
 }
 
-type Reply = { task?: Task; next?: Task; project?: Project; milestone?: Milestone; entry?: TimeEntry };
+type Reply = { task?: Task; next?: Task; project?: Project; milestone?: Milestone; entry?: TimeEntry; goal?: Goal; kr?: KeyResult; link?: GoalLink; checkin?: GoalCheckin };
 
 /** The server refused a write to an existing row: fetch the winning copy and replace ours; a 404 means it is gone. */
 async function refetch(path: string) {
+  if (path.startsWith('/goals')) { // v2.6: refusals are rare; the whole live list settles every goal store at once
+    const claimed = new Set((await idb.all<QueuedOp>('queue')).flatMap((o) => (o.tempId ? [o.tempId] : [])));
+    try { await applyGoals(await api<GoalsReply>('/goals'), claimed, true); } catch (e) { if (e instanceof SignedOut) throw e; }
+    return;
+  }
   const m = /^\/(tasks|projects|milestones|time)\/([^/]+)/.exec(path);
   if (!m) return;
   const entity = m[1] as Entity, id = m[2]!;
@@ -138,6 +165,7 @@ export function replay(onSignedOut?: () => void): Promise<void> {
             toast(`Compass couldn't save a change to ${t?.title ?? j?.title ?? 'a task'}: ${why}`);
           }
           if (path.startsWith('/time')) toast(`Compass couldn't save a time entry: ${(e as Error).message}`); // the server's sentence
+          if (path.startsWith('/goals')) toast(`Compass couldn't save a goal change: ${(e as Error).message}`);
           if (op.tempId) for (const o of ops) { // a refused create: its later edits (a stop, a PATCH) name a row that will never exist
             if (o.seq! > op.seq! && JSON.stringify({ p: o.path, j: o.json }).includes(op.tempId)) { await idb.del('queue', o.seq!); dropped.add(o.seq!); }
           }
@@ -145,16 +173,20 @@ export function replay(onSignedOut?: () => void): Promise<void> {
           catch (e2) { if (e2 instanceof SignedOut) { onSignedOut?.(); return; } console.error('resync failed', e2); }
           continue;
         }
-        const created = op.tempId && op.store ? (reply.task ?? reply.project ?? reply.milestone ?? reply.entry) : undefined;
+        const created = op.tempId && op.store ? (reply.task ?? reply.project ?? reply.milestone ?? reply.entry ?? reply.goal ?? reply.checkin ?? reply.kr ?? reply.link) : undefined; // a check-in's reply also carries its kr
         if (created) await idb.put('meta', { id: `idmap:${op.tempId}`, real: created.id }); // before dequeuing: a later op needs it
         await idb.del('queue', op.seq!);
         try { // the write is done: a local failure here must not look like "offline" or re-send it; the next pull repairs the row
-          if (created) await adopt(op, created);
-          else {
+          if (created) {
+            await adopt(op, created);
+            if (op.store === 'checkins' && reply.kr) await take('krs', reply.kr); // G4: the check-in moved the value
+          } else {
             if (reply.task) await take('tasks', reply.task);
             if (reply.project) await take('projects', reply.project);
             if (reply.milestone) await take('milestones', reply.milestone);
             if (reply.entry) await take('time', reply.entry);
+            if (reply.goal) await take('goals', reply.goal);
+            if (reply.kr) await take('krs', reply.kr);
           }
           if (reply.next) await take('tasks', reply.next, true);
         } catch (e) { console.error('applying reply failed', e); }

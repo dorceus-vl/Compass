@@ -25,6 +25,24 @@ export interface TimeEntry {
   id: string; task_id: string | null; project_id: string | null; kind: Kind; started_at: string; ended_at: string | null; note: string | null;
   source: 'timer' | 'manual' | 'widget'; auto_stopped: number; enc_v: number; created_at: string; updated_at: string; deleted_at: string | null;
 }
+/** v2.6 goals. A goal has one kind; its key results, links and check-ins follow it (sealed by the goal's kind) and are hidden while it is in Trash (G2). */
+export type KrType = 'number' | 'tasks' | 'done' | 'percent';
+export type Confidence = 'on_track' | 'at_risk' | 'off_track';
+export type GoalStatus = 'active' | 'achieved' | 'missed' | 'dropped';
+export interface Goal {
+  id: string; kind: Kind; title: string; description: string | null; starts_on: string; ends_on: string; status: GoalStatus; sort: number; enc_v: number;
+  created_at: string; updated_at: string; deleted_at: string | null;
+}
+/** G3: number has start, target, current, unit; percent 0 to 100; done 0 to 1; tasks has no values (progress comes from links). */
+export interface KeyResult {
+  id: string; goal_id: string; title: string; type: KrType; start_value: number | null; target_value: number | null; current_value: number | null; unit: string | null;
+  sort: number; enc_v: number; created_at: string; updated_at: string; deleted_at: string | null;
+}
+export interface GoalLink { id: string; kr_id: string; task_id: string | null; project_id: string | null; created_at: string; updated_at: string; deleted_at: string | null }
+export interface GoalCheckin {
+  id: string; kr_id: string; value: number | null; confidence: Confidence; note: string | null; at: string; enc_v: number;
+  created_at: string; updated_at: string; deleted_at: string | null;
+}
 /** GET /api/programs/:id/detail (P3): the latest live baseline of each member (opened), the top 10 open risks by probability x impact, pending changes per member. */
 export interface ProgramDetail {
   program: Program;
@@ -208,4 +226,6 @@ export interface ExportBundle {
   programs: Raw;
   /** v2.5 */
   time_entries: Raw;
+  /** v2.6 */
+  goals: Raw; key_results: Raw; goal_links: Raw; goal_checkins: Raw;
 }

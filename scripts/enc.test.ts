@@ -54,6 +54,20 @@ assert.equal(ste.enc_v, 2); assert.notEqual(ste.note, 'Vendor call'); assert.equ
 assert.deepEqual(await open(env, 'time_entries', { ...ste }), { ...te, enc_v: 2 });
 assert.deepEqual(await seal(env, 'time_entries', { ...te, kind: 'personal' }), { ...te, kind: 'personal' }, 'a personal entry is untouched');
 assert.deepEqual(ENC_COLS.time_entries, ['note']);
+// v2.6: a work goal's title, a key result's unit and a check-in's note seal; children seal by their goal's kind (they have no kind column).
+const goal = { id: 'go1', kind: 'work', title: 'Win the vendor bid', description: null, starts_on: '2026-10-01', ends_on: '2026-12-31', status: 'active', enc_v: 0 };
+const sgoal = await seal(env, 'goals', { ...goal }) as any;
+assert.equal(sgoal.enc_v, 2); assert.notEqual(sgoal.title, goal.title); assert.equal(sgoal.starts_on, goal.starts_on);
+assert.deepEqual(await open(env, 'goals', { ...sgoal }), { ...goal, enc_v: 2 });
+const kr = { id: 'k1', goal_id: 'go1', title: 'Signed clients', type: 'number', start_value: 0, target_value: 10, current_value: 3, unit: 'clients', enc_v: 0 };
+const skr = await seal(env, 'key_results', { ...kr }, 'work') as any;
+assert.equal(skr.enc_v, 2); assert.notEqual(skr.unit, 'clients'); assert.equal(skr.current_value, 3);
+assert.deepEqual(await open(env, 'key_results', { ...skr }), { ...kr, enc_v: 2 });
+assert.deepEqual(await seal(env, 'key_results', { ...kr }, 'personal'), kr, 'a personal goal\'s key result is untouched');
+const ci = { id: 'c1', kr_id: 'k1', value: 4, confidence: 'at_risk', note: 'Two deals slipped', at: '2026-11-01T10:00:00.000Z', enc_v: 0 };
+const sci = await seal(env, 'goal_checkins', { ...ci }, 'work') as any;
+assert.notEqual(sci.note, ci.note); assert.equal(sci.confidence, 'at_risk');
+assert.deepEqual(await open(env, 'goal_checkins', { ...sci }), { ...ci, enc_v: 2 });
 for (const t of ['raid_items', 'change_requests', 'lessons', 'documents', 'ai_threads', 'ai_messages'] as const) assert.ok(ENC_COLS[t].length > 0);
 
 // Raw bytes (every byte value, bigger than one base64 chunk) round-trip; the context binds them.

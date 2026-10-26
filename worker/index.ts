@@ -9,6 +9,7 @@ import { byProject as baselinesByProject, byId as baselinesById } from './routes
 import { byProject as stakeholdersByProject, byId as stakeholdersById } from './routes/stakeholders.ts';
 import programs from './routes/programs.ts';
 import time from './routes/time.ts';
+import goals from './routes/goals.ts';
 import tasks from './routes/tasks.ts';
 import templates from './routes/templates.ts';
 import views from './routes/views.ts';
@@ -58,6 +59,7 @@ app.route('/api/decisions', decisions.byId);
 app.route('/api/lessons', lessons.byId);
 app.route('/api/tasks', tasks);
 app.route('/api/time', time);
+app.route('/api/goals', goals);
 app.route('/api/templates', templates);
 app.route('/api/trash', trash);
 app.route('/api/settings', settings);
