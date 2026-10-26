@@ -1897,6 +1897,25 @@ D1X "DELETE FROM time_entries WHERE id LIKE 'smk-t1-%'; DELETE FROM push_outbox 
 curl "${H[@]}" -X DELETE $B/api/tasks/$T1T >/dev/null
 curl "${H[@]}" -X PATCH $B/api/settings -d "{\"quiet_from\":\"${T1Q%,*}\",\"quiet_to\":\"${T1Q#*,}\"}" >/dev/null
 echo "smoke: (t1) forgotten timers: 5 h -> one outbox push without the task title, second cron adds none; 13 h -> stopped at start + 12 h, auto_stopped"
+# (t2) v2.5 Task 3: time in the reports (T10). A cloud work project in a program, a done task estimated 2h with 2h logged and a 30m project entry whose note is
+# ZZT2NOTE: the project report's input carries the two entries without a note, and its stub summary (which echoes the prompt) the time numbers and no note; the program
+# summary carries "time logged 2h 30m" and no note or name. Local D1 only; everything it made is removed.
+TB="{\"kind\":\"work\",\"name\":\"Smoke t2 program $R\",\"rag\":\"green\"}"; T2G=$(curl "${H[@]}" -X POST $B/api/programs -d "$TB" | js d.program.id)
+TB="{\"name\":\"Smoke t2 project $R\",\"kind\":\"work\",\"program_id\":\"$T2G\"}"; T2P=$(curl "${H[@]}" -X POST $B/api/projects -d "$TB" | js d.project.id)
+D1X "UPDATE projects SET data_boundary = 'cloud' WHERE id = '$T2P'" >/dev/null # a work project starts Offline only; the boundary PATCH needs the step-up
+TB="{\"title\":\"Smoke t2 task $R\",\"project_id\":\"$T2P\",\"estimate_minutes\":120}"; T2T=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+T2A=$(iso 4); T2B=$(iso 2); T2C=$(iso 1); T2N=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+D1X "INSERT INTO time_entries (id, task_id, project_id, kind, started_at, ended_at, note, source, created_at, updated_at) VALUES ('smk-t2-a','$T2T',NULL,'work','$T2A','$T2B',NULL,'manual','$T2N','$T2N'), ('smk-t2-b',NULL,'$T2P','work','$T2C','$(date -u -v-30M +%Y-%m-%dT%H:%M:%S.000Z)','ZZT2NOTE','manual','$T2N','$T2N')" >/dev/null
+curl "${H[@]}" -X POST $B/api/tasks/$T2T/done >/dev/null
+TB="{\"project_id\":\"$T2P\",\"from\":\"$(date -u -v-3d +%Y-%m-%d)\",\"to\":\"$(date -u -v+1d +%Y-%m-%d)\",\"ai\":true}"
+X=$(curl "${H[@]}" -X POST $B/api/reports/status -d "$TB")
+echo "$X" | js "d.input.time.length===2&&d.input.time.every(e=>!('note' in e))&&d.ai_summary.includes('Time logged this period: 2h 30m; done tasks: 2h of 2h estimated')" | grep -qx true || fail "t2: the project report's time: $(echo "$X" | head -c 800)"
+echo "$X" | grep -q ZZT2NOTE && fail "t2: a time note reached the project report"
+TB="{\"program_id\":\"$T2G\"}"; X=$(curl "${H[@]}" -X POST $B/api/reports/status -d "$TB")
+echo "$X" | js "typeof d.summary==='string'&&d.summary.includes('Project 1: RAG')&&d.summary.includes('; time logged 2h 30m.')" | grep -qx true || fail "t2: the program summary's time: $(echo "$X" | head -c 800)"
+echo "$X" | grep -q "ZZT2NOTE\|Smoke t2" && fail "t2: a note or a name reached the program summary"
+D1X "DELETE FROM time_entries WHERE id LIKE 'smk-t2-%'; DELETE FROM task_events WHERE task_id = '$T2T'; DELETE FROM tasks WHERE id = '$T2T'; DELETE FROM projects WHERE id = '$T2P'; DELETE FROM programs WHERE id = '$T2G'" >/dev/null
+echo "smoke: (t2) reports: the project report's input has its time without notes and its summary the time numbers; the program summary has time logged per project, no note or name"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

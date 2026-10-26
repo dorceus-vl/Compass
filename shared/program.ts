@@ -2,6 +2,8 @@
 import type { Milestone, Program, ProgramDetail, Project, Rag, Task } from './types.ts';
 import { slip, type SlipSummary } from './baseline.ts';
 import { addDaysYmd, localDay } from './dashboard.ts';
+import { projectMinutes, type REntry } from './time.ts';
+import { formatEstimate } from './workload.ts';
 /** Live programs at most (create and restore from Trash both check it; the list reads at most this many). */
 export const MAX_PROGRAMS = 50;
 export const PROGRAM_LIMITS = { name: 120, rag_reason: 500, notes: 4000 } as const;
@@ -44,11 +46,11 @@ export function budgetTotals(rows: BudgetRow[]): BudgetTotal[] {
     .map((t) => ({ ...t, variance: t.forecast - t.planned, pct_spent: t.planned ? Math.round((100 * t.spent) / t.planned) : null }));
 }
 
-export interface ProgramProjectRow { id: string; name: string; rag: Rag; pct_done: number; next_milestone: { name: string; due_at: string } | null; slip: SlipSummary | null }
+export interface ProgramProjectRow { id: string; name: string; rag: Rag; pct_done: number; next_milestone: { name: string; due_at: string } | null; slip: SlipSummary | null; minutes: number | null }
 export interface ProgramRollup { worst: Rag; sentence: string | null; projects: ProgramProjectRow[]; upcoming: { project_id: string; name: string; due_at: string }[]; budget: { rows: BudgetRow[]; totals: BudgetTotal[] } }
 
-/** Live members only; % done over live top-level tasks; slip against each member's latest baseline; milestones due in the next 30 local days. */
-export function programRollup(i: { program: Program; projects: Project[]; tasks: Task[]; milestones: Milestone[]; detail: Pick<ProgramDetail, 'baselines'>; today: string; tz: string }): ProgramRollup {
+/** Live members only; % done over live top-level tasks; slip against each member's latest baseline; milestones due in the next 30 local days; minutes logged (all time; null without `time`). */
+export function programRollup(i: { program: Program; projects: Project[]; tasks: Task[]; milestones: Milestone[]; detail: Pick<ProgramDetail, 'baselines'>; today: string; tz: string; time?: { entries: REntry[]; nowMs: number } }): ProgramRollup {
   const members = i.projects.filter((p) => p.program_id === i.program.id && !p.deleted_at);
   const end = addDaysYmd(i.today, 30);
   const upcoming: ProgramRollup['upcoming'] = [];
@@ -63,6 +65,7 @@ export function programRollup(i: { program: Program; projects: Project[]; tasks:
       pct_done: top.length ? Math.round((100 * top.filter((t) => t.status === 'done').length) / top.length) : 0,
       next_milestone: open[0] ? { name: open[0].name, due_at: open[0].due_at! } : null,
       slip: base ? slip(base.snapshot, tasks, i.milestones.filter((m) => m.project_id === p.id && !m.deleted_at), p).summary : null,
+      minutes: i.time ? projectMinutes(i.time.entries, i.tasks, p.id, i.time.nowMs) : null,
     };
   });
   const worst = worstRag(members.map((p) => p.rag));
@@ -89,7 +92,7 @@ export function programReportText(r: ProgramRollup, program: Pick<Program, 'rag'
       const sched = !s ? 'no baseline saved' : `${s.late} later (up to ${s.max_late} days, average ${s.avg_late}), ${s.early} earlier, ${s.unchanged} unchanged, ${s.added} added, ${s.dropped} removed, ${many(s.milestones_late, 'milestone')} late, project end moved ${s.project_end_delta ?? 'n/a'} days`;
       const b = r.budget.rows.find((x) => x.project_id === p.id);
       const money = b?.planned != null ? `; budget ${b.currency}: ${b.pct_spent ?? 0}% spent${b.variance != null ? `, forecast variance ${signed(b.variance)}` : ''}` : '';
-      return `Project ${i + 1}: RAG ${WORD[p.rag]}, ${p.pct_done}% done, schedule: ${sched}${money}.`;
+      return `Project ${i + 1}: RAG ${WORD[p.rag]}, ${p.pct_done}% done, schedule: ${sched}${money}${p.minutes != null ? `; time logged ${formatEstimate(p.minutes)}` : ''}.`;
     }),
     r.budget.totals.length ? 'Budget totals per currency:' : 'Budget totals: no project has a planned budget.',
     ...r.budget.totals.map((t) => `${t.currency}: ${many(t.projects, 'project')}, planned ${n2(t.planned)}, spent ${n2(t.spent)}, forecast ${n2(t.forecast)}, variance ${signed(t.variance)}, ${t.pct_spent ?? 0}% spent.`),

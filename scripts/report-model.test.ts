@@ -88,6 +88,35 @@ assert.ok(!text.includes('Plan v1'));
 assert.match(reportText(m0), /Schedule against the baseline: no baseline saved/);
 console.log('report-model v2.2: ok');
 
+// v2.5 (T10): time this period. A task entry counts for its task's project; done tasks in the period compare logged (all time) with their estimate.
+{
+  const te = (task_id: string | null, project_id: string | null, s: string, e: string | null) => ({ task_id, project_id, started_at: s, ended_at: e, deleted_at: null, note: 'ZZNOTE' });
+  const timed = { ...fixture, tasks: fixture.tasks.map((t) => (t.id === 't1' ? { ...t, estimate_minutes: 480 } : t)), time: [
+    te('t1', null, '2026-10-13T13:00:00.000Z', '2026-10-13T18:00:00.000Z'), // 5h in the period
+    te('t1', null, '2026-10-01T13:00:00.000Z', '2026-10-01T17:00:00.000Z'), // 4h before it: counts for t1's total only
+    te(null, 'p1', '2026-10-20T13:00:00.000Z', '2026-10-20T16:30:00.000Z'), // project entry: 3h 30m
+    te('t5', null, '2026-10-21T13:00:00.000Z', '2026-10-21T17:00:00.000Z'), // open task: 4h
+    te('t7', null, '2026-10-21T13:00:00.000Z', '2026-10-21T17:00:00.000Z'), // trashed task: left out
+    { ...te('t5', null, '2026-10-22T13:00:00.000Z', '2026-10-22T17:00:00.000Z'), deleted_at: '2026-10-23T00:00:00.000Z' }, // trashed entry
+  ] };
+  const tm = buildReportModel(timed, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', '2026-10-19T12:00:00Z', TZ);
+  assert.deepEqual(tm.time && [tm.time.logged_minutes, tm.time.done_logged_minutes, tm.time.done_estimated_minutes], [750, 540, 480]);
+  assert.equal(tm.time!.line, 'Time logged this period: 12h 30m; done tasks: 9h of 8h estimated');
+  const tt = reportText(tm);
+  assert.match(tt, /Time logged this period: 12h 30m; done tasks: 9h of 8h estimated/);
+  assert.ok(!tt.includes('ZZNOTE') && !tt.includes('Plan v1'));
+  assert.equal(m0.time, null, 'no entries passed: no time');
+  assert.ok(!reportText(m0).includes('Time logged'));
+  const none = buildReportModel({ ...timed, time: [] }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ);
+  assert.equal(none.time!.line, 'Time logged this period: 0m; done tasks: 0m of 8h estimated');
+  assert.equal(buildReportModel({ ...fixture, time: [] }, { from: '2026-10-12', to: '2026-10-25' }, '2026-10-19', 'now', TZ).time!.line, 'Time logged this period: 0m; done tasks: none has an estimate');
+  const { BUILTINS } = await import('../web/src/docs/templates.ts');
+  const doc = JSON.stringify(BUILTINS.find((b) => b.id === 'status_report')!.make(tm));
+  assert.match(doc, /Time this period/); assert.match(doc, /12h 30m/);
+  assert.ok(!JSON.stringify(BUILTINS.find((b) => b.id === 'status_report')!.make(m0)).includes('Time this period'));
+  console.log('report-model time: ok');
+}
+
 // v2.4 (Task 3): the program form keeps the names (it is Vlad's own document); scores only when both are rated.
 {
   const { buildProgramReportModel } = await import('../shared/report-model.ts');

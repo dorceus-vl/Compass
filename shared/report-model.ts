@@ -2,6 +2,8 @@ import type { Program, ProgramDetail, Project, Rag, ReportInput, ReportModel, Se
 import type { ProgramProjectRow, ProgramRollup } from './program.ts';
 import { slip } from './baseline.ts';
 import { dashboardMetrics, localDay as toLocalDay, addDaysYmd, daysBetweenYmd } from './dashboard.ts';
+import { projectMinutes, taskLogged } from './time.ts';
+import { formatEstimate } from './workload.ts';
 
 const day = (s: string | null | undefined) => (s ? s.slice(0, 10) : '');
 const txt = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -80,6 +82,17 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
     (dm.behind_ideal === null ? 'no ideal line (it needs a baseline and an end date); ' : `${dm.remaining} open against ${dm.ideal_remaining} ideal (${dm.behind_ideal > 0 ? `${dm.behind_ideal} behind` : dm.behind_ideal < 0 ? `${-dm.behind_ideal} ahead` : 'on the line'}); `) +
     `${dm.high_risks} high risk${dm.high_risks === 1 ? '' : 's'}.`;
 
+  // v2.5 (T10): numbers only. A running entry counts up to `now` (or this moment, when `now` is not a timestamp).
+  let time: ReportModel['time'] = null;
+  if (input.time) {
+    const nowMs = Number.isNaN(Date.parse(now)) ? Date.now() : Date.parse(now);
+    const logged = projectMinutes(input.time, input.tasks, p.id, nowMs, { from, to, tz });
+    const est = done.filter((t) => t.estimate_minutes);
+    const dl = est.reduce((n, t) => n + taskLogged(input.time!, t.id, input.tasks, nowMs), 0), de = est.reduce((n, t) => n + t.estimate_minutes!, 0);
+    time = { logged_minutes: logged, done_logged_minutes: dl, done_estimated_minutes: de,
+      line: `Time logged this period: ${formatEstimate(logged)}; done tasks: ${est.length ? `${formatEstimate(dl)} of ${formatEstimate(de)} estimated` : 'none has an estimate'}` };
+  }
+
   const rag_label = RAG[p.rag] ?? 'Not set';
   const nextSteps = next.slice(0, 5).map((t) => txt(t.title)).join('; ');
   const left = p.budget_planned !== null && p.budget_spent !== null ? String(Math.round((p.budget_planned - p.budget_spent) * 100) / 100) : '';
@@ -117,6 +130,7 @@ export function buildReportModel(input: ReportInput, range: { from: string; to: 
       late_milestones: sec(lateMs, ['Milestone', 'Baseline', 'Now', 'Days late'], (m) => [m.name, m.baseline_due, m.due_at, m.days_late], (m) => `${m.name} (${m.days_late} days late)`),
     },
     metrics: { ...dm, as_of: today, line: metricsLine },
+    time,
     ai: { summary: '' },
   };
 }
@@ -128,6 +142,7 @@ export function reportText(m: ReportModel): string {
   return [
     `Project: ${m.project.name} (${m.project.phase || 'phase not set'})`, `Period: ${m.range.label}`, `Status: ${m.status.headline}`, `Progress: ${m.status.progress}`,
     `Key numbers as of ${m.metrics.as_of}: done this week ${x.done_this_week}, open ${x.open}, overdue now ${x.overdue_now}, open tasks ${x.remaining}, ideal ${x.ideal_remaining ?? 'n/a'}, behind the ideal ${x.behind_ideal ?? 'n/a'}, high risks ${x.high_risks}, unrated risks ${x.unrated_risks}`,
+    m.time?.line ?? '',
     s ? `Schedule against the baseline: compared ${s.compared}, later ${s.late}, earlier ${s.early}, unchanged ${s.unchanged}, added ${s.added}, removed ${s.dropped}, average days late ${s.avg_late}, most days late ${s.max_late}, milestones late ${s.milestones_late}, project end moved ${s.project_end_delta ?? 'n/a'} days` : 'Schedule against the baseline: no baseline saved',
     part('Done this period', m.tasks.done.list), part('Overdue', m.tasks.overdue.list), part('Due in the next two weeks', m.tasks.next.list), part('Milestones', m.milestones.list),
     part('Open risks', m.risks.list), part('Open issues', m.issues.list), part('Decisions needed', m.decisions_needed.list), part('Decisions made', m.decisions.list),

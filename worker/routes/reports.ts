@@ -5,6 +5,7 @@ import type { Program, Project, Milestone, Task, RaidItem, ChangeRequest, Decisi
 import { buildReportModel, reportText } from '../../shared/report-model.ts';
 import { parseSnapshot } from '../../shared/baseline.ts';
 import { programRollup, programReportText } from '../../shared/program.ts';
+import type { REntry } from '../../shared/time.ts';
 import { MEMBERS_SQL, LATEST_BASELINES_SQL } from './programs.ts';
 import { open, openAll } from '../lib/enc.ts';
 import { audit, getSettings, now } from '../lib/db.ts';
@@ -17,9 +18,14 @@ const reports = new Hono<{ Bindings: Env; Variables: Variables }>();
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const validDay = (s: unknown): s is string => typeof s === 'string' && YMD.test(s) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
 
+/** v2.5 (T10): a project's time entries (its own and its tasks'), one bind; the program form reads its members' through MEMBERS_SQL. Never `note`. */
+const TIME_COLS = 'SELECT task_id, project_id, started_at, ended_at, deleted_at FROM time_entries WHERE deleted_at IS NULL';
+const TIME_SQL = `${TIME_COLS} AND (project_id = ?1 OR task_id IN (SELECT id FROM tasks WHERE project_id = ?1))`;
+const PROGRAM_TIME_SQL = `${TIME_COLS} AND (project_id IN (${MEMBERS_SQL}) OR task_id IN (SELECT id FROM tasks WHERE project_id IN (${MEMBERS_SQL})))`;
+
 async function loadInput(env: Env, projectId: string): Promise<ReportInput | null> {
   const q = (sql: string) => env.DB.prepare(sql).bind(projectId);
-  const [p, ms, ts, raid, crs, dec, les, mr, bl] = await env.DB.batch([
+  const [p, ms, ts, raid, crs, dec, les, mr, bl, te] = await env.DB.batch([
     q('SELECT * FROM projects WHERE id = ?1 AND deleted_at IS NULL'),
     q('SELECT * FROM milestones WHERE project_id = ?1 AND deleted_at IS NULL'),
     q('SELECT * FROM tasks WHERE project_id = ?1 AND deleted_at IS NULL'), // subtasks too: a baseline holds them, so slip needs them (the model drops them from its own lists)
@@ -29,6 +35,7 @@ async function loadInput(env: Env, projectId: string): Promise<ReportInput | nul
     q('SELECT * FROM lessons WHERE project_id = ?1 AND deleted_at IS NULL'),
     q('SELECT id, title, summary, received_at, enc_v FROM meeting_reviews WHERE project_id = ?1 ORDER BY received_at DESC LIMIT 200'),
     q('SELECT * FROM baselines WHERE project_id = ?1 AND deleted_at IS NULL ORDER BY taken_at DESC LIMIT 1'),
+    q(TIME_SQL), // v2.5 (T10): times and ids only, never the note
   ]);
   const row = p.results[0] as Project | undefined;
   if (!row) return null;
@@ -42,7 +49,7 @@ async function loadInput(env: Env, projectId: string): Promise<ReportInput | nul
   const snapshot = baselines[0] ? parseSnapshot(baselines[0].snapshot) : null;
   if (baselines[0] && !snapshot) console.error('[report] the latest baseline could not be read'); // shows as "No baseline saved"; never the content
   return { project, milestones, tasks, raid: raidRows, changes, decisions, lessons, meetings: meetings.map((m) => ({ id: m.id, title: m.title, received_at: m.received_at, summary: m.summary })),
-    baseline: baselines[0] && snapshot ? { name: baselines[0].name, taken_at: baselines[0].taken_at, snapshot } : null };
+    baseline: baselines[0] && snapshot ? { name: baselines[0].name, taken_at: baselines[0].taken_at, snapshot } : null, time: te.results as NonNullable<ReportInput['time']> };
 }
 
 const SYSTEM = [
@@ -63,13 +70,14 @@ const PROGRAM_SYSTEM = [
  */
 async function programSummary(env: Env, id: string): Promise<{ status: 200 | 404; body: Record<string, unknown> }> {
   const db = env.DB, q = (sql: string) => db.prepare(sql).bind(id);
-  const [g, ps, ts, ms, bl] = await db.batch([
+  const [g, ps, ts, ms, bl, te] = await db.batch([
     q('SELECT id, kind, rag FROM programs WHERE id = ?1 AND deleted_at IS NULL'),
     q(`SELECT id, '' AS name, kind, rag, data_boundary, program_id, start_at, end_at, budget_planned, budget_spent, budget_forecast, currency, deleted_at
        FROM projects WHERE program_id = ?1 AND deleted_at IS NULL LIMIT 500`),
     q(`SELECT id, project_id, parent_id, status, start_at, due_at, deleted_at FROM tasks WHERE deleted_at IS NULL AND project_id IN (${MEMBERS_SQL})`), // subtasks too: slip compares them
     q(`SELECT id, project_id, '' AS name, due_at, done_at, deleted_at FROM milestones WHERE deleted_at IS NULL AND project_id IN (${MEMBERS_SQL})`),
     q(LATEST_BASELINES_SQL),
+    q(PROGRAM_TIME_SQL),
   ]);
   const program = (g.results as Program[])[0];
   if (!program) return { status: 404, body: { error: 'Not found' } };
@@ -81,7 +89,8 @@ async function programSummary(env: Env, id: string): Promise<{ status: 200 | 404
     if (snapshot && !baselines.some((x) => x.project_id === row.project_id)) baselines.push({ project_id: row.project_id, snapshot, taken_at: row.taken_at }); // two at the same taken_at: keep the first
   }
   const settings = await getSettings(env);
-  const rollup = programRollup({ program, projects, tasks: ts.results as Task[], milestones: ms.results as Milestone[], detail: { baselines }, today: localDate(settings.tz), tz: settings.tz });
+  const rollup = programRollup({ program, projects, tasks: ts.results as Task[], milestones: ms.results as Milestone[], detail: { baselines }, today: localDate(settings.tz), tz: settings.tz,
+    time: { entries: te.results as REntry[], nowMs: Date.now() } });
   try {
     const out = await runAi(env, 'status_report', {
       provider: settings.default_provider, system: PROGRAM_SYSTEM, maxTokens: 600,

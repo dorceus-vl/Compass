@@ -18,7 +18,7 @@ export function navigate(path: string, replace = false) { path = legacy(path); h
 // iOS Safari swipe-back and Android predictive back already animate (hasUAVisualTransition); ours would play on top of theirs.
 window.addEventListener('popstate', (e) => { fixLegacy(); change(!(e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition); });
 
-/** Paths: / board list upcoming calendar workload timeline projects programs programs/:id[/:tab] projects/:id projects/:id/:tab inbox meetings meetings/:id meetings/series/:id review library library/:slug knowledge knowledge/:id athena athena/:id (or athena/new; /copilot redirects) settings kelly/log trash. */
+/** Paths: / board list upcoming calendar workload time timeline projects programs programs/:id[/:tab] projects/:id projects/:id/:tab inbox meetings meetings/:id meetings/series/:id review library library/:slug knowledge knowledge/:id athena athena/:id (or athena/new; /copilot redirects) settings kelly/log trash. */
 export function useRoute(): { path: string; params: Record<string, string> } {
   const [, tick] = useState(0);
   useEffect(() => { const l = () => tick((n) => n + 1); listeners.add(l); return () => { listeners.delete(l); }; }, []);

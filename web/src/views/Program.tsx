@@ -20,6 +20,9 @@ import { useSlider } from '../ui/Shell.tsx';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
 import { useTz, REFUSED } from './project/Report.tsx';
 import { loadProgramDetail, updateProgram, trashProgram, OFFLINE_LINE } from '../programs.ts';
+import { useTimers } from '../ui/TimerButton.tsx';
+import { accuracy } from '../../../shared/time.ts';
+import { formatEstimate } from '../../../shared/workload.ts';
 
 const TABS = ['overview', 'budget', 'report'] as const;
 const TAB_LABEL: Record<string, string> = { overview: 'Overview', budget: 'Budget', report: 'Report' };
@@ -44,7 +47,14 @@ export function ProgramPage({ id, tab = 'overview' }: { id: string; tab?: string
   const nav = useRef<HTMLElement>(null), pill = useRef<HTMLSpanElement>(null);
   useSlider(nav, pill, `${current}:${s.detail ? id : ''}`, 'a[aria-selected="true"]');
   const today = todayIn(tz);
-  const roll = useMemo(() => (s.detail ? programRollup({ program: s.detail.program, projects, tasks, milestones, detail: s.detail, today, tz }) : null), [s.detail, projects, tasks, milestones, today, tz]);
+  const { entries, now } = useTimers();
+  const roll = useMemo(() => (s.detail ? programRollup({ program: s.detail.program, projects, tasks, milestones, detail: s.detail, today, tz, time: { entries, nowMs: now } }) : null), [s.detail, projects, tasks, milestones, today, tz, entries, now]);
+  const time = useMemo(() => {
+    if (!roll) return null;
+    const ids = roll.projects.map((p) => p.id), keep = new Set(ids);
+    return { logged: roll.projects.reduce((n, p) => n + (p.minutes ?? 0), 0), acc: accuracy(entries, tasks, ids, now),
+      estimated: tasks.reduce((n, t) => (t.deleted_at || t.parent_id || !t.project_id || !keep.has(t.project_id) ? n : n + (t.estimate_minutes ?? 0)), 0) };
+  }, [roll, entries, tasks, now]);
   if (!ready || !s.loaded) return null;
   if (!s.detail || !roll) return <p>{s.offline ? 'This program isn’t on this device yet. Open it once while online.' : 'Program not found.'}</p>;
   const g = s.detail.program, canWrite = !s.offline && online();
@@ -86,6 +96,9 @@ export function ProgramPage({ id, tab = 'overview' }: { id: string; tab?: string
               {roll.sentence && <p className="hint" role="note">{roll.sentence}</p>}
               <label className="qf">RAG reason<input key={`r:${g.updated_at}`} className="field" defaultValue={g.rag_reason ?? ''} maxLength={500} disabled={!canWrite} onBlur={(e) => text('rag_reason', e.target.value)} /></label>
             </div>
+            {time && <div className="qcard"><h3>Time</h3>
+              <p className="prog-time">Logged <b className="mono">{formatEstimate(time.logged)}</b>{time.estimated ? <> of <b className="mono">{formatEstimate(time.estimated)}</b> estimated</> : '; no estimates yet'}</p>
+              <p className="hint">{time.acc.label}.</p></div>}
             <div className="qcard"><h3>Notes</h3>
               <textarea key={`n:${g.updated_at}`} className="field" rows={5} aria-label="Notes" defaultValue={g.notes ?? ''} maxLength={4000} disabled={!canWrite} onBlur={(e) => text('notes', e.target.value)} /></div>
           </section>

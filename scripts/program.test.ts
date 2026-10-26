@@ -106,6 +106,22 @@ assert.equal(programRollup({ program, projects: [], tasks: [], milestones: [], d
   assert.match(text, /CAD: 1 project, planned 100, spent 50, forecast 120, variance \+20, 50% spent/);
   assert.match(text, /USD: 1 project, planned 10, spent 1, forecast 10, variance 0, 10% spent/);
   assert.match(text, /Milestones due in the next 30 days: 3/);
+  assert.ok(!text.includes('time logged'), 'no time passed: no time line');
+  // v2.5 (T10): minutes per project row; the text carries the numbers, still no names or notes.
+  const te = (task_id: string | null, project_id: string | null, s: string, e: string | null) => ({ task_id, project_id, started_at: s, ended_at: e, deleted_at: null, note: 'ZZNOTE' });
+  const time = { nowMs: Date.parse('2026-10-25T15:00:00.000Z'), entries: [
+    te('t1', null, '2026-10-20T13:00:00.000Z', '2026-10-20T15:30:00.000Z'), // p1 task: 150
+    te(null, 'p1', '2026-10-21T13:00:00.000Z', '2026-10-21T13:30:00.000Z'), // p1 project entry: 30
+    te('t3', null, '2026-10-21T13:00:00.000Z', '2026-10-21T14:00:00.000Z'), // trashed task: left out
+    te('t4', null, '2026-10-25T14:00:00.000Z', null), // p2 running: 60
+  ] };
+  const tr = programRollup({ program: zp, projects: zprojects, tasks, milestones: zms, detail: { baselines }, today: '2026-10-25', tz: 'America/Toronto', time });
+  assert.deepEqual(tr.projects.map((p) => p.minutes), [180, 60]);
+  assert.equal(zr.projects[0].minutes, null, 'without time: null');
+  const tt = programReportText(tr, zp);
+  assert.match(tt, /Project 1: RAG Amber, 50% done, schedule: [^\n]*; time logged 3h\./);
+  assert.match(tt, /Project 2: RAG Red, 0% done, schedule: no baseline saved; budget USD: 10% spent; time logged 1h\./);
+  for (const s of ['ZZPROGRAM', 'ZZREASON', 'ZZNOTES', 'ZZPROJ', 'ZZMS', 'ZZNOTE', 'p1', 'p2']) assert.ok(!tt.includes(s), `the summary text carries ${s}`);
 }
 
 // web/src/programs.ts: a 404 (program trashed elsewhere, or a bad id) is "gone", not offline; a network failure is offline.

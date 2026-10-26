@@ -9,6 +9,9 @@ import { todayIn } from '../../dates.ts';
 import { ChartFrame, LineChart, BarChart, RiskGrid } from '../../ui/Chart.tsx';
 import { SectionHead } from '../../ui/SectionHead.tsx';
 import { useTz } from './Report.tsx';
+import { useTimers } from '../../ui/TimerButton.tsx';
+import { projectMinutes, accuracy } from '../../../../shared/time.ts';
+import { formatEstimate } from '../../../../shared/workload.ts';
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const days = (n: number) => `${Math.abs(n)} ${Math.abs(n) === 1 ? 'day' : 'days'}`; // the word that follows (later, earlier) carries the direction
@@ -40,6 +43,11 @@ export function Dashboard({ project }: { project: Project }) {
   const trend = useMemo(() => overdueTrend(mine, today, 8, tz), [mine, today, tz]);
   const matrix = useMemo(() => riskMatrix(raid), [raid]);
   const metrics = useMemo(() => dashboardMetrics({ tasks: mine, raid, project, today, tz, baselineDay }), [mine, raid, project, today, tz, baselineDay]);
+  // v2.5: actual against estimate (all time; subtask time rolls up, estimates of top-level tasks).
+  const { entries, now } = useTimers();
+  const logged = useMemo(() => projectMinutes(entries, tasks, project.id, now), [entries, tasks, project.id, now]);
+  const estimated = mine.reduce((n, t) => (t.deleted_at || t.parent_id ? n : n + (t.estimate_minutes ?? 0)), 0);
+  const acc = useMemo(() => accuracy(entries, tasks, [project.id], now), [entries, tasks, project.id, now]);
   const slipRows = useMemo(() => (snap ? milestoneSlip(snap, milestones.filter((m) => m.project_id === project.id)).filter((r) => r.delta !== 0) : []), [snap, milestones, project.id]);
 
   const idealWord = metrics.behind_ideal === null ? null : metrics.behind_ideal > 0 ? `${metrics.behind_ideal} behind the ideal line` : metrics.behind_ideal < 0 ? `${-metrics.behind_ideal} ahead of the ideal line` : 'on the ideal line';
@@ -53,6 +61,7 @@ export function Dashboard({ project }: { project: Project }) {
     ['Against ideal', metrics.behind_ideal === null ? '—' : metrics.behind_ideal > 0 ? `+${metrics.behind_ideal}` : String(metrics.behind_ideal), metrics.behind_ideal !== null && metrics.behind_ideal > 0 ? 'over' : '',
       metrics.behind_ideal === null ? (latest ? 'Needs an end date after the baseline' : loaded ? 'Save a baseline' : undefined) : undefined],
     ['High risks', risksKnown ? String(metrics.high_risks) : '—', risksKnown && metrics.high_risks ? 'over' : ''],
+    ['Logged', formatEstimate(logged), '', `${estimated ? `of ${formatEstimate(estimated)} estimated` : 'No estimates yet'}. ${acc.label}.`],
   ];
   const risksSummary = !raidLoaded ? 'Loading risks…' : !risksKnown ? "Risks aren't available offline yet. Open the RAID tab once while online." : null;
   return (

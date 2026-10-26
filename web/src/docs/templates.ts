@@ -1,6 +1,7 @@
 import type { ReportModel } from '../../../shared/types.ts';
 import type { ProgramReportModel } from '../../../shared/report-model.ts';
 import { p, fields, list, table, sec, type TemplateDoc } from '../../../shared/doc-model.ts';
+import { formatEstimate } from '../../../shared/workload.ts';
 
 export type BuiltinId = 'charter' | 'raid_log' | 'raci' | 'wbs' | 'status_report' | 'change_request' | 'exception_report' | 'lessons_learned';
 
@@ -89,6 +90,8 @@ export const BUILTINS: { id: BuiltinId; name: string; guide: string; make: (m: R
       sec('Overall status', fields(['RAG', m.project.rag_label], ['Reason', m.project.rag_reason], ['Period', m.range.label])),
       sec('Executive summary', p(m.ai.summary || m.status.progress)),
       keyNumbers(m),
+      ...(m.time ? [sec('Time this period', fields(['Logged', formatEstimate(m.time.logged_minutes)],
+        ['Done tasks', m.time.done_estimated_minutes ? `${formatEstimate(m.time.done_logged_minutes)} of ${formatEstimate(m.time.done_estimated_minutes)} estimated` : 'None has an estimate']))] : []),
       sec('Progress', list(m.tasks.done.rows.map((t) => t.title), 'No tasks were completed this period.')),
       sec('Next steps', list(m.tasks.next.rows.map((t) => `${t.title} (${t.due_at})`), m.status.next_steps)),
       sec('Milestones', msTable(m)),
@@ -129,13 +132,14 @@ const money = (n: number | null, currency: string) => (n == null ? '' : new Intl
 const schedule = (s: ProgramReportModel['projects'][number]['slip']) => (!s ? 'No baseline' : s.late ? `${s.late} later, up to ${s.max_late} days${s.milestones_late ? ` · ${s.milestones_late} milestone${s.milestones_late === 1 ? '' : 's'} late` : ''}` : 'On plan');
 export function programDoc(m: ProgramReportModel): TemplateDoc {
   const pname = (id: string) => m.projects.find((p) => p.id === id)?.name ?? '';
+  const timed = m.projects.some((x) => x.minutes != null);
   return {
     title: 'Program status report', subtitle: `${m.title} · as of ${m.as_of}`,
     sections: [
       sec('Overall status', fields(['Your RAG', RAG_WORD[m.rag]], ['Reason', m.rag_reason], ['Worst project RAG', RAG_WORD[m.worst]]), ...(m.sentence ? [p(m.sentence + '.')] : [])),
       sec('Executive summary', p(m.summary || `${m.projects.length} project${m.projects.length === 1 ? '' : 's'}; ${m.upcoming.length} milestone${m.upcoming.length === 1 ? '' : 's'} due in the next 30 days.`)),
-      sec('Projects', table(['Project', 'RAG', 'Done', 'Schedule', 'Next milestone'],
-        m.projects.map((x) => [x.name, RAG_WORD[x.rag], `${x.pct_done}%`, schedule(x.slip), x.next_milestone ? `${x.next_milestone.name} (${x.next_milestone.due_at})` : '']), 'No projects in this program.')),
+      sec('Projects', table(['Project', 'RAG', 'Done', 'Schedule', 'Next milestone', ...(timed ? ['Time logged'] : [])],
+        m.projects.map((x) => [x.name, RAG_WORD[x.rag], `${x.pct_done}%`, schedule(x.slip), x.next_milestone ? `${x.next_milestone.name} (${x.next_milestone.due_at})` : '', ...(timed ? [formatEstimate(x.minutes ?? 0)] : [])]), 'No projects in this program.')),
       sec('Milestones in the next 30 days', table(['Due', 'Milestone', 'Project'], m.upcoming.map((u) => [u.due_at, u.name, pname(u.project_id)]), 'No milestone due in the next 30 days.')),
       sec('Top risks', table(['Risk', 'Project', 'Score'], m.risks.map((r) => [r.title, r.project, r.score ?? 'unrated']), 'No open risks.')),
       sec('Budget', table(['Project', 'Planned', 'Spent', 'Forecast', 'Variance', '% spent'],

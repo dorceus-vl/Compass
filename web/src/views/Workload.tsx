@@ -11,6 +11,8 @@ import { projectColor } from '../ui/colors.ts';
 import { toast } from '../ui/dialogs.tsx';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { usePrograms, membersOf } from './Programs.tsx';
+import { useTimers } from '../ui/TimerButton.tsx';
+import { actualWeeks } from '../../../shared/time.ts';
 
 // Workload (v2.4, P5): estimated hours per week against capacity, drawn from the device mirror, so it works offline.
 // Capacity lives in settings (cached in IndexedDB `meta` for offline reading); changing it is online-only.
@@ -46,10 +48,11 @@ function useWorkloadSettings() {
 
 const PATTERNS = ['solid', 'hatch', 'dots', 'lines'] as const;
 /** One fill per project: its colour with one of four patterns (never colour alone); "No project" is grey cross-hatch. */
-function Fill({ id, color, kind }: { id: string; color: string; kind: (typeof PATTERNS)[number] | 'cross' }) {
+function Fill({ id, color, kind }: { id: string; color: string; kind: (typeof PATTERNS)[number] | 'cross' | 'actual' }) {
   return (
-    <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform={kind === 'hatch' || kind === 'cross' ? 'rotate(45)' : undefined}>
-      <rect width="6" height="6" fill={color} opacity={kind === 'solid' ? 1 : 0.55} />
+    <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform={kind === 'hatch' || kind === 'cross' ? 'rotate(45)' : kind === 'actual' ? 'rotate(-45)' : undefined}>
+      <rect width="6" height="6" fill={color} opacity={kind === 'solid' ? 1 : kind === 'actual' ? 0.35 : 0.55} />
+      {kind === 'actual' && <rect width="6" height="2.5" fill={color} />}
       {kind === 'hatch' && <rect width="2" height="6" fill="var(--card)" />}
       {kind === 'dots' && <circle cx="3" cy="3" r="1.2" fill="var(--card)" />}
       {kind === 'lines' && <rect y="2" width="6" height="1.5" fill="var(--card)" />}
@@ -61,15 +64,21 @@ function Fill({ id, color, kind }: { id: string; color: string; kind: (typeof PA
 const M = { l: 32, r: 12, t: 30, b: 26 };
 type Seg = { key: string; name: string; color: string };
 
-function StackedBars({ id, w, weeks, kind, segs, selected, onPick, describedBy }: { id: string; w: number; weeks: WWeek[]; kind: Kind; segs: Seg[]; selected: string | null; onPick: (start: string) => void; describedBy: string }) {
+/** The first `past` weeks are logged time (Actual): their own stripe pattern and a label over the group, then the planned weeks. */
+function StackedBars({ id, w, weeks, past, kind, segs, selected, onPick, describedBy }: { id: string; w: number; weeks: WWeek[]; past: number; kind: Kind; segs: Seg[]; selected: string | null; onPick: (start: string) => void; describedBy: string }) {
   const h = 220, iw = w - M.l - M.r, ih = h - M.t - M.b, n = weeks.length, slot = iw / n, bw = Math.min(30, slot * 0.62);
   const maxH = Math.max(1, ...weeks.map((x) => Math.max(x.minutes[kind], x.capacity[kind]) / 60));
   const top = Math.ceil(maxH / 4) * 4, y = (hours: number) => M.t + ih - (hours / top) * ih;
   const step = slot < 40 ? 2 : 1;
   return (
     <div className="wl-plot">
-      <svg className="chart-svg" role="img" aria-label={`${kind === 'work' ? 'Work' : 'Personal'} hours in each of the next ${n} weeks against capacity`} aria-describedby={describedBy} width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-        <defs>{segs.map((s, i) => <Fill key={s.key} id={`${id}-p${i}`} color={s.color} kind={s.key === '' ? 'cross' : PATTERNS[i % PATTERNS.length]} />)}</defs>
+      <svg className="chart-svg" role="img" aria-label={`${kind === 'work' ? 'Work' : 'Personal'} hours logged in each of the last ${past} weeks, then planned in each of the next ${n - past}, against capacity`} aria-describedby={describedBy} width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+        <defs>{segs.map((s, i) => <Fill key={s.key} id={`${id}-p${i}`} color={s.color} kind={s.key === '' ? 'cross' : PATTERNS[i % PATTERNS.length]} />)}
+          {segs.map((s, i) => <Fill key={`a${s.key}`} id={`${id}-a${i}`} color={s.color} kind="actual" />)}</defs>
+        {past > 0 && <g className="wl-actual">
+          <text x={M.l + (slot * past) / 2} y={10} textAnchor="middle" className="ch-t">Actual</text>
+          <text x={M.l + slot * past + (slot * (n - past)) / 2} y={10} textAnchor="middle" className="ch-t">Planned</text>
+          <line x1={M.l + slot * past} x2={M.l + slot * past} y1={4} y2={M.t + ih} className="ch-grid" /></g>}
         {[0, top / 2, top].map((v) => <g key={v}><line x1={M.l} x2={w - M.r} y1={y(v)} y2={y(v)} className="ch-grid" /><text x={M.l - 6} y={y(v) + 4} textAnchor="end" className="ch-t">{v}h</text></g>)}
         {weeks.map((wk, i) => {
           const cx = M.l + slot * i + slot / 2;
@@ -82,7 +91,7 @@ function StackedBars({ id, w, weeks, kind, segs, selected, onPick, describedBy }
             {segs.map((s, k) => {
               const m = by.get(s.key); if (!m) return null;
               const y0 = y(acc / 60), y1 = y((acc + m) / 60); acc += m;
-              return <rect key={s.key} x={cx - bw / 2} y={y1} width={bw} height={Math.max(0, y0 - y1)} fill={`url(#${id}-p${k})`} stroke="var(--card)" strokeWidth={0.75} />;
+              return <rect key={s.key} x={cx - bw / 2} y={y1} width={bw} height={Math.max(0, y0 - y1)} fill={`url(#${id}-${i < past ? 'a' : 'p'}${k})`} stroke="var(--card)" strokeWidth={0.75} />;
             })}
             <line x1={M.l + slot * i + 2} x2={M.l + slot * (i + 1) - 2} y1={y(cap)} y2={y(cap)} className="wl-cap" />
             {over > 0 && <text x={cx} y={y(Math.max(acc, wk.capacity[kind]) / 60) - 16} textAnchor="middle" className="ch-v wl-over"><tspan x={cx}>+{hrs(over)}</tspan><tspan x={cx} dy="11">over</tspan></text>}
@@ -92,10 +101,11 @@ function StackedBars({ id, w, weeks, kind, segs, selected, onPick, describedBy }
       </svg>
       {weeks.map((wk, i) => (
         <button key={wk.start} type="button" className="wl-hit" aria-pressed={selected === wk.start} style={{ left: M.l + slot * i, width: slot, height: h }} onClick={() => onPick(wk.start)}
-          aria-label={`Week of ${short(wk.start)}: ${hrs(wk.minutes[kind])} of ${hrs(wk.capacity[kind])}${wk.over[kind] ? `, ${hrs(wk.over[kind])} over` : ''}`} />
+          aria-label={`${i < past ? 'Actual, w' : 'W'}eek of ${short(wk.start)}: ${hrs(wk.minutes[kind])} of ${hrs(wk.capacity[kind])}${wk.over[kind] ? `, ${hrs(wk.over[kind])} over` : ''}`} />
       ))}
       <ul className="chart-legend" aria-hidden="true">
         {segs.map((s, i) => <li key={s.key}><svg width="14" height="12"><rect width="14" height="12" rx="2" fill={`url(#${id}-p${i})`} /></svg>{s.name}</li>)}
+        {past > 0 && <li><svg width="14" height="12"><rect width="14" height="12" rx="2" fill={`url(#${id}-a0)`} /></svg>Actual (logged)</li>}
         <li><svg width="24" height="10"><line x1="1" x2="23" y1="5" y2="5" className="wl-cap" /></svg>Capacity</li>
       </ul>
     </div>
@@ -111,12 +121,19 @@ function summary(weeks: WWeek[], kind: Kind) {
   const busiest = weeks.reduce((a, w) => (w.minutes[kind] > a.minutes[kind] ? w : a));
   return busiest.minutes[kind] ? `No week is over capacity; the busiest is ${hrs(busiest.minutes[kind])} of ${hrs(busiest.capacity[kind])} in the week of ${short(busiest.start)}.` : `Nothing is planned in the next ${weeks.length} weeks.`;
 }
+function actualSummary(weeks: WWeek[], kind: Kind) {
+  const total = weeks.reduce((n, w) => n + w.minutes[kind], 0);
+  if (!total) return `Actual: no time logged in the last ${weeks.length} weeks.`;
+  const most = weeks.reduce((a, w) => (w.minutes[kind] > a.minutes[kind] ? w : a));
+  return `Actual: ${hrs(total)} logged in the last ${weeks.length} weeks, the most ${hrs(most.minutes[kind])} of ${hrs(most.capacity[kind])} in the week of ${short(most.start)}.`;
+}
 
 /** `/workload`: work and personal hours per week against capacity, what is unscheduled or not estimated, and per-week capacity overrides. */
 export function Workload() {
   const { tasks, projects, ready } = useStore();
   const { programs } = usePrograms();
   const { w: s, tz, save, known } = useWorkloadSettings();
+  const { entries } = useTimers();
   const [filter, setFilter] = useState('all');
   const [pick, setPick] = useState<{ kind: Kind; start: string } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -124,22 +141,26 @@ export function Workload() {
   const live = useMemo(() => projects.filter((p) => !p.deleted_at), [projects]);
   const ids = filter === 'all' ? undefined : filter.startsWith('g:') ? { project_ids: membersOf(filter.slice(2), live).map((p) => p.id) } : { project_ids: [filter.slice(2)] };
   const wl = useMemo(() => workload(tasks, s, today, tz, 12, ids), [tasks, s, today, tz, filter, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  // T9: the 4 weeks before this one, from logged time; a trashed project's own entries count nowhere.
+  const past = useMemo(() => actualWeeks(entries.filter((e) => !e.project_id || live.some((p) => p.id === e.project_id)), tasks, s, today, tz, 4, ids), [entries, tasks, s, today, tz, filter, live]); // eslint-disable-line react-hooks/exhaustive-deps
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
   const proj = useMemo(() => new Map(live.map((p) => [p.id, p])), [live]);
   if (!ready) return null;
 
   const segsOf = (kind: Kind): Seg[] => {
-    const seen = new Set(wl.weeks.flatMap((x) => x[kind].map((e) => e.project_id ?? '')));
+    const seen = new Set([...past, ...wl.weeks].flatMap((x) => x[kind].map((e) => e.project_id ?? '')));
     const list = [...seen].filter((k) => k && proj.has(k)).map((k) => { const p = proj.get(k) as Project; return { key: k, name: p.name, color: projectColor(p) }; });
     return [...list.sort((a, b) => a.name.localeCompare(b.name)), ...(seen.has('') || [...seen].some((k) => k && !proj.has(k)) ? [{ key: '', name: 'No project', color: 'var(--text-faint)' }] : [])];
   };
   const norm = (e: WEntry) => (e.project_id && proj.has(e.project_id) ? e : { ...e, project_id: null }); // a trashed project's task counts as "No project"
-  const weeksFor = (kind: Kind) => wl.weeks.map((x) => ({ ...x, [kind]: x[kind].map(norm) }));
+  const weeksFor = (kind: Kind) => [...past, ...wl.weeks].map((x) => ({ ...x, [kind]: x[kind].map(norm) }));
+  const isPast = (start: string) => start < weekStart(today);
+  const label = (start: string) => `${isPast(start) ? 'Actual · ' : ''}${short(start)}`;
   const title = (id: string) => byId.get(id)?.title ?? 'Task';
   const pname = (pid: string | null) => (pid && proj.get(pid)?.name) || 'No project';
   const taskLink = (id: string) => <a href={`/?task=${id}`} onClick={(e: MouseEvent) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setOpen(id); }}>{title(id)}</a>;
   const unschedMin = wl.unscheduled.reduce((n, e) => n + e.minutes, 0);
-  const chosen = pick && wl.weeks.find((x) => x.start === pick.start);
+  const chosen = pick && [...past, ...wl.weeks].find((x) => x.start === pick.start);
   const canWrite = known && online();
 
   return (
@@ -151,23 +172,23 @@ export function Workload() {
             {(programs ?? []).length > 0 && <optgroup label="Programs">{programs!.map((g) => <option key={g.id} value={`g:${g.id}`}>{g.name}</option>)}</optgroup>}
             {live.length > 0 && <optgroup label="Projects">{live.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.name}</option>)}</optgroup>}
           </select></label></div>
-      <p className="hint">Hours are split over each task's weekdays from its start (or today) to its due date. This week counts only the weekdays left. Tasks with no estimate count as {formatEstimate(s.default_estimate_minutes)}.</p>
+      <p className="hint">Hours are split over each task's weekdays from its start (or today) to its due date. This week counts only the weekdays left. Tasks with no estimate count as {formatEstimate(s.default_estimate_minutes)}. The 4 weeks before this one show the time you logged (Actual).</p>
       <div className="dash-grid">
         {(['work', 'personal'] as const).map((kind) => {
           const weeks = weeksFor(kind);
-          return <div key={kind} className="card dash-wide"><ChartFrame id={`wl-${kind}`} title={kind === 'work' ? 'Work' : 'Personal'} summary={summary(weeks, kind)}
-            table={{ head: ['Week of', 'Hours', 'Capacity', 'Over'], rows: weeks.map((x) => [x.start, hrs(x.minutes[kind]), hrs(x.capacity[kind]), x.over[kind] ? `+${hrs(x.over[kind])}` : '']) }}>
-            {(cw, by) => <StackedBars id={`wl-${kind}`} w={cw} weeks={weeks} kind={kind} segs={segsOf(kind)} describedBy={by} selected={pick?.kind === kind ? pick.start : null}
+          return <div key={kind} className="card dash-wide"><ChartFrame id={`wl-${kind}`} title={kind === 'work' ? 'Work' : 'Personal'} summary={`${summary(weeks.slice(past.length), kind)} ${actualSummary(weeks.slice(0, past.length), kind)}`}
+            table={{ head: ['Week of', 'Hours', 'Capacity', 'Over'], rows: weeks.map((x) => [isPast(x.start) ? `Actual ${x.start}` : x.start, hrs(x.minutes[kind]), hrs(x.capacity[kind]), x.over[kind] ? `+${hrs(x.over[kind])}` : '']) }}>
+            {(cw, by) => <StackedBars id={`wl-${kind}`} w={cw} weeks={weeks} past={past.length} kind={kind} segs={segsOf(kind)} describedBy={by} selected={pick?.kind === kind ? pick.start : null}
               onPick={(start) => setPick(pick?.kind === kind && pick.start === start ? null : { kind, start })} />}
           </ChartFrame>
             <label className="wl-pick">Week<select className="field" aria-label={`${kind === 'work' ? 'Work' : 'Personal'} week`} value={pick?.kind === kind ? pick.start : ''} onChange={(e) => setPick(e.target.value ? { kind, start: e.target.value } : null)}>
               <option value="">Choose a week to list its tasks</option>
-              {weeks.map((x) => <option key={x.start} value={x.start}>{short(x.start)}: {hrs(x.minutes[kind])} of {hrs(x.capacity[kind])}{x.over[kind] ? `, +${hrs(x.over[kind])} over` : ''}</option>)}
+              {weeks.map((x) => <option key={x.start} value={x.start}>{label(x.start)}: {hrs(x.minutes[kind])} of {hrs(x.capacity[kind])}{x.over[kind] ? `, +${hrs(x.over[kind])} over` : ''}</option>)}
             </select></label>
             {pick?.kind === kind && chosen && <section className="wl-week" aria-live="polite">
-              <h3>Week of {short(chosen.start)} · {hrs(chosen.minutes[kind])} of {hrs(chosen.capacity[kind])}</h3>
-              {chosen[kind].length === 0 ? <p className="hint">Nothing planned this week.</p> : <ul className="wl-list">
-                {[...chosen[kind]].sort((a, b) => b.minutes - a.minutes).map((e) => <li key={e.task_id}>{taskLink(e.task_id)}<span className="sub">{pname(e.project_id)}</span><span className="mono">{hrs(e.minutes)}</span>
+              <h3>{isPast(chosen.start) ? 'Actual: w' : 'W'}eek of {short(chosen.start)} · {hrs(chosen.minutes[kind])} of {hrs(chosen.capacity[kind])}</h3>
+              {chosen[kind].length === 0 ? <p className="hint">{isPast(chosen.start) ? 'No time logged this week.' : 'Nothing planned this week.'}</p> : <ul className="wl-list">
+                {[...chosen[kind]].sort((a, b) => b.minutes - a.minutes).map((e) => <li key={`${e.task_id}:${e.project_id}`}>{e.task_id ? taskLink(e.task_id) : <span>Time on the project</span>}<span className="sub">{pname(e.project_id)}</span><span className="mono">{hrs(e.minutes)}</span>
                   {!e.estimated && <span className="chip">not estimated</span>}{e.overdue && <span className="chip over">overdue</span>}</li>)}
               </ul>}
             </section>}

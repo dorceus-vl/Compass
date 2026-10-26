@@ -15,6 +15,7 @@ import { toast } from '../../ui/dialogs.tsx';
 import { accent, projectColor } from '../../ui/colors.ts';
 import { useDocs } from './Documents.tsx';
 import { useSettingsBits } from '../../settings-cache.ts';
+import { useTimers } from '../../ui/TimerButton.tsx';
 
 type Preset = 'week' | 'two' | 'month' | 'custom';
 const PRESETS: [Preset, string][] = [['week', 'This week'], ['two', 'Last 2 weeks'], ['month', 'This month'], ['custom', 'Custom']];
@@ -51,6 +52,7 @@ export function Report({ project }: { project: Project }) {
   const [changeId, setChangeId] = useState('');
   const [fillErr, setFillErr] = useState<{ id: string; msg: string } | null>(null);
   const { docs, offline: docsOffline } = useDocs(null);
+  const { entries, now } = useTimers();
   const range = rangeOf(preset, today, custom);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(range.from) && /^\d{4}-\d{2}-\d{2}$/.test(range.to) && range.from <= range.to;
   const key = `${range.from}|${range.to}`;
@@ -82,10 +84,10 @@ export function Report({ project }: { project: Project }) {
 
   const model = useMemo<ReportModel | null>(() => {
     if (!input || !valid) return null;
-    const m = buildReportModel(input.input, range, today, new Date().toISOString(), tz);
+    const m = buildReportModel({ ...input.input, time: entries }, range, today, new Date(now).toISOString(), tz); // time from the mirror (T10), so it is fresh offline too
     if (summary?.key === key && summary.text) m.ai.summary = summary.text;
     return m;
-  }, [input, valid, key, today, tz, summary]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input, valid, key, today, tz, summary, entries, now]); // eslint-disable-line react-hooks/exhaustive-deps
   const statusMake = BUILTINS.find((b) => b.id === 'status_report')!;
   const doc = model ? statusMake.make(model) : null;
 

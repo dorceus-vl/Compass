@@ -34,7 +34,8 @@ export function TimeSection({ task, tasks }: { task: Task; tasks: Task[] }) {
   );
 }
 
-function EntryRow({ e, tz }: { e: TimeEntry; tz: string }) {
+/** One entry, edited in place; the Time screen reuses it with a title line (the task or project it belongs to). */
+export function EntryRow({ e, tz, title }: { e: TimeEntry; tz: string; title?: string }) {
   // A bad value goes back to what was saved; the server has the last word (400 bad_time is toasted by the queue).
   const setTime = (key: 'started_at' | 'ended_at', input: HTMLInputElement) => {
     const was = e[key]!, iso = zonedToIso(input.value, tz);
@@ -49,6 +50,7 @@ function EntryRow({ e, tz }: { e: TimeEntry; tz: string }) {
   };
   return (
     <li className="tent">
+      {title && <b className="ttitle">{title}</b>}
       <label className="qf">Start<input className="field" type="datetime-local" key={e.started_at + tz} defaultValue={isoToZoned(e.started_at, tz)} onBlur={(x) => setTime('started_at', x.currentTarget)} /></label>
       {e.ended_at
         ? <label className="qf">End<input className="field" type="datetime-local" key={e.ended_at + tz} defaultValue={isoToZoned(e.ended_at, tz)} onBlur={(x) => setTime('ended_at', x.currentTarget)} /></label>

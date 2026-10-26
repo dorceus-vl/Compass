@@ -161,6 +161,8 @@ export interface ReportInput {
   meetings: { id: string; title: string; received_at: string; summary: string | null }[];
   /** v2.2: the project's latest live baseline, opened (name and snapshot); null or absent when there is none. Tasks include subtasks, so slip can compare them. */
   baseline?: { name: string; taken_at: string; snapshot: Snapshot } | null;
+  /** v2.5 (T10): the project's time entries (task entries of its tasks and its own), never the note; absent means no time section. */
+  time?: Pick<TimeEntry, 'task_id' | 'project_id' | 'started_at' | 'ended_at' | 'deleted_at'>[];
 }
 /** table: "A | B" lines with a header line; list: "• …" lines; both '' when empty. */
 export interface Section<R> { rows: R[]; count: number; table: string; list: string }
@@ -185,6 +187,8 @@ export interface ReportModel {
   };
   /** v2.2 (C5): numbers only, as of `as_of` (today, not the report period). `line` is the one-sentence form used in the report; the numbers are what Athena's summary request carries. */
   metrics: DashboardMetrics & { as_of: string; line: string };
+  /** v2.5 (T10): logged in the period (local days in tz), and the period's done top-level tasks that have an estimate: their logged total (all time) against it. Null when no entries were passed. */
+  time: { logged_minutes: number; done_logged_minutes: number; done_estimated_minutes: number; line: string } | null;
   ai: { summary: string };
 }
 
