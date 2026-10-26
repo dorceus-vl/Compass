@@ -9,7 +9,7 @@ import { useStore } from '../store/useStore.ts';
 import { TaskList, useFinished } from '../ui/TaskCard.tsx';
 import { arrange } from '../query.ts';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
-import { today, startOfWeek, daysUntil } from '../dates.ts';
+import { today, startOfWeek, daysUntil, todayIn } from '../dates.ts';
 import { Link } from '../router.ts';
 import { AddedStrip } from '../ui/AddedStrip.tsx';
 import { Hero, greetingFor } from '../ui/Hero.tsx';
@@ -18,11 +18,15 @@ import { HorizonRing } from '../ui/HorizonRing.tsx';
 import { MilestonePath } from '../ui/MilestonePath.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { blockedIds } from '../../../shared/deps.ts';
+import { goalProgress, expected } from '../../../shared/goals.ts';
+import { useSettingsBits } from '../settings-cache.ts';
+import { GoalBar } from '../ui/GoalBits.tsx';
 
 const FEED_LIMIT = 12;
 
 export function Today() {
-  const { tasks, milestones, projects, ready } = useStore();
+  const { tasks, milestones, projects, goals, krs, goalLinks, ready } = useStore();
+  const { tz } = useSettingsBits();
   const [open, setOpen] = useState<string | null>(null);
   const [kind, setKind] = useState<'all' | 'personal' | 'work'>('all');
   const [hz, setHz] = useState<Horizon>('short');
@@ -56,6 +60,9 @@ export function Today() {
   const byHz = Object.fromEntries(HORIZONS.map((h) => [h, openTasks.filter((x) => x.horizon === h)])) as Record<Horizon, Task[]>;
   const counts = Object.fromEntries(HORIZONS.map((h) => [h, byHz[h].length])) as Record<Horizon, number>;
   const feed = arrange(byDue.filter((x) => x.horizon === hz), finished, FEED_LIMIT);
+  // v2.6: the long horizon also shows the live, active goals whose period includes today (G10 local date)
+  const gt = todayIn(tz);
+  const nowGoals = hz === 'long' ? goals.filter((g) => g.status === 'active' && g.starts_on <= gt && g.ends_on >= gt).sort((a, b) => a.sort - b.sort || a.created_at.localeCompare(b.created_at)) : [];
   const doneWeek = live.filter((x) => x.status === 'done' && x.done_at && x.done_at >= startOfWeek(t)).length;
 
   // Milestones of live projects, open and dated, soonest first. The line shows the project of the nearest one still ahead
@@ -112,6 +119,9 @@ export function Today() {
       )}
       <section aria-labelledby="feed-h">
         <SectionHead id="feed-h" eyebrow={`${cap(hz)} horizon`} title={HORIZON_LABEL[hz]}><span className="note">{feed.open} open · swipe right to finish</span></SectionHead>
+        {nowGoals.length > 0 && <ul className="gl-list" aria-label="Goals this period">{nowGoals.map((g) => (
+          <li key={g.id} className="gl-row"><Link to={`/goals/${g.id}`} className="gl-title">{g.title}</Link>
+            <GoalBar progress={goalProgress(g, krs, { links: goalLinks, tasks })} exp={expected(g, gt)} label={`${g.title} progress`} /></li>))}</ul>}
         {feed.shown.length === 0 && <p className="hint">Nothing here. ⌘K or + to add.</p>}
         <TaskList tasks={feed.shown} projects={projects} onOpen={setOpen} onFinish={onFinish} />
         {feed.open > FEED_LIMIT && <Link to="/list" className="chip more">+{feed.open - FEED_LIMIT} more in List</Link>}

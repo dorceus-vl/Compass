@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import type { Settings, Task } from '../../../shared/types.ts';
+import type { KeyResult, Settings, Task } from '../../../shared/types.ts';
 import { api } from '../api.ts';
-import { today, addDays, startOfWeek, fmtDue, daysSince } from '../dates.ts';
+import { today, addDays, startOfWeek, fmtDue, daysSince, todayIn } from '../dates.ts';
 import { useStore, updateTask, completeTask, trashTask } from '../store/useStore.ts';
 import { TaskSheet } from '../ui/TaskSheet.tsx';
 import { toast, confirmAction } from '../ui/dialogs.tsx';
@@ -9,11 +9,16 @@ import { InboxView } from './Inbox.tsx';
 import { confetti } from '../motion.ts';
 import { taskColor, projectColor, accent } from '../ui/colors.ts';
 import { appLabel } from '../ui/sources.ts';
+import { staleKrs, confidence } from '../../../shared/goals.ts';
+import { useSettingsBits } from '../settings-cache.ts';
+import { CheckInDialog } from '../ui/GoalBits.tsx';
 
-const STEPS = ['Inbox to zero', 'Overdue', 'The next 7 days', 'Horizons', 'Waiting on'];
+const STEPS = ['Inbox to zero', 'Overdue', 'The next 7 days', 'Horizons', 'Goals', 'Waiting on'];
 
 export function ReviewView() {
-  const { tasks, projects, ready } = useStore();
+  const { tasks, projects, goals, krs, checkins, ready } = useStore();
+  const { tz } = useSettingsBits();
+  const [ci, setCi] = useState<KeyResult | null>(null);
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -60,6 +65,13 @@ export function ReviewView() {
     body = list(live.filter((x) => x.due_at && x.due_at >= t && x.due_at <= end).sort(byDue), 'Nothing due in the next 7 days.', (x) => row(x, []));
   } else if (step === 3) {
     body = list(live.filter((x) => x.horizon !== 'short'), 'No medium or long tasks.', (x) => row(x, [['Move to this week', () => updateTask(x.id, { horizon: 'short' })]], x.horizon));
+  } else if (step === 4) {
+    const stale = staleKrs(goals, krs, checkins, todayIn(tz), tz, 7);
+    body = stale.length ? <div className="mlist">{stale.map((k) => (
+      <div className="acard rv-row" key={k.id}>
+        <span className="tt">{goals.find((g) => g.id === k.goal_id)?.title} · {k.title}</span>
+        <div className="act"><button type="button" onClick={() => setCi(k)}>Check in</button></div>
+      </div>))}</div> : <div className="card"><p style={{ margin: 0 }}>Every key result has a check-in this week.</p></div>;
   } else {
     body = list(live.filter((x) => x.status === 'waiting'), 'Nothing waiting on anyone.', (x) => {
       const d = x.waiting_since ? daysSince(x.waiting_since) : null;
@@ -84,6 +96,7 @@ export function ReviewView() {
         </>
       )}
       {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
+      {ci && <CheckInDialog kr={ci} last={confidence(ci.id, checkins)} onClose={() => setCi(null)} />}
     </>
   );
 }
