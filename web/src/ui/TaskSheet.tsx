@@ -12,6 +12,7 @@ import { Checklist } from './Checklist.tsx';
 import { SaveAsTemplate } from './Templates.tsx';
 import { TimerButton } from './TimerButton.tsx';
 import { TimeSection } from './TimeSection.tsx';
+import { SupportsGoal } from './GoalBits.tsx';
 import { parseEstimate, formatEstimate } from '../../../shared/workload.ts';
 
 const RECUR = [['', 'Never'], ['{"freq":"daily","interval":1}', 'Every day'], ['{"freq":"weekly","interval":1}', 'Every week'],
@@ -169,6 +170,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
       </section>
       <Checklist task={task} />
       <TimeSection task={task} tasks={tasks} />
+      <SupportsGoal task={task} onGo={() => ref.current?.close()} />
       {field('Notes', <textarea ref={notesRef} className="field" rows={5} defaultValue={v.notes ?? ''} onBlur={(e) => save({ notes: e.target.value || null })} />)}
       {v.source_url && <p style={{ fontSize: 13 }}>From <b>{v.source_app}</b>: <a href={v.source_url} target="_blank" rel="noopener">open in {v.source_app} ↗</a></p>}
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 14 }}>

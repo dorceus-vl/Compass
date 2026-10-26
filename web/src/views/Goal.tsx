@@ -8,7 +8,8 @@ import { todayIn } from '../dates.ts';
 import { Link, navigate } from '../router.ts';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { confirmAction, toast } from '../ui/dialogs.tsx';
-import { GoalBar, ConfDot, TrendLine, CheckInDialog, NewKrDialog, CONF_LABEL } from '../ui/GoalBits.tsx';
+import { GoalBar, ConfDot, TrendLine, CheckInDialog, NewKrDialog, KrLinks, CONF_LABEL } from '../ui/GoalBits.tsx';
+import { TaskSheet } from '../ui/TaskSheet.tsx';
 
 // `/goals/:id` (v2.6 Task 3): the goal edited in place, its key results with bars, check-ins and trend lines, Close and Trash.
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
@@ -17,7 +18,9 @@ const fmt = (kr: KeyResult, v: number | null) =>
   v === null ? '–' : kr.type === 'done' ? (v ? 'Done' : 'Not done') : kr.type === 'percent' ? `${v}%` : `${v}${kr.unit ? ` ${kr.unit}` : ''}`;
 
 export function GoalPage({ id }: { id: string }) {
-  const { goals, krs, goalLinks, tasks, checkins, ready } = useStore();
+  const store = useStore();
+  const { goals, krs, goalLinks, tasks, checkins, ready } = store;
+  const [open, setOpen] = useState<string | null>(null); // a linked task's sheet
   const { tz } = useSettingsBits();
   const today = todayIn(tz);
   const g = goals.find((x) => x.id === id);
@@ -78,8 +81,7 @@ export function GoalPage({ id }: { id: string }) {
               </div>
               <GoalBar progress={krProgress(k, ctx)} exp={exp} label={`${k.title} progress`} />
               {k.type !== 'tasks' && <p className="sub">Now {fmt(k, k.current_value)}{k.type === 'number' ? ` · from ${fmt(k, k.start_value)} to ${fmt(k, k.target_value)}` : ''}</p>}
-              {/* Task 4: linked tasks and projects for this key result go here. */}
-              {k.type === 'tasks' && <p className="hint">No linked tasks yet.</p>}
+              <KrLinks kr={k} goal={g} store={store} onOpenTask={setOpen} />
               <TrendLine points={trend(k.id, checkins)} label={`${k.title} trend`} />
               <div className="row">
                 <button type="button" className="btn primary" onClick={() => setDlg({ kind: 'ci', kr: k })}>Check in</button>
@@ -110,6 +112,7 @@ export function GoalPage({ id }: { id: string }) {
       </section>
 
       {dlg?.kind === 'kr' && <NewKrDialog goalId={g.id} onClose={() => setDlg(null)} />}
+      {open && <TaskSheet key={open} taskId={open} onClose={() => setOpen(null)} />}
       {dlg?.kind === 'ci' && <CheckInDialog kr={dlg.kr} last={confidence(dlg.kr.id, checkins)} onClose={() => setDlg(null)} />}
     </div>
   );

@@ -23,6 +23,7 @@ import { fmtDue, today } from '../dates.ts';
 import { MilestonePath } from '../ui/MilestonePath.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { RagPill, Ring } from '../ui/ProjectCard.tsx';
+import { SupportsGoal } from '../ui/GoalBits.tsx';
 import { useSlider } from '../ui/Shell.tsx';
 import { projectColor, PROJECT_SWATCHES } from '../ui/colors.ts';
 import { SaveAsTemplate } from '../ui/Templates.tsx';
@@ -123,6 +124,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
         </div>
       </header>
       {logTime && <LogTimeDialog project={p} onClose={() => setLogTime(false)} />}
+      <SupportsGoal project={p} />
       <nav className="tabs no-print" role="tablist" aria-label="Project sections" ref={nav}>
         <span className="slide" ref={pill} aria-hidden="true" />
         {TABS.map((t) => <Link key={t} to={`/projects/${p.id}${t === 'overview' ? '' : `/${t}`}`} role="tab" aria-selected={current === t}>{TAB_LABEL[t]}</Link>)}

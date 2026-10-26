@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import type { Confidence, KeyResult, Kind, KrType } from '../../../shared/types.ts';
+import type { Confidence, Goal, KeyResult, Kind, KrType, Project, Task } from '../../../shared/types.ts';
 import { currentQuarter, quarterRange, isBehind, MAX_NOTE, MAX_TITLE } from '../../../shared/goals.ts';
-import { addGoal, addKr, checkIn } from '../store/useStore.ts';
-import { navigate } from '../router.ts';
+import { addGoal, addKr, checkIn, linkKr, unlink, useStore } from '../store/useStore.ts';
+import { navigate, Link } from '../router.ts';
 import { toast } from './dialogs.tsx';
 
 // v2.6 goals: the bar, the confidence dot, the trend line and the three dialogs (create goal, add key result, check in).
@@ -155,6 +155,113 @@ export function NewKrDialog({ goalId, onClose }: { goalId: string; onClose: () =
         </div>}
         <Actions close={close} busy={busy} label="Add" />
       </form>
+    </dialog>
+  );
+}
+
+// v2.6 Task 4: links between key results and tasks or projects.
+type Store = ReturnType<typeof useStore>;
+
+/** Under a key result on the goal page: its live links with Unlink, and the two link dialogs. */
+export function KrLinks({ kr, goal, store, onOpenTask }: { kr: KeyResult; goal: Goal; store: Store; onOpenTask: (id: string) => void }) {
+  const [dlg, setDlg] = useState<'tasks' | 'project' | null>(null);
+  const mine = store.goalLinks.filter((l) => l.kr_id === kr.id);
+  const rows = mine.map((l) => ({ l, t: store.tasks.find((x) => x.id === l.task_id), p: store.projects.find((x) => x.id === l.project_id) })).filter((r) => r.t || r.p);
+  return (
+    <div className="gl-sup">
+      {rows.length > 0 ? <ul className="gl-links">{rows.map((r) => (
+        <li key={r.l.id}>
+          {r.t ? <button type="button" className="gl-link" onClick={() => onOpenTask(r.t!.id)}>{r.t.title}{r.t.status === 'done' ? ' (done)' : ''}</button>
+            : <Link to={`/projects/${r.p!.id}`} className="gl-link">Project: {r.p!.name}</Link>}
+          <button type="button" className="btn" aria-label={`Unlink ${r.t?.title ?? r.p!.name}`} onClick={() => void unlink(r.l.id)}>Unlink</button>
+        </li>))}</ul>
+        : kr.type === 'tasks' && <p className="hint">No linked tasks yet.</p>}
+      <div className="row">
+        <button type="button" className="btn" onClick={() => setDlg('tasks')}>Link tasks</button>
+        <button type="button" className="btn" onClick={() => setDlg('project')}>Link a project</button>
+      </div>
+      {dlg === 'tasks' && <LinkTasksDialog kr={kr} tasks={store.tasks.filter((t) => t.kind === goal.kind && t.status !== 'done' && !mine.some((l) => l.task_id === t.id))} onClose={() => setDlg(null)} />}
+      {dlg === 'project' && <LinkProjectDialog kr={kr} projects={store.projects.filter((p) => p.kind === goal.kind && !mine.some((l) => l.project_id === p.id))} onClose={() => setDlg(null)} />}
+    </div>
+  );
+}
+
+function LinkTasksDialog({ kr, tasks, onClose }: { kr: KeyResult; tasks: Task[]; onClose: () => void }) {
+  const ref = useModal();
+  const [q, setQ] = useState(''), [picked, setPicked] = useState<Set<string>>(new Set());
+  const hits = tasks.filter((t) => t.title.toLowerCase().includes(q.trim().toLowerCase()));
+  const shown = hits.slice(0, 100); // ponytail: first 100 matches, search narrows the rest
+  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; });
+  const submit = async (e: FormEvent) => { e.preventDefault(); for (const id of picked) await linkKr(kr.id, { task_id: id }); ref.current?.close(); };
+  return (
+    <dialog ref={ref} onClose={onClose} aria-labelledby="lt-h" className="gl-dlg">
+      <form onSubmit={submit} className="gl-form"><b id="lt-h">Link tasks to {kr.title}</b>
+        <input className="field" type="search" placeholder="Search tasks" aria-label="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        {shown.length ? <div className="gl-pick" role="group" aria-label="Tasks">{shown.map((t) => (
+          <label key={t.id} className="tap"><input type="checkbox" checked={picked.has(t.id)} onChange={() => toggle(t.id)} /> {t.title}</label>))}</div>
+          : <p className="hint">No open {tasks[0]?.kind ?? ''} task to link{q.trim() ? ' matches' : ''}.</p>}
+        {hits.length > shown.length && <p className="sub">Showing {shown.length} of {hits.length}; search to narrow.</p>}
+        <div className="row gl-acts"><button type="button" className="btn" onClick={() => ref.current?.close()}>Cancel</button>
+          <button className="btn primary" disabled={!picked.size}>Link {picked.size || ''}</button></div>
+      </form>
+    </dialog>
+  );
+}
+
+function LinkProjectDialog({ kr, projects, onClose }: { kr: KeyResult; projects: Project[]; onClose: () => void }) {
+  const ref = useModal();
+  const pick = async (id: string) => { await linkKr(kr.id, { project_id: id }); ref.current?.close(); };
+  return (
+    <dialog ref={ref} onClose={onClose} aria-labelledby="lp-h" className="gl-dlg">
+      <div className="gl-form"><b id="lp-h">Link a project to {kr.title}</b>
+        {projects.length ? <div className="gl-pick">{projects.map((p) => <button key={p.id} type="button" className="btn" onClick={() => void pick(p.id)}>{p.name}</button>)}</div>
+          : <p className="hint">No project of this goal's kind left to link.</p>}
+        <div className="row gl-acts"><button type="button" className="btn" onClick={() => ref.current?.close()}>Cancel</button></div>
+      </div>
+    </dialog>
+  );
+}
+
+/** Task sheet and project page: the key results this task or project supports (G2: only live key results of live goals). */
+export function SupportsGoal({ task, project, onGo }: { task?: Task; project?: Project; onGo?: () => void }) {
+  const { goals, krs, goalLinks } = useStore();
+  const [picking, setPicking] = useState(false);
+  const kind = (task ?? project)!.kind;
+  const krOf = (id: string) => { const k = krs.find((x) => x.id === id), g = k && goals.find((x) => x.id === k.goal_id); return k && g ? { k, g } : null; };
+  const direct = goalLinks.filter((l) => (task ? l.task_id === task.id : l.project_id === project!.id));
+  const viaProject = task?.project_id ? goalLinks.filter((l) => l.project_id === task.project_id && !direct.some((d) => d.kr_id === l.kr_id)) : [];
+  const rows = [...direct.map((l) => ({ l, via: false })), ...viaProject.map((l) => ({ l, via: true }))]
+    .flatMap((r) => { const m = krOf(r.l.kr_id); return m ? [{ ...r, ...m }] : []; })
+    .filter((r, i, a) => a.findIndex((x) => x.k.id === r.k.id) === i); // a project linked twice to one KR shows once
+  const choices = goals.filter((g) => g.status === 'active' && g.kind === kind)
+    .map((g) => ({ g, ks: krs.filter((k) => k.goal_id === g.id && !direct.some((l) => l.kr_id === k.id)).sort((a, b) => a.sort - b.sort) }))
+    .filter((x) => x.ks.length);
+  const pick = async (krId: string) => { await linkKr(krId, task ? { task_id: task.id } : { project_id: project!.id }); setPicking(false); };
+  return (
+    <section className="tsec gl-sup" aria-label="Supports a goal">
+      <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Supports a goal</span>
+      {rows.length > 0 && <ul className="gl-links">{rows.map((r) => (
+        <li key={r.l.id}>
+          <Link to={`/goals/${r.g.id}`} className="gl-link" onClick={() => onGo?.()}>{r.g.title} · {r.k.title}</Link>
+          {r.via ? <span className="sub">via project</span> : <button type="button" className="btn" aria-label={`Unlink ${r.k.title}`} onClick={() => void unlink(r.l.id)}>Unlink</button>}
+        </li>))}</ul>}
+      <div className="row"><button type="button" className="btn" onClick={() => setPicking(true)}>Link to a key result</button></div>
+      {picking && <PickKrDialog choices={choices} onPick={pick} onClose={() => setPicking(false)} />}
+    </section>
+  );
+}
+
+function PickKrDialog({ choices, onPick, onClose }: { choices: { g: Goal; ks: KeyResult[] }[]; onPick: (krId: string) => Promise<void>; onClose: () => void }) {
+  const ref = useModal();
+  return (
+    <dialog ref={ref} onClose={onClose} aria-labelledby="pk-h" className="gl-dlg">
+      <div className="gl-form"><b id="pk-h">Link to a key result</b>
+        {choices.length ? choices.map(({ g, ks }) => (
+          <div key={g.id} className="gl-pick" role="group" aria-label={g.title}><span className="sub">{g.title}</span>
+            {ks.map((k) => <button key={k.id} type="button" className="btn" onClick={() => void onPick(k.id)}>{k.title}</button>)}</div>))
+          : <p className="hint">No active goal of this kind has a key result left to link.</p>}
+        <div className="row gl-acts"><button type="button" className="btn" onClick={() => ref.current?.close()}>Cancel</button></div>
+      </div>
     </dialog>
   );
 }
