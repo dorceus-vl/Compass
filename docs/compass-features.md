@@ -109,7 +109,7 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Baselines: save schedule and compare (slip per task, per milestone) | MS Project | v2 (done, v2.2: several named baselines per project, slip view, ghost bars on the Timeline, "Schedule vs baseline" in the status report) |
 | Earned value: PV, EV, AC, SPI, CPI from estimates and % complete | PMBOK | later |
 | Sprints / cycles for Agile projects, velocity, burndown | Jira, Linear | v2 |
-| OKRs / goals: personal and work objectives with key results, tasks linked to them, the long horizon shows them | Asana goals | v2 |
+| OKRs / goals: personal and work objectives with key results, tasks linked to them, the long horizon shows them | Asana goals | v2 (done, v2.6: goals by quarter with number, percent, done and tasks key results, check-ins with confidence and a trend line, tasks and projects linked, Today's long horizon and a Weekly Review step) |
 | Budget tracking by project with lines from Finance where relevant (Knocturn Labs costs) | | v2.4 done for planned, spent and forecast per project and per program, by currency; Finance lines later |
 
 ## 6. Meetings

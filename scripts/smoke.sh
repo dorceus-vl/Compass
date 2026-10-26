@@ -2029,6 +2029,38 @@ D1X "SELECT count(*) AS n FROM audit_log WHERE action LIKE 'goal.%' AND detail L
 D1X "DELETE FROM goal_checkins WHERE created_at >= '$T0'; DELETE FROM goal_links WHERE created_at >= '$T0'; DELETE FROM key_results WHERE created_at >= '$T0'; DELETE FROM goals WHERE created_at >= '$T0'" >/dev/null
 curl "${H[@]}" -X DELETE $B/api/tasks/$KTP >/dev/null
 echo "smoke: (k0) goals: create 201, end before start 400, number kr start = target 400, eleventh kr 409 kr_limit, other kind 409 goal_kind, duplicate link 409 link_exists, check-in without value 400 and with one moves current_value, work text ciphertext (personal plain), stale edit 409 goal_conflict, since returns a trashed goal, Trash lists and restores it with its key results, a kr restore past the cap 409, Empty Trash purges a linked task's links and a goal's children, export opens the four tables"
+# (k1) v2.6 Task 6: a tasks key result linked to a project with two tasks and directly to one of them; one task done through the API. The device counts progress
+# (scripts/goals.test.ts); here the server side: both links listed, the done task's status, trashing the project hides no link, and a purge 31 days on removes the project link only.
+TB="{\"kind\":\"personal\",\"title\":\"Smoke k1 goal $R\",\"starts_on\":\"2026-10-01\",\"ends_on\":\"2026-12-31\"}"; X=$(kp goals "$TB"); [ "$(kst "$X")" = 201 ] || fail "k1: create a goal: $X"; K1G=$(kbody "$X" | js d.goal.id)
+X=$(kp goals/$K1G/krs '{"title":"Smoke k1 tasks","type":"tasks"}'); [ "$(kst "$X")" = 201 ] || fail "k1: a tasks key result: $X"; K1K=$(kbody "$X" | js d.kr.id)
+K1P=$(curl "${H[@]}" -X POST $B/api/projects -d '{"name":"Smoke k1 project","kind":"personal"}' | js d.project.id)
+TB="{\"title\":\"Smoke k1 a $R\",\"kind\":\"personal\",\"project_id\":\"$K1P\"}"; K1T1=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+TB="{\"title\":\"Smoke k1 b $R\",\"kind\":\"personal\",\"project_id\":\"$K1P\"}"; K1T2=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+X=$(kp goals/krs/$K1K/links "{\"project_id\":\"$K1P\"}"); [ "$(kst "$X")" = 201 ] || fail "k1: link the project: $X"; K1LP=$(kbody "$X" | js d.link.id)
+X=$(kp goals/krs/$K1K/links "{\"task_id\":\"$K1T1\"}"); [ "$(kst "$X")" = 201 ] || fail "k1: link a task: $X"; K1LT=$(kbody "$X" | js d.link.id)
+curl "${H[@]}" -X POST $B/api/tasks/$K1T1/done | grep -q '"status":"done"' || fail "k1: mark a task done"
+curl "${H[@]}" $B/api/goals | js "d.links.some(l=>l.id==='$K1LP'&&l.project_id==='$K1P')&&d.links.some(l=>l.id==='$K1LT'&&l.task_id==='$K1T1')" | grep -qx true || fail "k1: the list misses a link"
+curl "${H[@]}" "$B/api/tasks?status=all" | js "d.tasks.find(t=>t.id==='$K1T1').status==='done'&&d.tasks.find(t=>t.id==='$K1T2').status!=='done'" | grep -qx true || fail "k1: the tasks' statuses"
+curl "${H[@]}" -X DELETE $B/api/projects/$K1P >/dev/null
+curl "${H[@]}" $B/api/goals | js "d.links.filter(l=>l.kr_id==='$K1K').length" | grep -qx 2 || fail "k1: trashing the project hid a link server-side"
+D31=$(node -pe 'new Date(Date.now()-31*864e5).toISOString()'); D1X "UPDATE projects SET deleted_at = '$D31' WHERE id='$K1P'" >/dev/null
+X=$(curl "${H[@]}" -w '\n%{http_code}' -X POST $B/api/trash/empty); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.purged.goal_links)" -ge 1 ] || fail "k1: Empty Trash with a linked project: $X"
+[ "$(D1X "SELECT (SELECT count(*) FROM goal_links WHERE id='$K1LP')||'|'||(SELECT count(*) FROM goal_links WHERE id='$K1LT') AS n" | js 'd[0].results[0].n')" = '0|1' ] || fail "k1: the purge did not remove only the project link"
+# clean up (local D1 only)
+D1X "DELETE FROM goal_links WHERE kr_id='$K1K'; DELETE FROM key_results WHERE id='$K1K'; DELETE FROM goals WHERE id='$K1G'" >/dev/null
+for x in $K1T1 $K1T2; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+echo "smoke: (k1) tasks key result: project and task links listed, a task done through the API, trashing the project hides no link server-side, Empty Trash 31 days on purges the project link and keeps the task link"
+# (k2) v2.6 Task 6: the Weekly Review's stale list reads check-in times; a check-in backdated 8 days and one now both come back with their `at` (the stale rule is unit-tested in scripts/goals.test.ts).
+TB="{\"kind\":\"personal\",\"title\":\"Smoke k2 goal $R\",\"starts_on\":\"2026-10-01\",\"ends_on\":\"2026-12-31\"}"; X=$(kp goals "$TB"); [ "$(kst "$X")" = 201 ] || fail "k2: create a goal: $X"; K2G=$(kbody "$X" | js d.goal.id)
+X=$(kp goals/$K2G/krs '{"title":"Smoke k2 old","type":"percent"}'); K2A=$(kbody "$X" | js d.kr.id)
+X=$(kp goals/$K2G/krs '{"title":"Smoke k2 new","type":"percent"}'); K2N=$(kbody "$X" | js d.kr.id)
+X=$(kp goals/krs/$K2A/checkins '{"confidence":"at_risk","value":10}'); [ "$(kst "$X")" = 201 ] || fail "k2: check in: $X"; K2CA=$(kbody "$X" | js d.checkin.id)
+X=$(kp goals/krs/$K2N/checkins '{"confidence":"on_track","value":40}'); [ "$(kst "$X")" = 201 ] || fail "k2: check in now: $X"; K2CN=$(kbody "$X" | js d.checkin.id); K2AT=$(kbody "$X" | js d.checkin.at)
+D8=$(node -pe 'new Date(Date.now()-8*864e5).toISOString()'); D1X "UPDATE goal_checkins SET at = '$D8' WHERE id='$K2CA'" >/dev/null
+curl "${H[@]}" $B/api/goals | js "d.checkins.some(c=>c.id==='$K2CA'&&c.at==='$D8')&&d.checkins.some(c=>c.id==='$K2CN'&&c.at==='$K2AT')" | grep -qx true || fail "k2: the list misses a check-in or its time"
+# clean up (local D1 only)
+D1X "DELETE FROM goal_checkins WHERE kr_id IN ('$K2A','$K2N'); DELETE FROM key_results WHERE goal_id='$K2G'; DELETE FROM goals WHERE id='$K2G'" >/dev/null
+echo "smoke: (k2) check-ins: one backdated 8 days and one now both come back from GET /api/goals with their times"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT
