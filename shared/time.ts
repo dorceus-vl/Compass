@@ -14,6 +14,14 @@ export function clampTs(iso: string, nowMs: number): string {
   return new Date(Number.isNaN(t) ? nowMs : Math.min(Math.max(t, FLOOR_MS), nowMs + FUTURE_SLACK_MS)).toISOString();
 }
 
+/** T4: where a stop lands: `endedAt` clamped (none or unparseable: now), never before the start, at most 24 h after it. The server's stop and the device's
+ *  optimistic one (a widget stop drained later keeps its tap time) give the same answer. */
+export function stopAt(startedAt: string, endedAt: unknown, nowMs: number): string {
+  const start = Date.parse(startedAt);
+  const end = Date.parse(clampTs(typeof endedAt === 'string' ? endedAt : '', nowMs));
+  return new Date(Math.min(Math.max(end, start), start + MAX_ENTRY_MINUTES * 60_000)).toISOString();
+}
+
 // Task 1: what the timer, the bar and the task sheet show.
 type Span = { started_at: string; ended_at: string | null };
 /** Whole minutes (floor) of an entry; a running one counts up to `nowMs`; never negative. */

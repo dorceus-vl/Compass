@@ -76,7 +76,7 @@ widget.post('/tasks/:id/done', async (c) => {
   return c.json({ ok: true });
 });
 
-// T8: start or stop the task's timer. `at` is when the widget was tapped (clamped like any time; a start is never in the future). The start and stop rules are
+// T8: start or stop the task's timer (a stop also on a done task). `at` is when the widget was tapped (clamped like any time; a start is never in the future). The start and stop rules are
 // POST /api/time's own (createEntry, stopEntry): 409 timer_running / timer_limit come back as they are, audited as refused. Stop with none running is 200, stopped false.
 widget.post('/tasks/:id/timer', async (c) => {
   const auth = await widgetToken(c);
@@ -90,7 +90,8 @@ widget.post('/tasks/:id/timer', async (c) => {
   };
   if (!action) return refuse(400, 'bad_action', { error: 'bad_action', message: 'action is start or stop' });
   const task = await loadTask(env, id);
-  if (!task || task.status === 'done') return refuse(404, 'not_found', { error: 'Not found' });
+  // A start needs a live, open task; a stop only a live one (a timer left running on a task completed meanwhile can still be stopped).
+  if (!task || (action === 'start' && task.status === 'done')) return refuse(404, 'not_found', { error: 'Not found' });
   if (action === 'start') {
     const r = await createEntry(env, { task_id: id, started_at: at }, 'widget');
     if (r.status !== 201) return refuse(r.status === 409 ? 409 : 400, String(r.body.error), r.body);

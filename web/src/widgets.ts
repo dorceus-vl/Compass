@@ -61,17 +61,18 @@ export async function writeWidgets(): Promise<void> {
 
 /** What a widget couldn't deliver (offline, revoked, over the limit, a task the server didn't know yet) goes through the normal offline queue, which knows unsynced ids;
  *  a task already done, or truly gone from the device, is dropped here. In order: a done tick completes the task; a timer `start` starts one (a second timer on the task
- *  or the five-timer limit is the server's 409, which the queue drops quietly); a `stop` stops the task's running timer if there is one. */
+ *  or the five-timer limit is the server's 409, which the queue drops quietly); a `stop` stops the task's running timer if there is one, even on a done task.
+ *  Timer actions keep the tap time (`at`), which the server clamps. */
 async function sendTicks(): Promise<void> {
   for (const t of await takeWidgetTicks()) {
     const id = await resolveId('tasks', t.id).catch(() => t.id);
     const cur = await idb.get<Task>('tasks', id).catch(() => undefined);
-    if (!cur || cur.status === 'done') continue;
+    if (!cur || cur.deleted_at || (cur.status === 'done' && t.action !== 'stop')) continue; // a stop still lands on a done task's timer
     if (!t.action) await completeTask(t.id).catch(() => {});
     else {
       const run = (await idb.all<TimeEntry>('time').catch(() => [] as TimeEntry[])).find((e) => e.task_id === id && !e.ended_at && !e.deleted_at);
-      if (t.action === 'stop') { if (run) await stopTimer(run.id).catch(() => {}); }
-      else if (!run) await startTimer({ task_id: id }, 'widget').catch(() => {});
+      if (t.action === 'stop') { if (run) await stopTimer(run.id, t.at).catch(() => {}); }
+      else if (!run) await startTimer({ task_id: id }, 'widget', t.at).catch(() => {});
     }
   }
 }

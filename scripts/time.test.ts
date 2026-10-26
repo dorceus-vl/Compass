@@ -1,12 +1,21 @@
 // node --experimental-strip-types scripts/time.test.ts
 import assert from 'node:assert/strict';
-import { clampTs, MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS, entryMinutes, formatElapsed, taskLogged, zonedToIso, isoToZoned } from '../shared/time.ts';
+import { clampTs, stopAt, MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS, entryMinutes, formatElapsed, taskLogged, zonedToIso, isoToZoned } from '../shared/time.ts';
 import type { Task, TimeEntry } from '../shared/types.ts';
 
 assert.deepEqual([MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS], [5, 1440, 500, 300_000]);
 // T3: within [2020-01-01, now + 5 min]; unparseable means now.
 const now = Date.parse('2026-10-28T15:00:00.000Z');
 assert.equal(clampTs('2019-05-01T00:00:00.000Z', now), '2020-01-01T00:00:00.000Z');
+// stopAt (T4, shared by the server's stop and the device's optimistic one, e.g. a widget stop drained hours later at the tap time): clamped, never before the start, at most 24 h.
+{
+  const n = Date.parse('2026-10-28T15:00:00.000Z');
+  assert.equal(stopAt('2026-10-28T08:00:00.000Z', '2026-10-28T10:00:00.000Z', n), '2026-10-28T10:00:00.000Z', 'the tap time, not now');
+  assert.equal(stopAt('2026-10-28T08:00:00.000Z', '2026-10-28T07:00:00.000Z', n), '2026-10-28T08:00:00.000Z', 'never before the start');
+  assert.equal(stopAt('2026-10-28T08:00:00.000Z', '2026-10-29T08:00:00.000Z', n), '2026-10-28T15:05:00.000Z', 'a future end is clamped');
+  assert.equal(stopAt('2026-10-26T08:00:00.000Z', '2026-10-28T10:00:00.000Z', n), '2026-10-27T08:00:00.000Z', 'at most 24 h');
+  assert.equal(stopAt('2026-10-28T08:00:00.000Z', undefined, n), '2026-10-28T15:00:00.000Z', 'none: now');
+}
 assert.equal(clampTs('2026-10-28T16:00:00.000Z', now), '2026-10-28T15:05:00.000Z');
 assert.equal(clampTs('2026-10-28T14:00:00.000Z', now), '2026-10-28T14:00:00.000Z');
 assert.equal(clampTs('not a date', now), new Date(now).toISOString()); // unparseable → now

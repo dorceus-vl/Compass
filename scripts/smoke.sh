@@ -1916,7 +1916,8 @@ echo "$X" | js "typeof d.summary==='string'&&d.summary.includes('Project 1: RAG'
 echo "$X" | grep -q "ZZT2NOTE\|Smoke t2" && fail "t2: a note or a name reached the program summary"
 D1X "DELETE FROM time_entries WHERE id LIKE 'smk-t2-%'; DELETE FROM task_events WHERE task_id = '$T2T'; DELETE FROM tasks WHERE id = '$T2T'; DELETE FROM projects WHERE id = '$T2P'; DELETE FROM programs WHERE id = '$T2G'" >/dev/null
 echo "smoke: (t2) reports: the project report's input has its time without notes and its summary the time numbers; the program summary has time logged per project, no note or name"
-# (t3) v2.5 Task 4: widget timers (T8). A token (dev step-up); POST timer start -> 200 and a running entry with source widget; again -> 409 audited refused; stop -> 200
+# (t3) v2.5 Task 4: widget timers (T8). A token (dev step-up); POST timer start -> 200 and a running entry with source widget starting at the posted at (a future at
+# clamped); again -> 409 audited refused; a stop on a task completed meanwhile -> 200 stopped; stop -> 200
 # stopped; stop with none running -> 200 stopped false; a bad action 400; a done task 404; a bad token 401 with no audit row; the guard lets only POST on .../timer
 # through; the audit rows (widget.timer) carry ids and no task text. Everything it made is removed.
 wtimer() { curl -s -w '\n%{http_code}' -X POST "$B/api/widget/tasks/$2/timer" -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d "$3"; } # no cookie, no Origin
@@ -1925,8 +1926,9 @@ D1X "DELETE FROM audit_log WHERE actor='widget'" >/dev/null
 T3J=$(wtok "Smoke t3 phone"); T3K=$(echo "$T3J" | js d.token); T3ID=$(echo "$T3J" | js d.id)
 TB="{\"title\":\"Smoke t3 secret title $R\",\"kind\":\"work\"}"; T3T=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
 TB="{\"title\":\"Smoke t3 done $R\"}"; T3D=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id); curl "${H[@]}" -X POST $B/api/tasks/$T3D/done >/dev/null
-TB="{\"action\":\"start\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}"
+T3AT=$(date -u -v-10M +%Y-%m-%dT%H:%M:%S.000Z); TB="{\"action\":\"start\",\"at\":\"$T3AT\"}" # tapped 10 minutes ago (sent later): the entry starts then
 X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.ok)" = true ] || fail "t3: start: $X"
+[ "$(D1X "SELECT started_at AS s FROM time_entries WHERE task_id='$T3T' AND deleted_at IS NULL" | js 'd[0].results[0].s')" = "$T3AT" ] || fail "t3: the start is not at the posted at"
 [ "$(D1X "SELECT source||'|'||(ended_at IS NULL)||'|'||kind AS a FROM time_entries WHERE task_id='$T3T' AND deleted_at IS NULL" | js 'd[0].results.map(r=>r.a).join(",")')" = 'widget|1|work' ] || fail "t3: the start is not one running widget entry"
 X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 409 ] && kbody "$X" | grep -q timer_running || fail "t3: a second start: $X"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND action='widget.timer' AND target='$T3T' AND detail LIKE '%\"refused\":\"timer_running\"%'" | js 'd[0].results[0].n')" = 1 ] || fail "t3: the 409 is not audited as refused"
@@ -1935,6 +1937,16 @@ X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d
 [ "$(D1X "SELECT count(*) AS n FROM time_entries WHERE task_id='$T3T' AND ended_at IS NULL AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 0 ] || fail "t3: the stop left it running"
 X=$(wtimer "$T3K" $T3T "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.stopped)" = false ] || fail "t3: a stop with none running: $X"
 X=$(wtimer "$T3K" $T3T '{"action":"done"}'); [ "$(kst "$X")" = 400 ] || fail "t3: a bad action is not 400: $X"
+# a future at is clamped (now + 5 min at most); a stop on a task completed meanwhile still lands (200, stopped)
+TB="{\"title\":\"Smoke t3 future $R\"}"; T3F=$(curl "${H[@]}" -X POST $B/api/tasks -d "$TB" | js d.task.id)
+TB="{\"action\":\"start\",\"at\":\"$(date -u -v+2H +%Y-%m-%dT%H:%M:%S.000Z)\"}"
+[ "$(kst "$(wtimer "$T3K" $T3F "$TB")")" = 200 ] || fail "t3: a start with a future at"
+T3S=$(D1X "SELECT started_at AS s FROM time_entries WHERE task_id='$T3F' AND deleted_at IS NULL" | js 'd[0].results[0].s')
+node -e "process.exit(Date.parse('$T3S') <= Date.now() + 300000 + 5000 && Date.parse('$T3S') >= Date.now() - 120000 ? 0 : 1)" || fail "t3: a future at was not clamped ($T3S)"
+curl "${H[@]}" -X POST $B/api/tasks/$T3F/done >/dev/null; [ "$(task $T3F status)" = done ] || fail "t3: could not complete the timed task"
+TB="{\"action\":\"stop\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}"
+X=$(wtimer "$T3K" $T3F "$TB"); [ "$(kst "$X")" = 200 ] && [ "$(kbody "$X" | js d.stopped)" = true ] || fail "t3: a stop on a done task: $X"
+[ "$(D1X "SELECT count(*) AS n FROM time_entries WHERE task_id='$T3F' AND ended_at IS NULL AND deleted_at IS NULL" | js 'd[0].results[0].n')" = 0 ] || fail "t3: the stop on a done task left it running"
 TB='{"action":"start"}'
 [ "$(kst "$(wtimer "$T3K" $T3D "$TB")")" = 404 ] && [ "$(kst "$(wtimer "$T3K" no-such-task "$TB")")" = 404 ] || fail "t3: a done or missing task is not 404"
 T30=$(WAUD)
@@ -1945,11 +1957,11 @@ done
 nos -X GET "$B/api/widget/tasks/$T3T/timer" -H "Authorization: Bearer $T3K" || fail "t3: GET reached the timer route without a session"
 nos -X POST "$B/api/widget/tasks/$T3T/timer/" -H "Authorization: Bearer $T3K" || fail "t3: a trailing slash got past the guard"
 nos -X POST "$B/api/widget/tasks/$T3T/timers" -H "Authorization: Bearer $T3K" || fail "t3: another path got past the guard"
-[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND action='widget.timer' AND detail LIKE '%\"ok\":true%' AND detail LIKE '%\"action\":\"start\"%'" | js 'd[0].results[0].n')" = 1 ] || fail "t3: the start is not audited once"
+[ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND action='widget.timer' AND detail LIKE '%\"ok\":true%' AND detail LIKE '%\"action\":\"start\"%'" | js 'd[0].results[0].n')" = 2 ] || fail "t3: the two starts are not audited once each"
 [ "$(D1X "SELECT count(*) AS n FROM audit_log WHERE actor='widget' AND (detail LIKE '%Smoke t3%' OR target LIKE '%Smoke t3%')" | js 'd[0].results[0].n')" = 0 ] || fail "t3: task text reached the audit log"
-D1X "DELETE FROM time_entries WHERE task_id IN ('$T3T','$T3D'); DELETE FROM widget_tokens WHERE id = '$T3ID'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
-curl "${H[@]}" -X DELETE $B/api/tasks/$T3T >/dev/null; curl "${H[@]}" -X DELETE $B/api/tasks/$T3D >/dev/null
-echo "smoke: (t3) widget timers: start 200 (a running widget entry), a second 409 audited refused, stop 200, stop with none 200 stopped false, bad action 400, done or missing task 404, bad tokens 401 with no audit row, the guard lets only POST on .../timer through, audit rows hold ids and no text"
+D1X "DELETE FROM time_entries WHERE task_id IN ('$T3T','$T3D','$T3F'); DELETE FROM widget_tokens WHERE id = '$T3ID'; DELETE FROM audit_log WHERE actor='widget' OR action LIKE 'widget.token.%'" >/dev/null
+for x in $T3T $T3D $T3F; do curl "${H[@]}" -X DELETE $B/api/tasks/$x >/dev/null; done
+echo "smoke: (t3) widget timers: start 200 (a running widget entry at the posted at; a future at clamped), stop on a done task 200 and stopped, a second 409 audited refused, stop 200, stop with none 200 stopped false, bad action 400, done or missing task 404, bad tokens 401 with no audit row, the guard lets only POST on .../timer through, audit rows hold ids and no text"
 # clean up (local D1 only): the system rows, the test tasks and project
 D1X "DELETE FROM knowledge_chunks WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_items WHERE collection_id IN (SELECT id FROM knowledge_collections WHERE system=1); DELETE FROM knowledge_collections WHERE system=1; DELETE FROM audit_log WHERE action IN ('knowledge.apps.refresh','knowledge.apps.done')" >/dev/null
 kill $STUB; wait $STUB 2>/dev/null || true; trap - EXIT

@@ -3,7 +3,7 @@ import type { Env, Variables } from '../types.ts';
 import type { Kind, TimeEntry } from '../../shared/types.ts';
 import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
-import { clampTs, MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS } from '../../shared/time.ts';
+import { clampTs, stopAt, MAX_RUNNING, MAX_ENTRY_MINUTES, MAX_NOTE, FUTURE_SLACK_MS } from '../../shared/time.ts';
 
 /** Time entries (v2.5): list (incremental `since`), start or log, stop, edit, trash. A work entry's note is sealed. Kelly has no route here. */
 const time = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -77,9 +77,7 @@ export async function stopEntry(env: Env, id: string, endedAt: unknown): Promise
   const stored = await env.DB.prepare('SELECT * FROM time_entries WHERE id = ?1 AND deleted_at IS NULL').bind(id).first<TimeEntry>();
   if (!stored) return { status: 404, body: { error: 'Not found' } };
   if (stored.ended_at) return { status: 200, body: { entry: await open(env, 'time_entries', stored) } };
-  const nowMs = Date.now(), start = Date.parse(stored.started_at);
-  const end = Math.min(Math.max(Date.parse(clampTs(typeof endedAt === 'string' ? endedAt : '', nowMs)), start), start + MAX_MS);
-  const ended_at = new Date(end).toISOString(), t = new Date(nowMs).toISOString();
+  const nowMs = Date.now(), ended_at = stopAt(stored.started_at, endedAt, nowMs), t = new Date(nowMs).toISOString();
   const r = await env.DB.prepare(`UPDATE time_entries SET ended_at = ?2, updated_at = ?3 WHERE id = ?1 AND ${RUNNING}`).bind(id, ended_at, t).run();
   if (!r.meta.changes) return stopEntry(env, id, endedAt); // stopped or trashed in between: answer with what is stored now
   await audit(env, 'you', 'time.stop', id);

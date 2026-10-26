@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { idb, type Store } from './db.ts';
 import { enqueue, onChange, notify } from './sync.ts';
 import type { Task, Project, Milestone, Status, TimeEntry, Kind } from '../../../shared/types.ts';
+import { clampTs, stopAt } from '../../../shared/time.ts';
 
 export function useStore() {
   const [state, set] = useState<{ tasks: Task[]; projects: Project[]; milestones: Milestone[]; time: TimeEntry[]; ready: boolean }>({ tasks: [], projects: [], milestones: [], time: [], ready: false });
@@ -95,14 +96,15 @@ async function newEntry(target: TimeTarget, started_at: string, ended_at: string
   const json = { ...(owner.task_id ? { task_id: owner.task_id } : { project_id: owner.project_id }), started_at, note, ...(ended_at ? { ended_at } : { source }) };
   await enqueue({ method: 'POST', path: '/time', json, tempId: e.id, store: 'time' }, e);
 }
-/** `source` is 'widget' when the app drains a widget's offline start (Task 4). */
-export async function startTimer(target: TimeTarget, source: 'timer' | 'widget' = 'timer'): Promise<void> {
-  await newEntry(target, now(), null, 'note' in target ? target.note : null, source);
+/** `source` is 'widget' when the app drains a widget's offline start (Task 4); `startedAt` is then the tap time (clamped as the server clamps it). */
+export async function startTimer(target: TimeTarget, source: 'timer' | 'widget' = 'timer', startedAt?: string): Promise<void> {
+  await newEntry(target, startedAt ? clampTs(startedAt, Date.now()) : now(), null, 'note' in target ? target.note : null, source);
 }
-export async function stopTimer(id: string): Promise<void> {
+/** `endedAt`: a widget stop drained later keeps its tap time (stopAt: clamped, never before the start, at most 24 h; the server gives the same answer). */
+export async function stopTimer(id: string, endedAt?: string): Promise<void> {
   id = await resolveId('time', id);
   const cur = await idb.get<TimeEntry>('time', id); if (!cur || cur.ended_at) return;
-  const ended_at = now();
+  const ended_at = endedAt ? stopAt(cur.started_at, endedAt, Date.now()) : now();
   await idb.put('time', { ...cur, ended_at, updated_at: ended_at }); notify();
   await enqueue({ method: 'POST', path: `/time/${id}/stop`, json: { ended_at } });
 }
