@@ -4,6 +4,14 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 
 ---
 
+## Next
+- **Done this session:** `99ee80a` v2.5 deployed (version 17b456b0). v2.6 goals: `bc817eb` spec, `4b8b95e` plan, `046fd85` schema, routes and sync, `a366581` progress, `8177cee` screens, `83871e8` linking, `a4f234f` Today and Review, `aa3d81b` docs and full run, `9b8221d` deployed.
+- **Ledger:** v2.6 server (routes, caps, sealing, Trash, purge): TESTS ONLY (smoke k0 to k2, `scripts/enc.test.ts`, `scripts/agent.test.ts`). Progress maths: TESTS ONLY (`scripts/goals.test.ts`). Live deploy: VERIFIED in production without sign-in (`/api/goals` 401, `/` 200, migration 0019 applied, counts unchanged). Every goal screen, linking, Today's long horizon, the Review step, the IndexedDB v3 upgrade: UNVERIFIED (never opened). v2.5 signed-in flows: still UNVERIFIED.
+- **Vlad's checklist:** Mac or iPad browser: passkey sign-in and reload (close other tabs for the IndexedDB upgrade); a personal and a work goal, each key result type, a check-in; link tasks and a project; Today long horizon; Weekly Review Goals step; Trash and restore a goal. Same browser: the v2.5 timer flows. Android: install the v2.5 widget build. iPhone: Apple signing step, then the widget build.
+- **Next:** Siri and Shortcuts (held by Vlad, start with `/phase`) or the next catalogue item. Deploy state: v2.6 shipped, Version `ae950c1a-b3be-422d-9225-c44ea63f640c`; rollback `17b456b0-87e5-4314-9f00-1dfdb63d409f`.
+
+---
+
 # Compass
 
 Knocturn Labs task and project-management app, for Vladimir only. Spec: `docs/superpowers/specs/2026-10-19-compass-design.md`.
