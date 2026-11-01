@@ -5,11 +5,11 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** Athena pack v2.11. Prompt library (migration 0024 `prompts`, `/api/prompts`, `web/src/views/PromptShelf.tsx` on the Athena screen; plain text, soft delete, Trash cron purges after 30 days, 100 at most, not in the Trash screen so no restore). Presets `retrospective` (uses lessons via library pages) and `estimation` (PERT) in `shared/presets.ts`. Not deployed: needs `/ship` (migration 0024).
-- **Ledger:** typecheck and `npm run check`: TESTS ONLY (preset count in `scripts/ai.test.ts`; no test for `/api/prompts`). Shelf look, 44pt targets, answers of the two presets: UNVERIFIED.
-- **Known gaps:** estimation reads no cross-project task actuals (boundary risk); prompt shelf is online-only; unsaved edit lost when switching prompts.
-- **Vlad's checklist (signed in):** Athena screen: add a prompt, tap it, edit, delete; try Retrospective and Estimate this.
-- **Next:** small pack (auto-snooze/escalate, PDU tracker, clip screenshot).
+- **Done this session:** Athena pack v2.11. `e31f2a7` prompt library (migration 0024, `/api/prompts`, `PromptShelf.tsx`) plus presets `retrospective` and `estimation`; `1aa87c5`, `8be3e12` HISTORY. Deployed 2026-11-01: Version `5f63eeeb-d1d8-4eb0-b274-78e0358cd143`, migration 0024 applied; rollback `76dae0a8-e0b1-439f-98a8-0757d0b11837`.
+- **Ledger:** typecheck, `npm run check` (preset count): TESTS ONLY. Deploy: `/` 200; `/api/prompts` and `/api/health` 401 (auth, new code not exercised). Shelf look, 44pt targets, edit flow, preset answers: UNVERIFIED. No test for `/api/prompts`.
+- **Known gaps:** deleted prompts not in Trash screen (no restore); unsaved edit lost on switching prompts; shelf online-only; estimation reads no cross-project task actuals.
+- **Vlad's checklist (any device, signed in):** Athena screen: add, tap, edit, delete a prompt; try Retrospective and Estimate this. Earlier unverified: Pages tab, WBS, custom fields, sprints, Siri, goals, timers.
+- **Next:** small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Deployed; nothing pending.
 
 ---
 
