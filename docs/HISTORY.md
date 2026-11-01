@@ -5,10 +5,10 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** small pack v2.12 (not deployed). Migration 0025 (`certs`, `pdus`, `documents.task_id`). Auto-escalate `worker/lib/escalate.ts` from the cron: overdue 3 days → priority 3 (once per due date, guard in `push_log`), 7 days → push type `escalate` (max 5 a tick, work tasks get generic text). PDU tracker `routes/pdus.ts` + `PdusCard.tsx` in Settings. Clip: manifest `share_target` → `POST /api/clip` creates a personal task (+ PNG/JPG stored as document linked by `task_id`, listed in TaskSheet, hidden from Documents lists).
+- **Done this session:** small pack v2.12 (deployed 2026-11-01: Version `13369de4-3036-474b-87ab-8bfff089c82c`, migration 0025 applied; rollback `5f63eeeb-d1d8-4eb0-b274-78e0358cd143`). Migration 0025 (`certs`, `pdus`, `documents.task_id`). Auto-escalate `worker/lib/escalate.ts` from the cron: overdue 3 days → priority 3 (once per due date, guard in `push_log`), 7 days → push type `escalate` (max 5 a tick, work tasks get generic text). PDU tracker `routes/pdus.ts` + `PdusCard.tsx` in Settings. Clip: manifest `share_target` → `POST /api/clip` creates a personal task (+ PNG/JPG stored as document linked by `task_id`, listed in TaskSheet, hidden from Documents lists).
 - **Ledger:** typecheck, `npm run check` (new `escalate.test.ts`, pure part only): TESTS ONLY. Everything else UNVERIFIED.
 - **Known gaps / risks:** share target may be refused by the auth guard (needs `Origin` on the POST, cookie is SameSite=Lax); verify on device, else route via the service worker. certs/pdus not in export or Trash screen. Clipped task not in the offline mirror until next sync. Escalation keys expire with push_log (30 days). No tests for pdus/clip routes.
-- **Deploy:** needed (`/ship`), migration 0025 must be applied.
+- **Deploy:** done. `/` 200, `/api/health` and `/api/pdus` 401 (auth; new code not exercised), manifest has share_target.
 - **Vlad's checklist:** Settings → PDUs: add cert, add/delete PDU; Notifications has "Overdue a week"; share a page + screenshot to Compass from phone; open the task, see the screenshot link.
 - **Next:** none queued; pick from `docs/compass-features.md`.
 
