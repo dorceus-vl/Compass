@@ -149,6 +149,7 @@ export interface ChangeRequest {
   impact_cost: string | null; decision: 'pending' | 'approved' | 'rejected'; approver: string | null; decided_at: string | null;
   created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
 }
+export interface PromptRow { id: string; title: string; body: string; created_at: string; updated_at: string; deleted_at: string | null }
 export interface Lesson { id: string; project_id: string; text: string; category: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
 export type DocKind = 'pdf' | 'docx' | 'xlsx' | 'md' | 'txt' | 'csv' | 'pptx' | 'png' | 'jpg';
 export interface DocumentRow {

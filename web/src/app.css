@@ -797,6 +797,7 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
 .ath-err{color:var(--danger)}
 .chip.file{display:inline-flex;align-items:center;gap:6px;max-width:100%;text-transform:none;letter-spacing:0;font-size:12px;padding:6px 10px;border-radius:10px;background:var(--card);color:var(--text-dim);overflow-wrap:anywhere}
 .ath-help{display:flex;flex-direction:column;gap:10px}
+.ath-help .stack{display:flex;flex-direction:column;gap:10px}
 .ath-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .ath-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:14px;border-radius:14px;border:1px solid var(--field-border);background:var(--card);min-height:96px;font:inherit;color:var(--text);cursor:pointer;transition:transform var(--dur-quick) var(--ease-out),border-color var(--dur-quick)}
 .ath-card:hover{border-color:rgba(var(--accent-rgb),.35)}
@@ -832,7 +833,7 @@ mark{background:rgba(var(--accent-rgb),.22);color:var(--accent-bright);border-ra
   .ath-stage .ath-tag{left:6px;top:6px;padding:4px 6px}
 }
 @media (max-width:760px),(pointer:coarse){
-  .ath-tool,.chip.ath-more{min-height:44px}
+  .ath-tool,.chip.ath-more,.ath-help .btn,.ath-help .field{min-height:44px}
 }
 /* Athena's voice (Phase 5b Task 4): the header switch, the mic, and the stage as a stop button while she speaks. */
 .ath-headr{gap:10px;align-items:center}

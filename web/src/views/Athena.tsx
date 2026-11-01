@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import type { AiMessage, AiThread, DocumentRow, Kind, Project, Provider, Settings } from '../../../shared/types.ts';
 import { PRESETS, type PresetId } from '../../../shared/presets.ts';
+import { PromptShelf } from './PromptShelf.tsx';
 import { api, ApiError, online, SignedOut } from '../api.ts';
 import { ask, loadThread, loadThreads, loadSaved, loadUsage, saveMessage, providerReady, spend, usd, words, type Usage, type SavedMessage } from '../copilot.ts';
 import { govCreate } from '../gov.ts';
@@ -500,6 +501,8 @@ function Conversation({ id, projectId, page, seed, usage, speakOn, onOpen, onSen
         <div className="row" role="group" aria-label="More presets">
           {MORE.map((p) => <button type="button" key={p.id} className={`chip ath-more ${preset === p.id ? 'on' : ''}`} aria-pressed={preset === p.id} onClick={() => setPreset(preset === p.id ? null : p.id)}>{p.label}</button>)}</div>
       </section>
+
+      <PromptShelf onPick={(b) => { setText((x) => (x.trim() ? `${x.trimEnd()}\n\n${b}` : b)); refocus(); }} />
 
       <section aria-label="Athena's answer" className="ath-answer">
         <div className="row cp-top">

@@ -1,6 +1,6 @@
 import type { AiFeature } from './types.ts';
 
-export type PresetId = 'rephrase_email' | 'executive_version' | 'optimize_spreadsheet' | 'review_document' | 'use_case' | 'plan_from_scope' | 'plan_review' | 'status_report' | 'exception_report' | 'escalation_note' | 'difficult_conversation';
+export type PresetId = 'rephrase_email' | 'executive_version' | 'optimize_spreadsheet' | 'review_document' | 'use_case' | 'plan_from_scope' | 'plan_review' | 'status_report' | 'exception_report' | 'escalation_note' | 'difficult_conversation' | 'retrospective' | 'estimation';
 
 export const PRESETS: { id: PresetId; label: string; feature: AiFeature; wantsProposals: boolean; prompt: string }[] = [
   { id: 'rephrase_email', label: 'Rephrase email', feature: 'copilot', wantsProposals: false,
@@ -25,4 +25,8 @@ export const PRESETS: { id: PresetId; label: string; feature: AiFeature; wantsPr
     prompt: 'Draft a short escalation to a sponsor or a vendor manager. Lead with the ask. Then the impact if it does not happen, the deadline, and the options they have. Firm and courteous, no blame, no more than a screen of text.' },
   { id: 'difficult_conversation', label: 'Prepare a difficult conversation', feature: 'copilot', wantsProposals: false,
     prompt: 'Help Vlad prepare for a difficult conversation. Set out the goal, a calm opening line, the facts kept apart from the stories he is telling himself, the likely reactions with a good answer to each, and the next step to agree before the conversation ends.' },
+  { id: 'retrospective', label: 'Retrospective', feature: 'copilot', wantsProposals: true,
+    prompt: 'Run a retrospective. Read the lessons, issues, decisions and changes in the project data and the lessons in the library pages. Group them into patterns: what went well, what went wrong and why, what repeats across projects. Cite the library page for each lesson you draw on, and say plainly when there are too few lessons to see a pattern. End with the three changes most worth making next time, and propose them as tasks or lessons.' },
+  { id: 'estimation', label: 'Estimate this', feature: 'copilot', wantsProposals: false,
+    prompt: 'Help Vlad estimate the work he describes. Break it into parts, then give each a three-point estimate (optimistic, likely, pessimistic) and the PERT expected value (O + 4L + P) / 6 with the standard deviation (P - O) / 6; add them up and give a range he can promise at about 80%. Name the analogies from his past projects or lessons you used, and mark every number you guessed. Ask for what is missing instead of inventing it.' },
 ];

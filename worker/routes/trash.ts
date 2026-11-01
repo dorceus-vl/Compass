@@ -187,6 +187,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`DELETE FROM athena_clips WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING r2_key`), // Athena's removed clips and portraits
     q(`DELETE FROM templates WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.1: a deleted template (nothing refers to it)
     q(`DELETE FROM programs WHERE id IN (${gonePrograms})`), // v2.4: after the projects that pointed at it are gone or unlinked
+    q(`DELETE FROM prompts WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.11: a removed prompt (nothing refers to it)
   ]);
   // best effort, only after the rows are gone
   await Promise.all((tasks.results as { id: string }[]).map(({ id }) => env.FILES.delete(`email/${id}.eml`).catch(() => console.warn('[trash] could not delete a kept email'))));
