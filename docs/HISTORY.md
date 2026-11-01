@@ -5,10 +5,13 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** phase "WBS editor" (v2.8). Deployed 2026-11-01: Version `e3fc64b6-c271-44bb-a9fc-a496155d6100`, migration 0021 applied; rollback `86f3544b-437b-4866-b845-6ce8ae99d63a`.
-- **Ledger:** outline logic: TESTS ONLY (`scripts/wbs.test.ts`, `scripts/enc.test.ts`). WBS tab, task sheet Work package picker, 44pt targets: UNVERIFIED (no signed-in browser). Earlier items (custom fields, Siri, goals, timers) still UNVERIFIED.
-- **Vlad's checklist:** after `/ship`: on a personal and a work project open the WBS tab, add packages, nest/unnest/reorder, add a sub, rename, remove; open a task, pick its package, reload; edit offline then reconnect; check the buttons on a phone.
-- **Next:** sprints, then documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Known gaps from review: the built-in "Work breakdown" document template (`web/src/docs/templates.ts`) still groups by milestones, not `project.wbs`; subtasks are not listed on the WBS tab; `projectStmt` ignores a `wbs` sent on create; two devices editing the outline offline is last-write-wins; server does not check `wbs_id` exists in the project's outline.
+- **Done this session:** `1a58a08` WBS editor (numbered outline per project on `projects.wbs`, `tasks.wbs_id`, WBS tab, Work package picker on the task sheet). Deployed 2026-11-01: Version `e3fc64b6-c271-44bb-a9fc-a496155d6100`, migration 0021 applied; rollback `86f3544b-437b-4866-b845-6ce8ae99d63a`.
+- **Ledger:** outline logic: TESTS ONLY (`scripts/wbs.test.ts`, `scripts/enc.test.ts`). Production signed out: VERIFIED (`/` 200, `/api/projects` 401, `/api/goals` 401). WBS tab, task sheet picker, 44pt targets: UNVERIFIED (no signed-in browser). Custom fields, Siri and Shortcuts, v2.6 goals, v2.5 timer flows: still UNVERIFIED.
+- **Vlad's checklist:**
+  - Browser (passkey sign-in): on a personal and a work project open the WBS tab; add, nest, un-nest, reorder, rename, remove packages; open a task, pick its package, reload; edit offline then reconnect; check buttons on a phone.
+  - Earlier items still open: custom fields card, Siri phrases on iPhone/iPad, goal screens, timer flows, Android widget build.
+- **Known WBS gaps:** "Work breakdown" document template (`web/src/docs/templates.ts`) ignores `project.wbs`; subtasks not listed on the WBS tab; `projectStmt` drops a `wbs` sent on create; offline outline edits on two devices are last-write-wins; server does not check `wbs_id` belongs to the project's outline.
+- **Next:** phase "sprints", then documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: all shipped, nothing pending.
 
 ---
 
