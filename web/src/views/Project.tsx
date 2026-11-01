@@ -30,6 +30,7 @@ import { SaveAsTemplate } from '../ui/Templates.tsx';
 import { usePrograms } from './Programs.tsx';
 import { OFFLINE_LINE } from '../programs.ts';
 import { LogTimeDialog } from '../ui/TimeSection.tsx';
+import { FieldsEditor } from '../ui/CustomFields.tsx';
 
 const TABS = ['overview', 'dashboard', 'raid', 'stakeholders', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
@@ -179,6 +180,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
               <select className="field" aria-label="Program" value={programValue} disabled={programBusy || programsOffline || !online() || p.id.startsWith('tmp-')} onChange={(e) => void setProgram(e.target.value || null)}>
                 <option value="">No program</option>{choices.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
               <div className="qnote">{programsOffline || !online() ? OFFLINE_LINE + '.' : `Only ${p.kind} programs are listed.`}{programValue && <> <Link to={`/programs/${programValue}`}>Open the program</Link></>}</div></div>
+            <div className="qcard"><h3>Custom fields</h3><FieldsEditor project={p} /></div>
             <div className="qcard"><h3>Objectives</h3>{inp('objectives', 'Objectives', 'area')}{inp('success_criteria', 'Success criteria', 'area')}</div>
             <div className="qcard"><h3>Scope</h3>{inp('scope_in', 'In scope', 'area')}{inp('scope_out', 'Out of scope', 'area')}</div>
           </div></section>

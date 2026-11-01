@@ -13,6 +13,8 @@ export interface Project {
   data_boundary: 'cloud' | 'offline'; colour: string | null; sort: number; enc_v: number;
   /** v2.4: the program it belongs to (same kind), the forecast at completion and the currency of its three budget numbers (ISO 4217). */
   program_id: string | null; budget_forecast: number | null; currency: string;
+  /** v2.7: JSON array of custom field definitions (shared/fields.ts); null when none. Optional: rows cached before 0020 lack it. */
+  fields?: string | null;
   created_at: string; updated_at: string; deleted_at: string | null;
 }
 /** v2.4: a program groups projects of one kind. name, rag_reason and notes are sealed for work; kind is fixed after creation. */
@@ -66,6 +68,8 @@ export interface Task {
   source_app: SourceApp; source_kind: string | null; source_ref: string | null; source_url: string | null;
   /** v2.1: JSON array of task ids this one waits on (shared/deps.ts); JSON array of { id, text, done } (Task 1). Both null when empty. */
   blocked_by: string | null; checklist: string | null;
+  /** v2.7: JSON object { field id: value } for the project's custom fields; null when none. */
+  field_values?: string | null;
   sort_in_column: number; tags: string; enc_v: number; created_at: string; updated_at: string; deleted_at: string | null;
 }
 export interface TaskEvent { id: string; task_id: string; at: string; actor: 'you' | 'rule' | 'kelly' | 'meeting'; type: 'created' | 'moved' | 'edited' | 'comment' | 'nudged' | 'done'; data: string | null; enc_v: number }

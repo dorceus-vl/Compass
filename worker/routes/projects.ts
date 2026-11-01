@@ -6,6 +6,7 @@ import { seal, open, openAll } from '../lib/enc.ts';
 import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { embedPending, unembedStale } from '../lib/vectors.ts';
+import { parseFieldDefs } from '../../shared/fields.ts';
 
 const projects = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -18,6 +19,8 @@ const PROJECT_CHECKS: Record<string, Check> = {
   budget_forecast: num(0),
   currency: (v, f) => typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? { value: v } : { error: `${f} must be a three-letter currency code (CAD, USD, EUR)` },
   program_id: (v, f) => v === null || v === '' ? { value: null } : typeof v === 'string' && v.length <= 64 ? { value: v } : { error: `${f} must be a program id or null` },
+  // v2.7: custom field definitions (shared/fields.ts); empty is null.
+  fields: (v, f) => { const d = parseFieldDefs(v); return d ? { value: d.length ? JSON.stringify(d) : null } : { error: `${f} must be a list of at most 20 fields, each with an id, a name of 1 to 60 characters, a type (number, text, choice, date, person) and, for a choice, 1 to 30 options` }; },
 };
 /** v2.4: a project joins only a live program of its own kind. null when fine, else the 400 answer's body. */
 async function sameKindProgram(env: Env, programId: unknown, kind: 'personal' | 'work'): Promise<{ error: string; message: string } | null> {
@@ -54,18 +57,18 @@ export async function projectStmt(env: Env, kind: 'personal' | 'work', values: R
   const row = {
     id: crypto.randomUUID(), kind, status: 'active', rag: 'none', data_boundary: kind === 'work' ? 'offline' : 'cloud', sort: 0, enc_v: 0,
     rag_reason: null, sponsor: null, objectives: null, scope_in: null, scope_out: null, success_criteria: null, phase: null,
-    start_at: null, end_at: null, budget_planned: null, budget_spent: null, colour: null, program_id: null, budget_forecast: null, currency: 'CAD',
+    start_at: null, end_at: null, budget_planned: null, budget_spent: null, colour: null, program_id: null, budget_forecast: null, currency: 'CAD', fields: null,
     ...values, created_at: t, updated_at: t, deleted_at: null,
   } as unknown as Project;
   const s = await seal(env, 'projects', { ...row });
   row.enc_v = s.enc_v; // the response is plaintext, but says how the stored row is held
   const stmt = env.DB.prepare(
     `INSERT INTO projects (id, name, kind, status, rag, rag_reason, sponsor, objectives, scope_in, scope_out, success_criteria, phase, start_at, end_at,
-       budget_planned, budget_spent, data_boundary, colour, sort, enc_v, created_at, updated_at, program_id, budget_forecast, currency)
-     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)`,
+       budget_planned, budget_spent, data_boundary, colour, sort, enc_v, created_at, updated_at, program_id, budget_forecast, currency, fields)
+     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26)`,
   ).bind(s.id, s.name, s.kind, s.status, s.rag, s.rag_reason ?? null, s.sponsor ?? null, s.objectives ?? null, s.scope_in ?? null, s.scope_out ?? null,
     s.success_criteria ?? null, s.phase ?? null, s.start_at ?? null, s.end_at ?? null, s.budget_planned ?? null, s.budget_spent ?? null,
-    s.data_boundary, s.colour ?? null, s.sort, s.enc_v, s.created_at, s.updated_at, s.program_id ?? null, s.budget_forecast ?? null, s.currency ?? 'CAD');
+    s.data_boundary, s.colour ?? null, s.sort, s.enc_v, s.created_at, s.updated_at, s.program_id ?? null, s.budget_forecast ?? null, s.currency ?? 'CAD', s.fields ?? null);
   return { row, stmt };
 }
 /** A milestone's row and its unsent INSERT; sealed with the project's kind. */

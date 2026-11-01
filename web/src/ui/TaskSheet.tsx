@@ -9,6 +9,7 @@ import type { InboxItem } from '../../../shared/types.ts';
 import { parseBlockedBy, wouldCycle, blocksOf, blockedIds } from '../../../shared/deps.ts';
 import { BlockedChip } from './BlockedChip.tsx';
 import { Checklist } from './Checklist.tsx';
+import { TaskFields } from './CustomFields.tsx';
 import { SaveAsTemplate } from './Templates.tsx';
 import { TimerButton } from './TimerButton.tsx';
 import { TimeSection } from './TimeSection.tsx';
@@ -137,6 +138,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
         }} />)}
         {field('Tags (comma separated)', <input ref={tagsRef} className="field" defaultValue={JSON.parse(v.tags || '[]').join(', ')} onBlur={(e) => save({ tags: JSON.stringify(e.target.value.split(',').map((s) => s.trim()).filter(Boolean)) })} />)}
       </div>
+      <TaskFields task={task} project={projects.find((p) => p.id === v.project_id)} />
       <section className="deps" aria-label="Dependencies">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Blocked by</span>

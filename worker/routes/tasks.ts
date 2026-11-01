@@ -12,6 +12,7 @@ import { unembedStale } from '../lib/vectors.ts';
 import { parseRecur, nextOccurrence } from '../lib/recur.ts';
 import { positionBetween } from '../../shared/position.ts';
 import { parseBlockedBy, parseChecklist, untickChecklist, wouldCycle } from '../../shared/deps.ts';
+import { parseFieldValues } from '../../shared/fields.ts';
 import { notifyUnblocked } from '../lib/notify.ts';
 
 const tasks = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -26,17 +27,22 @@ const checklist: Check = (v, f) => {
   const items = parseChecklist(v);
   return items ? { value: items.length ? JSON.stringify(items) : null } : { error: `${f} must be a list of at most 50 items, each with an id, text of 1 to 200 characters and done true or false` };
 };
+/** field_values: up to 20 values (a number or text of 1 to 500) keyed by field id, stored as JSON text; empty is null. The sheet checks each against its field's type. */
+const fieldValues: Check = (v, f) => {
+  const o = parseFieldValues(v);
+  return o ? { value: Object.keys(o).length ? JSON.stringify(o) : null } : { error: `${f} must be an object of at most 20 values, each a number or text of 1 to 500 characters` };
+};
 const CHECKS: Record<string, Check> = {
   title: text(300), notes: text(20000), project_id: text(40), parent_id: text(40), kind: oneOf('personal', 'work'),
   horizon: oneOf('short', 'medium', 'long'), status: oneOf('new', 'progress', 'hold', 'waiting', 'done'), priority: num(0, 3, { integer: true, nullable: false }),
   start_at: date(), due_at: date(), estimate_minutes: int(0, MAX_ESTIMATE_MINUTES), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
-  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy, checklist,
+  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy, checklist, field_values: fieldValues,
 };
 const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','status','priority','start_at','due_at','done_at','estimate_minutes','waiting_on','waiting_since',
-  'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','blocked_by','checklist','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
+  'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','blocked_by','checklist','field_values','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
 // Text columns that are ciphertext on a work row. Every update rewrites them, so a task that changes kind
 // (via its project) is never left half-encrypted.
-const TEXT_COLS = ['title', 'notes', 'waiting_on', 'checklist'];
+const TEXT_COLS = ['title', 'notes', 'waiting_on', 'checklist', 'field_values'];
 
 // Both helpers seal a copy (never the caller's task) and set task.enc_v to what is stored, so responses say how the row is held.
 export async function insertTaskStmt(env: Env, task: Task): Promise<D1PreparedStatement> {

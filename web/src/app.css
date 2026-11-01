@@ -524,7 +524,7 @@ dialog.pal{padding:10px;margin-top:12vh;width:min(640px,calc(100vw - 32px));max-
   .swatches{order:3;flex-basis:100%;justify-content:space-between;max-width:290px}
   .ptrash{order:2}
   .mrow input[type=date]{min-height:44px}
-  .qcard .field{min-height:44px}
+  .qcard .field,.qcard .btn{min-height:44px}
   .qcard textarea.field{min-height:0}
 }
 @media (max-width:480px){.pheadmain .pring{width:50px;height:50px}.pheadmain .pring b{width:39px;height:39px;font-size:11px}.phead{padding:16px 16px 16px 20px}}
