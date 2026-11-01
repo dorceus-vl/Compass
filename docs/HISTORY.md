@@ -5,12 +5,10 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** `8b1d505` Custom fields per project (number, text, choice, date, person). Deployed 2026-11-01: Version `86f3544b-437b-4866-b845-6ce8ae99d63a`, migration 0020 applied.
-- **Ledger:** field parsing: TESTS ONLY (`scripts/fields.test.ts`, `scripts/enc.test.ts`). Project editor card and task sheet fields: UNVERIFIED (no signed-in browser). Siri and Shortcuts, v2.6 goals, v2.5 timer flows: still UNVERIFIED (see the Siri entry).
-- **Vlad's checklist:**
-  - Browser after ship: on a personal and a work project add one field of each type, a choice with options; open a task, set each, reload, edit offline then reconnect; rename and remove a field; check the Remove and Add field buttons on a phone.
-  - Earlier items still open: Siri phrases on iPhone/iPad, goal screens, timer flows, Android widget build.
-- **Next:** phase "WBS editor", then sprints, documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: shipped Version `86f3544b-437b-4866-b845-6ce8ae99d63a`; rollback `1cdcb443-f922-4064-a315-c9eee6f2e70b`.
+- **Done this session:** phase "WBS editor" (v2.8), committed, not deployed. Migration 0021 not applied remotely.
+- **Ledger:** outline logic: TESTS ONLY (`scripts/wbs.test.ts`, `scripts/enc.test.ts`). WBS tab, task sheet Work package picker, 44pt targets: UNVERIFIED (no signed-in browser). Earlier items (custom fields, Siri, goals, timers) still UNVERIFIED.
+- **Vlad's checklist:** after `/ship`: on a personal and a work project open the WBS tab, add packages, nest/unnest/reorder, add a sub, rename, remove; open a task, pick its package, reload; edit offline then reconnect; check the buttons on a phone.
+- **Next:** sprints, then documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Known gaps from review: the built-in "Work breakdown" document template (`web/src/docs/templates.ts`) still groups by milestones, not `project.wbs`; subtasks are not listed on the WBS tab; `projectStmt` ignores a `wbs` sent on create; two devices editing the outline offline is last-write-wins; server does not check `wbs_id` exists in the project's outline.
 
 ---
 
@@ -205,3 +203,8 @@ Commit `2ce040f`. iOS only (Android has no Siri; App Actions not planned). No mi
 - Shipped `8b1d505` and `612cfaa` (pushed to main). Migration applied remotely: `0020_custom_fields.sql`. Worker Version `86f3544b-437b-4866-b845-6ce8ae99d63a`; previous (rollback target) `1cdcb443-f922-4064-a315-c9eee6f2e70b`.
 - VERIFIED in production signed out: `/` 200, `/api/goals` 401, `/api/projects` 401.
 - UNVERIFIED (needs passkey sign-in): Custom fields card on a project, fields on the task sheet, offline edit then reconnect, phone button sizes.
+
+## 2026-11-01 · v2.8 · WBS editor
+- Files: `shared/wbs.ts` (outline ops), `scripts/wbs.test.ts`, `worker/migrations/0021_wbs.sql`, `web/src/ui/Wbs.tsx`, `worker/routes/projects.ts`, `worker/routes/tasks.ts`, `worker/lib/enc.ts`, `shared/types.ts`, `Project.tsx`, `TaskSheet.tsx`, `app.css`.
+- Decisions: outline stored as one JSON array on `projects.wbs` (flat, with depth, sealed for work), same as custom fields; numbers 1.2.3 computed. `tasks.wbs_id` plain id. Tasks hang off any node; node chip counts done/all including children. Remove drops the subtree; its tasks stay, off the breakdown. Moving a task to another project clears `wbs_id`.
+- Unverified on a device: all UI.
