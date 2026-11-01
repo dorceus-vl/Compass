@@ -1,6 +1,6 @@
 // node --experimental-strip-types scripts/pages.test.ts
 import assert from 'node:assert/strict';
-import { parsePages, agendaMins, agendaMarkdown, type Page } from '../shared/pages.ts';
+import { parsePages, agendaMins, agendaMarkdown, agendaDoc, type Page } from '../shared/pages.ts';
 
 const p = (id: string, o: Partial<Page> = {}): Page => ({ id, title: id.toUpperCase(), kind: 'page', body: '# hi', tasks: [], items: [], updated: '2026-11-01T00:00:00.000Z', ...o });
 
@@ -15,5 +15,7 @@ assert.equal(parsePages([p('a', { items: [{ id: 'i', text: 'x', mins: 1.5 }] })]
 assert.equal(parsePages([p('a', { items: [{ id: 'i', text: 'x', mins: 481 }] })]), null, 'minutes over 480');
 assert.equal(parsePages('{'), null, 'not JSON');
 assert.equal(agendaMins(ok[1].items), 20);
+assert.deepEqual(agendaDoc({ title: 'Sync', body: 'n', items: ok[1].items }).sections.map((x) => x.heading), ['Agenda', 'Notes']);
+assert.equal(agendaDoc({ title: 'Sync', body: '', items: ok[1].items }).subtitle, '20 min');
 assert.equal(agendaMarkdown({ title: 'Sync', body: '', items: ok[1].items }), '# Sync\n\n1. Intro (5 min, +0)\n2. Risks (15 min, +5)\n\nTotal: 20 min\n');
 console.log('pages ok');

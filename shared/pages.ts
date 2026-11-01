@@ -1,5 +1,6 @@
 // Project wiki pages and agendas (v2.10). `projects.pages` is a JSON array of Page. A page is Markdown linked to tasks;
 // an agenda is a list of time-boxed items (minutes) with optional Markdown notes, shared as Markdown text.
+import { sec, table, p as pp, type TemplateDoc } from './doc-model.ts';
 export type AgendaItem = { id: string; text: string; mins: number };
 export type Page = { id: string; title: string; kind: 'page' | 'agenda'; body: string; tasks: string[]; items: AgendaItem[]; updated: string };
 export const MAX_PAGES = 100;
@@ -55,4 +56,11 @@ export function agendaMarkdown(p: Pick<Page, 'title' | 'body' | 'items'>): strin
   let at = 0;
   const lines = p.items.map((it, i) => { const s = `${i + 1}. ${it.text} (${it.mins} min, +${at})`; at += it.mins; return s; });
   return [`# ${p.title}`, '', ...lines, '', `Total: ${at} min`, ...(p.body.trim() ? ['', p.body.trim()] : [])].join('\n') + '\n';
+}
+
+/** An agenda as a document (Word, Markdown): item, minutes and start offset in a table, then the notes. */
+export function agendaDoc(p: Pick<Page, 'title' | 'body' | 'items'>): TemplateDoc {
+  let at = 0;
+  const rows = p.items.map((it, i) => { const r = [i + 1, it.text, it.mins, `+${at}`]; at += it.mins; return r; });
+  return { title: p.title, subtitle: `${at} min`, sections: [sec('Agenda', table(['#', 'Item', 'Min', 'Start'], rows, 'No items.')), ...(p.body.trim() ? [sec('Notes', pp(p.body.trim()))] : [])] };
 }

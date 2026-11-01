@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Project, Task } from '../../../shared/types.ts';
-import { parsePages, storedPages, agendaMins, agendaMarkdown, MAX_PAGES, MAX_PAGE_TITLE, MAX_PAGE_BODY, MAX_PAGE_TASKS, MAX_AGENDA_ITEMS, MAX_ITEM_TEXT, MAX_ITEM_MINS, type Page } from '../../../shared/pages.ts';
+import { parsePages, storedPages, agendaMins, agendaMarkdown, agendaDoc, MAX_PAGES, MAX_PAGE_TITLE, MAX_PAGE_BODY, MAX_PAGE_TASKS, MAX_AGENDA_ITEMS, MAX_ITEM_TEXT, MAX_ITEM_MINS, type Page } from '../../../shared/pages.ts';
 import { updateProject } from '../store/useStore.ts';
 import { useLatest } from './CustomFields.tsx';
 import { Markdown } from './Markdown.tsx';
 import { confirmAction, toast } from './dialogs.tsx';
+import { DOCX_TYPE, fileName, saveBytes, saveText } from '../docs/download.ts';
 
 type Patch = Partial<Page> | ((cur: Page) => Partial<Page>);
 const newId = () => crypto.randomUUID().slice(0, 8);
@@ -72,6 +73,11 @@ function PageCard({ page: p, tasks, open, onToggle, onEdit, onOpenTask, onRemove
   };
   const swap = (id: string, d: number) => onEdit((c) => { const a = [...c.items]; const i = a.findIndex((x) => x.id === id), j = i + d; if (i < 0 || j < 0 || j >= a.length) return {}; [a[i], a[j]] = [a[j], a[i]]; return { items: a }; });
   const copy = () => { navigator.clipboard.writeText(agendaMarkdown({ ...p, body })).then(() => toast('Agenda copied'), () => toast('Could not copy')); };
+  const fname = () => fileName('Agenda', p.title, new Date().toISOString().slice(0, 10));
+  const word = async () => {
+    try { const { toDocx } = await import('../docs/to-docx.ts'); saveBytes(await toDocx(agendaDoc({ ...p, body })), `${fname()}.docx`, DOCX_TYPE); }
+    catch (e) { toast((e as Error).message); }
+  };
   return (
     <div className="card page">
       <button type="button" className="wbs-task" aria-expanded={open} onClick={onToggle}>
@@ -119,6 +125,8 @@ function PageCard({ page: p, tasks, open, onToggle, onEdit, onOpenTask, onRemove
           )}
           <div className="row">
             {p.kind === 'agenda' && <button type="button" className="btn" style={{ minHeight: 44 }} onClick={copy}>Copy as Markdown</button>}
+            {p.kind === 'agenda' && <button type="button" className="btn" style={{ minHeight: 44 }} onClick={() => saveText(agendaMarkdown({ ...p, body }), `${fname()}.md`)}>Markdown file</button>}
+            {p.kind === 'agenda' && <button type="button" className="btn" style={{ minHeight: 44 }} onClick={() => void word()}>Word</button>}
             <button type="button" className="btn" style={{ minHeight: 44 }} onClick={onRemove}>Remove</button>
           </div>
         </div>
