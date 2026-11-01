@@ -5,11 +5,11 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** sprints (v2.9, deployed 2026-11-01: Version `b49987f2-770d-4eae-b3a6-2344ad42b51f`, migration 0022 applied; rollback `e3fc64b6-c271-44bb-a9fc-a496155d6100`). `projects.sprints` (sealed JSON, `shared/sprints.ts`), `tasks.sprint_id`, migration 0022, Sprints tab (`web/src/ui/Sprints.tsx`: plan, start, burndown, close, velocity, backlog), Sprint picker on the task sheet.
-- **Decisions:** effort counted in tasks, not points; one active sprint; close moves unfinished tasks to the next planned sprint or the backlog and stores `total`/`done` so velocity survives; sprint length capped at 366 days; moving a task to another project clears `sprint_id`.
-- **Ledger:** logic: TESTS ONLY (`scripts/sprints.test.ts`). Sprints tab, task picker, burndown look, 44pt targets: UNVERIFIED (no signed-in browser).
-- **Known gaps:** server does not check `sprint_id` belongs to the project's sprints; close-time task moves are separate PATCHes (an interrupted close leaves tasks in the closed sprint, which then show in the backlog); `projectStmt` drops `sprints` on create; subtasks not listed; two-device edits last-write-wins.
-- **Next:** documents (wiki + agenda), then Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Earlier unverified items (WBS, custom fields, Siri, goals, timers) still open.
+- **Done this session:** documents (v2.10, NOT deployed): project Pages tab, wiki pages (Markdown, linked to tasks) and agendas (time-boxed items, up/down, copy as Markdown). `projects.pages` (sealed JSON, `shared/pages.ts`), migration 0023, `web/src/ui/Pages.tsx`.
+- **Decisions:** one JSON column like sprints/WBS; edits are updaters on the latest queued value; a bad stored value pauses edits instead of overwriting; links to deleted or moved tasks hide and drop on the next link edit.
+- **Ledger:** logic: TESTS ONLY (`scripts/pages.test.ts`). Pages tab look, 44pt targets, copy to clipboard: UNVERIFIED (no signed-in browser). Needs `/ship` (migration 0023).
+- **Known gaps:** body saves on blur only (lost if the app closes with the field focused); whole-array PATCH, so two-device edits last-write-wins; agenda is not sent via Kelly; `projectStmt` drops `pages` on create (as sprints).
+- **Next:** Athena pack (prompt library, retrospectives, estimation), then small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Earlier unverified items (WBS, custom fields, sprints, Siri, goals, timers) still open.
 
 ---
 
