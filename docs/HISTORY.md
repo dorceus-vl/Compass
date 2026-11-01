@@ -5,7 +5,7 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** phase "WBS editor" (v2.8), committed, not deployed. Migration 0021 not applied remotely.
+- **Done this session:** phase "WBS editor" (v2.8). Deployed 2026-11-01: Version `e3fc64b6-c271-44bb-a9fc-a496155d6100`, migration 0021 applied; rollback `86f3544b-437b-4866-b845-6ce8ae99d63a`.
 - **Ledger:** outline logic: TESTS ONLY (`scripts/wbs.test.ts`, `scripts/enc.test.ts`). WBS tab, task sheet Work package picker, 44pt targets: UNVERIFIED (no signed-in browser). Earlier items (custom fields, Siri, goals, timers) still UNVERIFIED.
 - **Vlad's checklist:** after `/ship`: on a personal and a work project open the WBS tab, add packages, nest/unnest/reorder, add a sub, rename, remove; open a task, pick its package, reload; edit offline then reconnect; check the buttons on a phone.
 - **Next:** sprints, then documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Known gaps from review: the built-in "Work breakdown" document template (`web/src/docs/templates.ts`) still groups by milestones, not `project.wbs`; subtasks are not listed on the WBS tab; `projectStmt` ignores a `wbs` sent on create; two devices editing the outline offline is last-write-wins; server does not check `wbs_id` exists in the project's outline.
@@ -208,3 +208,8 @@ Commit `2ce040f`. iOS only (Android has no Siri; App Actions not planned). No mi
 - Files: `shared/wbs.ts` (outline ops), `scripts/wbs.test.ts`, `worker/migrations/0021_wbs.sql`, `web/src/ui/Wbs.tsx`, `worker/routes/projects.ts`, `worker/routes/tasks.ts`, `worker/lib/enc.ts`, `shared/types.ts`, `Project.tsx`, `TaskSheet.tsx`, `app.css`.
 - Decisions: outline stored as one JSON array on `projects.wbs` (flat, with depth, sealed for work), same as custom fields; numbers 1.2.3 computed. `tasks.wbs_id` plain id. Tasks hang off any node; node chip counts done/all including children. Remove drops the subtree; its tasks stay, off the breakdown. Moving a task to another project clears `wbs_id`.
 - Unverified on a device: all UI.
+
+## WBS editor deployed (2026-11-01)
+- Shipped `1a58a08` and `cb4fc82` (pushed to main). Migration applied remotely: `0021_wbs.sql`. Worker Version `e3fc64b6-c271-44bb-a9fc-a496155d6100`; rollback `86f3544b-437b-4866-b845-6ce8ae99d63a`.
+- VERIFIED in production signed out: `/` 200, `/api/projects` 401, `/api/goals` 401.
+- UNVERIFIED (needs passkey sign-in): WBS tab (add, nest, reorder, rename, remove), Work package picker on the task sheet, offline edit then reconnect, 44pt buttons on a phone.
