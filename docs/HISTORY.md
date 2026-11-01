@@ -5,11 +5,12 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** Athena pack v2.11. `e31f2a7` prompt library (migration 0024, `/api/prompts`, `PromptShelf.tsx`) plus presets `retrospective` and `estimation`; `1aa87c5`, `8be3e12` HISTORY. Deployed 2026-11-01: Version `5f63eeeb-d1d8-4eb0-b274-78e0358cd143`, migration 0024 applied; rollback `76dae0a8-e0b1-439f-98a8-0757d0b11837`.
-- **Ledger:** typecheck, `npm run check` (preset count): TESTS ONLY. Deploy: `/` 200; `/api/prompts` and `/api/health` 401 (auth, new code not exercised). Shelf look, 44pt targets, edit flow, preset answers: UNVERIFIED. No test for `/api/prompts`.
-- **Known gaps:** deleted prompts not in Trash screen (no restore); unsaved edit lost on switching prompts; shelf online-only; estimation reads no cross-project task actuals.
-- **Vlad's checklist (any device, signed in):** Athena screen: add, tap, edit, delete a prompt; try Retrospective and Estimate this. Earlier unverified: Pages tab, WBS, custom fields, sprints, Siri, goals, timers.
-- **Next:** small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Deployed; nothing pending.
+- **Done this session:** small pack v2.12 (not deployed). Migration 0025 (`certs`, `pdus`, `documents.task_id`). Auto-escalate `worker/lib/escalate.ts` from the cron: overdue 3 days → priority 3 (once per due date, guard in `push_log`), 7 days → push type `escalate` (max 5 a tick, work tasks get generic text). PDU tracker `routes/pdus.ts` + `PdusCard.tsx` in Settings. Clip: manifest `share_target` → `POST /api/clip` creates a personal task (+ PNG/JPG stored as document linked by `task_id`, listed in TaskSheet, hidden from Documents lists).
+- **Ledger:** typecheck, `npm run check` (new `escalate.test.ts`, pure part only): TESTS ONLY. Everything else UNVERIFIED.
+- **Known gaps / risks:** share target may be refused by the auth guard (needs `Origin` on the POST, cookie is SameSite=Lax); verify on device, else route via the service worker. certs/pdus not in export or Trash screen. Clipped task not in the offline mirror until next sync. Escalation keys expire with push_log (30 days). No tests for pdus/clip routes.
+- **Deploy:** needed (`/ship`), migration 0025 must be applied.
+- **Vlad's checklist:** Settings → PDUs: add cert, add/delete PDU; Notifications has "Overdue a week"; share a page + screenshot to Compass from phone; open the task, see the screenshot link.
+- **Next:** none queued; pick from `docs/compass-features.md`.
 
 ---
 
