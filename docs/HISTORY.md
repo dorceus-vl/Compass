@@ -9,7 +9,8 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 - **Ledger:** typecheck, `npm run check` (`escalate.test.ts`, pure part only): TESTS ONLY. Deploy: `/` 200, manifest has share_target; `/api/health` and `/api/pdus` 401 (auth, new code not exercised). Cron escalation, PDU UI, clip share, 44pt targets: UNVERIFIED. No tests for `/api/pdus`, `/api/clip`.
 - **Known gaps:** share POST may be refused by auth guard (needs `Origin`; cookie SameSite=Lax); certs/pdus not in export or Trash screen; clipped task absent from offline mirror until next sync; escalation keys expire with push_log (30 days).
 - **Vlad's checklist (any device, signed in):** Settings → PDUs (add cert, add/delete PDU); Notifications shows "Overdue a week"; share a page + screenshot to Compass from phone, open task, see screenshot link; an overdue 3+ day task turns high priority. Earlier unverified: Athena prompt shelf, Pages tab, WBS, custom fields, sprints, Siri, goals, timers.
-- **Next:** none queued; pick from `docs/compass-features.md`. Deployed; nothing pending.
+- **v2.13 (not deployed):** PERT three-point estimate. Estimate field accepts `1h/2h/6h` (optimistic/likely/pessimistic, in order) and stores `(o+4m+p)/6` as `estimate_minutes`; only the result is stored. `shared/workload.ts` `parseEstimate`, test in `scripts/workload.test.ts`. TESTS ONLY; field UI UNVERIFIED. Analogies from past projects not built.
+- **Next:** none queued; remaining v2 in `docs/compass-features.md`: agenda builder, lessons retrospective analysis, Aura kiosk card.
 
 ---
 

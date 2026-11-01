@@ -3,6 +3,10 @@ import { parseEstimate, formatEstimate, MAX_ESTIMATE_MINUTES, workload, type WTa
 import { DEFAULT_SETTINGS } from '../shared/types.ts';
 
 assert.equal(parseEstimate('90', 8), 90);
+assert.equal(parseEstimate('1h/2h/6h', 8), 150); // PERT (60+4*120+360)/6
+assert.equal(parseEstimate('2h/1h/6h', 8), null); // out of order
+assert.equal(parseEstimate('1h/2h', 8), null);
+
 assert.equal(parseEstimate('30m', 8), 30);
 assert.equal(parseEstimate('2h', 8), 120);
 assert.equal(parseEstimate('1.5h', 8), 90);

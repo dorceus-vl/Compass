@@ -122,7 +122,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
         {field('Start', <input className="field" type="date" value={v.start_at ?? ''} onChange={(e) => save({ start_at: e.target.value || null })} />)}
         {field('Due', <input className="field" type="date" value={v.due_at ?? ''} onChange={(e) => save({ due_at: e.target.value || null })} />)}
         {field('Estimate', <>
-          <input className="field" placeholder="30m, 2h, 1d" aria-label="Estimate" aria-describedby="est-msg" value={estText ?? (v.estimate_minutes == null ? '' : formatEstimate(v.estimate_minutes))}
+          <input className="field" placeholder="30m, 2h, 1d, or 1h/2h/6h" aria-label="Estimate" aria-describedby="est-msg" value={estText ?? (v.estimate_minutes == null ? '' : formatEstimate(v.estimate_minutes))}
             onChange={(e) => { setEstText(e.target.value); setEstBad(false); }}
             onBlur={(e) => {
               const raw = e.target.value.trim();

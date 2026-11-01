@@ -1,4 +1,5 @@
 // Task estimates (v2.4, P4): "90", "30m", "2h", "1.5h", "1d", "1h 30m" <-> whole minutes.
+// Three-point (PERT, v2.13): "optimistic/likely/pessimistic", like "1h/2h/6h" -> (o + 4m + p) / 6.
 import type { Kind, Settings, Status } from './types.ts';
 import { addDaysYmd, localDay, weekStart } from './dashboard.ts';
 export const MAX_ESTIMATE_MINUTES = 57_600;
@@ -7,6 +8,11 @@ export const MAX_ESTIMATE_MINUTES = 57_600;
 export function parseEstimate(s: string, dayHours: number): number | null {
   const str = s.trim().toLowerCase();
   if (!str) return null;
+  if (str.includes('/')) {
+    const p = str.split('/').map((x) => parseEstimate(x, dayHours));
+    if (p.length !== 3 || p.some((x) => x == null) || !(p[0]! <= p[1]! && p[1]! <= p[2]!)) return null;
+    return Math.round((p[0]! + 4 * p[1]! + p[2]!) / 6);
+  }
   const unit = { d: dayHours * 60, h: 60, m: 1 } as const;
   let min: number;
   if (/^\d+(\.\d+)?$/.test(str)) min = Number(str);
