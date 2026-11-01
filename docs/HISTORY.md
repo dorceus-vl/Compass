@@ -5,13 +5,12 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** `8b1d505` Custom fields per project (number, text, choice, date, person). Not deployed.
-- **Ledger:** field parsing: TESTS ONLY (`scripts/fields.test.ts`, `scripts/enc.test.ts`). Project editor card and task sheet fields: UNVERIFIED (no signed-in browser). Migration 0020: not applied remotely. Siri and Shortcuts, v2.6 goals, v2.5 timer flows: still UNVERIFIED (see the Siri entry).
+- **Done this session:** `8b1d505` Custom fields per project (number, text, choice, date, person). Deployed 2026-11-01: Version `86f3544b-437b-4866-b845-6ce8ae99d63a`, migration 0020 applied.
+- **Ledger:** field parsing: TESTS ONLY (`scripts/fields.test.ts`, `scripts/enc.test.ts`). Project editor card and task sheet fields: UNVERIFIED (no signed-in browser). Siri and Shortcuts, v2.6 goals, v2.5 timer flows: still UNVERIFIED (see the Siri entry).
 - **Vlad's checklist:**
-  - `/ship` (runs `npm run db:migrate:remote` for 0020 before the Worker deploy).
   - Browser after ship: on a personal and a work project add one field of each type, a choice with options; open a task, set each, reload, edit offline then reconnect; rename and remove a field; check the Remove and Add field buttons on a phone.
   - Earlier items still open: Siri phrases on iPhone/iPad, goal screens, timer flows, Android widget build.
-- **Next:** phase "WBS editor", then sprints, documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: shipped Version `1cdcb443-f922-4064-a315-c9eee6f2e70b`; rollback `ae950c1a-b3be-422d-9225-c44ea63f640c`.
+- **Next:** phase "WBS editor", then sprints, documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: shipped Version `86f3544b-437b-4866-b845-6ce8ae99d63a`; rollback `1cdcb443-f922-4064-a315-c9eee6f2e70b`.
 
 ---
 
@@ -201,3 +200,8 @@ Commit `2ce040f`. iOS only (Android has no Siri; App Actions not planned). No mi
 - UI: Project overview → Project details → Custom fields card (add, rename, edit options, remove with confirm); task sheet shows the project's fields under the main grid. `.qcard .btn` gets 44px on phones.
 - Not built: fields as List/Board columns, filter or sort by a field, fields in templates and status reports.
 - Unverified: everything in the browser (passkey sign-in needed); migration not applied remotely. TESTS ONLY: `fields.test.ts`, `enc.test.ts`.
+
+## Custom fields deployed (2026-11-01)
+- Shipped `8b1d505` and `612cfaa` (pushed to main). Migration applied remotely: `0020_custom_fields.sql`. Worker Version `86f3544b-437b-4866-b845-6ce8ae99d63a`; previous (rollback target) `1cdcb443-f922-4064-a315-c9eee6f2e70b`.
+- VERIFIED in production signed out: `/` 200, `/api/goals` 401, `/api/projects` 401.
+- UNVERIFIED (needs passkey sign-in): Custom fields card on a project, fields on the task sheet, offline edit then reconnect, phone button sizes.
