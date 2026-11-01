@@ -12,6 +12,7 @@ import { enablePush, disablePush, pushState, thisDeviceId, type PushState } from
 import { Rules } from './Rules.tsx';
 import { AthenaCard } from './AthenaCard.tsx';
 import { TemplatesCard } from './TemplatesCard.tsx';
+import { PdusCard } from './PdusCard.tsx';
 import { CardHead } from '../ui/CardHead.tsx';
 import { Icon } from '../ui/Shell.tsx';
 import { Documents } from './project/Documents.tsx';
@@ -87,6 +88,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       {inWidgetShell() && <WidgetsCard s={s} save={save} />}
       <KellyCard />
       <TemplatesCard />
+      <PdusCard />
       <ExportCard />
       <div className="card">
         <CardHead icon="doc" title="Documents" desc="Unfiled files that are not in a project. Project files live on the project's Documents tab." />
@@ -110,7 +112,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
   );
 }
 
-const PUSH_LABELS: [PushType, string][] = [['digest', 'Daily digest'], ['overdue', 'Overdue'], ['nudge', 'Waiting-on nudges'], ['milestone', 'Milestones in a week'], ['weekly_review', 'Weekly review'], ['app_task', 'Tasks added by your apps'], ['meeting', 'Meeting notes ready'], ['unblocked', 'A task is unblocked'], ['stakeholder', 'Stakeholder updates due'], ['timer', 'Timer still running']];
+const PUSH_LABELS: [PushType, string][] = [['digest', 'Daily digest'], ['overdue', 'Overdue'], ['nudge', 'Waiting-on nudges'], ['milestone', 'Milestones in a week'], ['weekly_review', 'Weekly review'], ['app_task', 'Tasks added by your apps'], ['meeting', 'Meeting notes ready'], ['unblocked', 'A task is unblocked'], ['stakeholder', 'Stakeholder updates due'], ['timer', 'Timer still running'], ['escalate', 'Overdue a week']];
 const STATUS_TEXT: Record<PushState, string> = {
   on: 'On for this device.', off: 'Off for this device.', blocked: 'Blocked by the browser. Allow notifications for Compass in the browser or system settings, then come back.',
   'home-screen': 'Add Compass to your Home Screen, then turn notifications on here.', unsupported: 'This browser can\'t receive notifications.',

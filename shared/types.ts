@@ -104,7 +104,7 @@ export type AgentScope = 'compass:read.tasks' | 'compass:write.tasks' | 'compass
 export const DEFAULT_SETTINGS: Settings = {
   day_start_hour: 6, digest_hour: 7, quiet_from: '22:00', quiet_to: '07:00', weekly_review_day: 0,
   wip_limits: { new: null, progress: 5, hold: null, waiting: null, done: null }, saved_views: [], tz: 'America/Toronto',
-  push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true, unblocked: true, stakeholder: true, timer: true },
+  push: { digest: true, overdue: true, nudge: true, milestone: true, weekly_review: true, app_task: true, meeting: true, unblocked: true, stakeholder: true, timer: true, escalate: true },
   work_email_domains: ['bell.ca'], last_review_at: null, ai_monthly_cap_micro: 20000000, default_provider: 'claude',
   kelly: { enabled: false, scopes: [] },
   athena: { voice_id: null, speak_answers: false, portrait_id: null },
@@ -136,7 +136,7 @@ export interface MeetingReview {
   series_id?: string | null; // v2.1: the meeting series (shared/series.ts)
 }
 export interface Decision { id: string; project_id: string | null; text: string; decided_at: string; from_meeting_id: string | null; at_ref: string | null; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number }
-export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting' | 'unblocked' | 'stakeholder' | 'timer';
+export type PushType = 'digest' | 'overdue' | 'nudge' | 'milestone' | 'weekly_review' | 'app_task' | 'meeting' | 'unblocked' | 'stakeholder' | 'timer' | 'escalate';
 
 export type RaidType = 'risk' | 'assumption' | 'issue' | 'dependency';
 export interface RaidItem {
@@ -155,7 +155,12 @@ export type DocKind = 'pdf' | 'docx' | 'xlsx' | 'md' | 'txt' | 'csv' | 'pptx' | 
 export interface DocumentRow {
   id: string; name: string; kind: DocKind; size: number; content_type: string; project_id: string | null; is_template: number;
   placeholders: string[]; text_indexed: number; created_at: string; updated_at: string; deleted_at: string | null; enc_v: number;
+  /** v2.12: set on a screenshot clipped onto a task. */
+  task_id?: string | null;
 }
+/** v2.12 PDU tracker: a certification cycle and the PDUs earned toward it. */
+export interface CertRow { id: string; name: string; cycle_start: string; cycle_end: string; required: number; created_at: string; updated_at: string; deleted_at: string | null }
+export interface PduRow { id: string; cert_id: string; title: string; category: string; hours: number; earned_on: string; created_at: string; updated_at: string; deleted_at: string | null }
 /** Phase 6 Knowledge. Rows are as the API returns them: sealed columns opened (name, title, text, locator). */
 export type KnowledgeScope = 'work' | 'personal';
 export type KnowledgeBoundary = 'cloud' | 'locked';

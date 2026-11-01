@@ -165,6 +165,7 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`DELETE FROM goals WHERE id IN (${goneGoals})`),
     q(`UPDATE tasks SET parent_id = NULL WHERE parent_id IN (${goneTasks})`),
     q(`UPDATE inbox_items SET task_id = NULL WHERE task_id IN (${goneTasks})`), // the row outlives its task (FK)
+    q(`UPDATE documents SET task_id = NULL, deleted_at = COALESCE(deleted_at, '1970-01-01T00:00:00.000Z') WHERE task_id IN (${goneTasks})`), // v2.12: a clipped screenshot goes with its task (the doc delete below removes the file); FK
     q(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING id`),
     q(`DELETE FROM ai_messages WHERE thread_id IN (${goneThreads}) RETURNING id`), // their read-aloud audio goes below
     q(`DELETE FROM ai_threads WHERE id IN (${goneThreads})`),
@@ -187,6 +188,8 @@ export async function purgeTrash(env: Env, all = false): Promise<Record<string, 
     q(`DELETE FROM athena_clips WHERE deleted_at IS NOT NULL AND deleted_at < ?1 RETURNING r2_key`), // Athena's removed clips and portraits
     q(`DELETE FROM templates WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.1: a deleted template (nothing refers to it)
     q(`DELETE FROM programs WHERE id IN (${gonePrograms})`), // v2.4: after the projects that pointed at it are gone or unlinked
+    q(`DELETE FROM pdus WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.12: PDUs before their cert
+    q(`DELETE FROM certs WHERE deleted_at IS NOT NULL AND deleted_at < ?1 AND NOT EXISTS (SELECT 1 FROM pdus WHERE cert_id = certs.id)`),
     q(`DELETE FROM prompts WHERE deleted_at IS NOT NULL AND deleted_at < ?1`), // v2.11: a removed prompt (nothing refers to it)
   ]);
   // best effort, only after the rows are gone

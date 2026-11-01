@@ -3,7 +3,7 @@ import { useRoute, navigate } from './router.ts';
 import { api, SignedOut, onStepUpFailed } from './api.ts';
 import { SignIn } from './views/SignIn.tsx';
 import { Shell } from './ui/Shell.tsx';
-import { Toasts, ConfirmDialog, confirmAction } from './ui/dialogs.tsx';
+import { Toasts, ConfirmDialog, confirmAction, toast } from './ui/dialogs.tsx';
 import { Today } from './views/Today.tsx';
 import { Board } from './views/Board.tsx';
 import { List } from './views/List.tsx';
@@ -63,6 +63,15 @@ export function App() {
     const q = new URLSearchParams(location.search); q.delete('task');
     history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
   }, [auth, taskParam]);
+  useEffect(() => { // v2.12: the share target (/api/clip) redirects here with the outcome
+    if (auth !== 'in') return;
+    const q = new URLSearchParams(location.search), clipped = q.get('clip');
+    if (!clipped) return;
+    const shot = q.get('shot');
+    toast(clipped === 'too_big' ? 'That share is too big' : clipped === 'empty' || clipped === 'failed' ? 'Nothing to clip' : shot === 'bad' || shot === 'failed' ? 'Clipped, but the screenshot was not saved' : 'Clipped to your tasks');
+    q.delete('clip'); q.delete('shot');
+    history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
+  }, [auth]);
   useEffect(() => { if (auth === 'out') { dropLocked(); void clearWidgets(); } }, [auth]); // Locked passages live in memory only: gone with the session
   useEffect(() => { if (auth === 'in') return startSync(() => setAuth('out')); }, [auth]);
   // In an app shell: shared text opens quick add prefilled, links and notification taps move inside Compass, and the push token is kept fresh.

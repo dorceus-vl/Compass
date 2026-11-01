@@ -28,8 +28,12 @@ const NOT_TEMPLATE = 'Templates are Word files (.docx).';
 const cleanName = (s: string) => s.split(/[\\/]/).pop()!.trim().slice(0, 200);
 
 documents.get('/', async (c) => {
-  const p = c.req.query('project');
-  const where = p === undefined ? '' : p === 'none' ? 'AND project_id IS NULL' : 'AND project_id = ?1';
+  const p = c.req.query('project'), tk = c.req.query('task'); // v2.12: ?task= lists a task's clipped screenshots
+  if (tk) {
+    const { results } = await c.env.DB.prepare('SELECT * FROM documents WHERE deleted_at IS NULL AND task_id = ?1 ORDER BY created_at LIMIT 20').bind(tk).all<Row>();
+    return c.json({ documents: (await openAll(c.env, 'documents', results)).map(asDoc) });
+  }
+  const where = p === undefined ? 'AND task_id IS NULL' : p === 'none' ? 'AND project_id IS NULL AND task_id IS NULL' : 'AND project_id = ?1';
   const { results } = await c.env.DB.prepare(`SELECT * FROM documents WHERE deleted_at IS NULL ${where} ORDER BY created_at DESC LIMIT 500`).bind(...(p && p !== 'none' ? [p] : [])).all<Row>();
   return c.json({ documents: (await openAll(c.env, 'documents', results)).map(asDoc) });
 });
