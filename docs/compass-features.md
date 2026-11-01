@@ -71,7 +71,7 @@ through the Mac app, later). Work projects default to Offline only until you cha
 | Blocked by / blocks (dependencies between tasks) | Jira, Asana | v2 (done, v2.1: same kind, loops refused, push when unblocked, arrows on the Timeline) |
 | Attachments and links (files kept in R2, Hollow links for big files) | | v1 |
 | Comments and activity log per task (your own notes over time, Kelly's additions) | all | v1 |
-| Custom fields per project (number, text, choice, date, person) | ClickUp, monday | v2 |
+| Custom fields per project (number, text, choice, date, person) | ClickUp, monday | v2 (done, v2.7: set on the project, filled on the task sheet, sealed for work; not yet as list columns or filters) |
 | Task templates (new project kickoff, release, vendor onboarding) and checklists | Asana | v2 (done, v2.1: built-ins plus your own, saved from a task or a project) |
 | Time tracking: start / stop, manual entries, per project totals | ClickUp, Wrike | v2 (done, v2.5: timers on tasks and projects, up to 5 running, manual entries, a week grid and CSV, actual hours beside the plan on Workload, time in the status reports as numbers, a nudge after 4 h and a stop after 12 h, start and stop from the Today widgets) |
 | Focus mode: pick 3 for today, Pomodoro timer, Do Not Disturb hint to Aura | Things | later |

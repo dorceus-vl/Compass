@@ -5,13 +5,13 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** `2ce040f` Siri and Shortcuts (iOS App Intents: add task, what's due today, start focus). `3971a9d` its HISTORY entry. `c1bdbd7` deployed record (Worker redeploy, same server code).
-- **Ledger:** Siri sentence logic: TESTS ONLY (`mobile/test-swift.sh` "siri due today", "siri stale snapshot", "siri nothing due"). App build with the intents: VERIFIED IN SIMULATOR build only (`BUILD SUCCEEDED`; `App.app/Metadata.appintents` lists AddTaskIntent, DueTodayIntent, StartFocusIntent, 3 auto shortcuts); never launched. Siri phrases, quick add prefill, spoken text when locked, timer start: UNVERIFIED. Live deploy: VERIFIED in production signed out (`/` 200, `/api/goals` 401, widget timer 401). v2.6 goal screens, v2.5 timer flows: still UNVERIFIED.
+- **Done this session:** `8b1d505` Custom fields per project (number, text, choice, date, person). Not deployed.
+- **Ledger:** field parsing: TESTS ONLY (`scripts/fields.test.ts`, `scripts/enc.test.ts`). Project editor card and task sheet fields: UNVERIFIED (no signed-in browser). Migration 0020: not applied remotely. Siri and Shortcuts, v2.6 goals, v2.5 timer flows: still UNVERIFIED (see the Siri entry).
 - **Vlad's checklist:**
-  - iPhone/iPad (new build; Apple signing step first): "Hey Siri, add a task in Compass" with Compass open and closed (quick add opens filled); "What's due today in Compass" locked and unlocked (work titles say "Work task"); "Start focus in Compass" with and without a widget token (timer shows on the web); Shortcuts app shows 3 Compass tiles; widget build.
-  - Mac or iPad browser: passkey sign-in and reload (close other tabs for the IndexedDB upgrade); a personal and a work goal, each key result type, a check-in; link tasks and a project; Today long horizon; Weekly Review Goals step; Trash and restore a goal; the v2.5 timer flows.
-  - Android: install the v2.5 widget build.
-- **Next:** phase "Custom fields" (`docs/compass-features.md` line 74), first of the proposed order: custom fields, WBS editor, sprints, documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: shipped Version `1cdcb443-f922-4064-a315-c9eee6f2e70b`; rollback `ae950c1a-b3be-422d-9225-c44ea63f640c`.
+  - `/ship` (runs `npm run db:migrate:remote` for 0020 before the Worker deploy).
+  - Browser after ship: on a personal and a work project add one field of each type, a choice with options; open a task, set each, reload, edit offline then reconnect; rename and remove a field; check the Remove and Add field buttons on a phone.
+  - Earlier items still open: Siri phrases on iPhone/iPad, goal screens, timer flows, Android widget build.
+- **Next:** phase "WBS editor", then sprints, documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: shipped Version `1cdcb443-f922-4064-a315-c9eee6f2e70b`; rollback `ae950c1a-b3be-422d-9225-c44ea63f640c`.
 
 ---
 
@@ -193,3 +193,11 @@ Commit `2ce040f`. iOS only (Android has no Siri; App Actions not planned). No mi
 - Start focus = start the task's v2.5 timer (no focus mode). Task list = snapshot `items` of today's snapshot only, running ones not suggested; `running` re-read at perform. `TimerIntent.run` (static, shared with the widget's Start) returns true only on 200; otherwise Siri says the timer is queued (pending-ticks, drained by the app with the tap time).
 - Tests: `mobile/test-swift.sh` Siri sentence checks; simulator build into scratchpad passed and `App.app/Metadata.appintents` lists the 3 intents and 3 auto shortcuts. UNVERIFIED on a device: Siri phrases, the Shortcuts app tiles, quick add prefill from Siri (warm and cold start), spoken text on a locked phone, timer start with and without a widget token.
 - Deployed 2026-10-31 (no server or web change; the Worker redeploy ships the same code): no migration, Version `1cdcb443-f922-4064-a315-c9eee6f2e70b` (previous `ae950c1a-b3be-422d-9225-c44ea63f640c`, rollback target). Live unauthenticated checks passed (`/` 200, `/api/goals` 401, widget timer 401). The Siri features reach devices only with the next iPhone/iPad build; all device checks above stay UNVERIFIED.
+
+## Custom fields (2026-11-01)
+- `8b1d505`. Migration `0020_custom_fields.sql`: `projects.fields` (JSON array of `{ id, name, type, options? }`) and `tasks.field_values` (JSON object keyed by field id). Both in `ENC_COLS`, so sealed on work rows; no new table, the offline mirror carries them in the existing rows.
+- `shared/fields.ts` parses and checks both (20 fields, 30 options, values a number or text up to 500); `scripts/fields.test.ts`. The server checks shape only; the task sheet checks each value against its type.
+- Types: number, text, choice, date, person. Person is a typed name (one user, no people table). A field's type is fixed once added. A removed field or a task moved to another project keeps its old values until that task's fields are next edited, then only the current project's fields are kept.
+- UI: Project overview → Project details → Custom fields card (add, rename, edit options, remove with confirm); task sheet shows the project's fields under the main grid. `.qcard .btn` gets 44px on phones.
+- Not built: fields as List/Board columns, filter or sort by a field, fields in templates and status reports.
+- Unverified: everything in the browser (passkey sign-in needed); migration not applied remotely. TESTS ONLY: `fields.test.ts`, `enc.test.ts`.
