@@ -19,6 +19,8 @@ export interface Project {
   wbs?: string | null;
   /** v2.9: JSON array of sprints (shared/sprints.ts); null when none. Optional: rows cached before 0022 lack it. */
   sprints?: string | null;
+  /** v2.10: JSON array of wiki pages and agendas (shared/pages.ts); null when none. Optional: rows cached before 0023 lack it. */
+  pages?: string | null;
   created_at: string; updated_at: string; deleted_at: string | null;
 }
 /** v2.4: a program groups projects of one kind. name, rag_reason and notes are sealed for work; kind is fixed after creation. */

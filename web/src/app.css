@@ -1275,3 +1275,5 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .vel span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vel i{display:block;height:10px;background:var(--accent);border-radius:3px}
 .sprints .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{display:grid;gap:4px}
+.pages .btn:focus-visible,.pages .wbs-task:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

@@ -9,6 +9,7 @@ import { embedPending, unembedStale } from '../lib/vectors.ts';
 import { parseFieldDefs } from '../../shared/fields.ts';
 import { parseWbs, MAX_WBS_NODES } from '../../shared/wbs.ts';
 import { parseSprints, MAX_SPRINTS } from '../../shared/sprints.ts';
+import { parsePages, MAX_PAGES } from '../../shared/pages.ts';
 
 const projects = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -27,6 +28,8 @@ const PROJECT_CHECKS: Record<string, Check> = {
   wbs: (v, f) => { const w = parseWbs(v); return w ? { value: w.length ? JSON.stringify(w) : null } : { error: `${f} must be an outline of at most ${MAX_WBS_NODES} nodes, each with an id, a title of 1 to 120 characters and a depth of 0 to 5, no node more than one level below the one before it` }; },
   // v2.9: sprints (shared/sprints.ts); empty is null.
   sprints: (v, f) => { const s = parseSprints(v); return s ? { value: s.length ? JSON.stringify(s) : null } : { error: `${f} must be a list of at most ${MAX_SPRINTS} sprints, each with an id, a name of 1 to 80 characters, a goal of at most 300, start and end dates (YYYY-MM-DD, end not before start) and a state (planned, active, closed), at most one active` }; },
+  // v2.10: wiki pages and agendas (shared/pages.ts); empty is null.
+  pages: (v, f) => { const p = parsePages(v); return p ? { value: p.length ? JSON.stringify(p) : null } : { error: `${f} must be a list of at most ${MAX_PAGES} pages, each with an id, a title of 1 to 120 characters, a kind (page, agenda), a body of at most 20000, at most 50 task links and at most 50 agenda items of 0 to 480 minutes` }; },
 };
 /** v2.4: a project joins only a live program of its own kind. null when fine, else the 400 answer's body. */
 async function sameKindProgram(env: Env, programId: unknown, kind: 'personal' | 'work'): Promise<{ error: string; message: string } | null> {
