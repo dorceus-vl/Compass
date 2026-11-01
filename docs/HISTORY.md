@@ -5,11 +5,11 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** documents v2.10 (`82c67a8` Pages tab: wiki pages + agendas, migration 0023; `34e74dc`, `a487c85` HISTORY). Deployed 2026-11-01: Version `76dae0a8-e0b1-439f-98a8-0757d0b11837`, migration 0023 applied; rollback `b49987f2-770d-4eae-b3a6-2344ad42b51f`.
-- **Ledger:** parse/agenda logic: TESTS ONLY (`scripts/pages.test.ts`, `enc.test.ts`). Deploy: site `/` returned 200; `/api/health` returned 401 (auth, new code not exercised). Pages tab look, 44pt targets, clipboard copy: UNVERIFIED.
-- **Known gaps:** body saves on blur only; whole-array PATCH is last-write-wins across devices; agenda not sent via Kelly; `projectStmt` drops `pages` on create.
-- **Vlad's checklist (any device, signed in):** open a project's Pages tab; add a page and an agenda; link a task; Copy as Markdown. Earlier unverified: WBS, custom fields, sprints, Siri, goals, timers.
-- **Next:** Athena pack (prompt library, retrospectives, estimation), then small pack (auto-snooze/escalate, PDU tracker, clip screenshot).
+- **Done this session:** Athena pack v2.11. Prompt library (migration 0024 `prompts`, `/api/prompts`, `web/src/views/PromptShelf.tsx` on the Athena screen; plain text, soft delete, Trash cron purges after 30 days, 100 at most, not in the Trash screen so no restore). Presets `retrospective` (uses lessons via library pages) and `estimation` (PERT) in `shared/presets.ts`. Not deployed: needs `/ship` (migration 0024).
+- **Ledger:** typecheck and `npm run check`: TESTS ONLY (preset count in `scripts/ai.test.ts`; no test for `/api/prompts`). Shelf look, 44pt targets, answers of the two presets: UNVERIFIED.
+- **Known gaps:** estimation reads no cross-project task actuals (boundary risk); prompt shelf is online-only; unsaved edit lost when switching prompts.
+- **Vlad's checklist (signed in):** Athena screen: add a prompt, tap it, edit, delete; try Retrospective and Estimate this.
+- **Next:** small pack (auto-snooze/escalate, PDU tracker, clip screenshot).
 
 ---
 
@@ -214,3 +214,8 @@ Commit `2ce040f`. iOS only (Android has no Siri; App Actions not planned). No mi
 - Shipped `1a58a08` and `cb4fc82` (pushed to main). Migration applied remotely: `0021_wbs.sql`. Worker Version `e3fc64b6-c271-44bb-a9fc-a496155d6100`; rollback `86f3544b-437b-4866-b845-6ce8ae99d63a`.
 - VERIFIED in production signed out: `/` 200, `/api/projects` 401, `/api/goals` 401.
 - UNVERIFIED (needs passkey sign-in): WBS tab (add, nest, reorder, rename, remove), Work package picker on the task sheet, offline edit then reconnect, 44pt buttons on a phone.
+
+
+## v2.11: Athena pack (2026-11-01)
+- Files: `worker/routes/prompts.ts`, `worker/migrations/0024_prompts.sql`, `web/src/views/PromptShelf.tsx`, `shared/presets.ts`, `shared/types.ts` (`PromptRow`), `worker/routes/trash.ts` (purge appended last so batch indexes hold).
+- Decisions: prompts are plain, never work content; Pick appends to the Ask box; unverified on device: shelf look, edit flow.
