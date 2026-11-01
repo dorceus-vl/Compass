@@ -5,11 +5,11 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** documents (v2.10, deployed 2026-11-01: Version `76dae0a8-e0b1-439f-98a8-0757d0b11837`, migration 0023 applied; rollback `b49987f2-770d-4eae-b3a6-2344ad42b51f`): project Pages tab, wiki pages (Markdown, linked to tasks) and agendas (time-boxed items, up/down, copy as Markdown). `projects.pages` (sealed JSON, `shared/pages.ts`), migration 0023, `web/src/ui/Pages.tsx`.
-- **Decisions:** one JSON column like sprints/WBS; edits are updaters on the latest queued value; a bad stored value pauses edits instead of overwriting; links to deleted or moved tasks hide and drop on the next link edit.
-- **Ledger:** logic: TESTS ONLY (`scripts/pages.test.ts`). Pages tab look, 44pt targets, copy to clipboard: UNVERIFIED (no signed-in browser).
-- **Known gaps:** body saves on blur only (lost if the app closes with the field focused); whole-array PATCH, so two-device edits last-write-wins; agenda is not sent via Kelly; `projectStmt` drops `pages` on create (as sprints).
-- **Next:** Athena pack (prompt library, retrospectives, estimation), then small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Earlier unverified items (WBS, custom fields, sprints, Siri, goals, timers) still open.
+- **Done this session:** documents v2.10 (`82c67a8` Pages tab: wiki pages + agendas, migration 0023; `34e74dc`, `a487c85` HISTORY). Deployed 2026-11-01: Version `76dae0a8-e0b1-439f-98a8-0757d0b11837`, migration 0023 applied; rollback `b49987f2-770d-4eae-b3a6-2344ad42b51f`.
+- **Ledger:** parse/agenda logic: TESTS ONLY (`scripts/pages.test.ts`, `enc.test.ts`). Deploy: site `/` returned 200; `/api/health` returned 401 (auth, new code not exercised). Pages tab look, 44pt targets, clipboard copy: UNVERIFIED.
+- **Known gaps:** body saves on blur only; whole-array PATCH is last-write-wins across devices; agenda not sent via Kelly; `projectStmt` drops `pages` on create.
+- **Vlad's checklist (any device, signed in):** open a project's Pages tab; add a page and an agenda; link a task; Copy as Markdown. Earlier unverified: WBS, custom fields, sprints, Siri, goals, timers.
+- **Next:** Athena pack (prompt library, retrospectives, estimation), then small pack (auto-snooze/escalate, PDU tracker, clip screenshot).
 
 ---
 
