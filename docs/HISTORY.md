@@ -5,13 +5,11 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** `1a58a08` WBS editor (numbered outline per project on `projects.wbs`, `tasks.wbs_id`, WBS tab, Work package picker on the task sheet). Deployed 2026-11-01: Version `e3fc64b6-c271-44bb-a9fc-a496155d6100`, migration 0021 applied; rollback `86f3544b-437b-4866-b845-6ce8ae99d63a`.
-- **Ledger:** outline logic: TESTS ONLY (`scripts/wbs.test.ts`, `scripts/enc.test.ts`). Production signed out: VERIFIED (`/` 200, `/api/projects` 401, `/api/goals` 401). WBS tab, task sheet picker, 44pt targets: UNVERIFIED (no signed-in browser). Custom fields, Siri and Shortcuts, v2.6 goals, v2.5 timer flows: still UNVERIFIED.
-- **Vlad's checklist:**
-  - Browser (passkey sign-in): on a personal and a work project open the WBS tab; add, nest, un-nest, reorder, rename, remove packages; open a task, pick its package, reload; edit offline then reconnect; check buttons on a phone.
-  - Earlier items still open: custom fields card, Siri phrases on iPhone/iPad, goal screens, timer flows, Android widget build.
-- **Known WBS gaps:** "Work breakdown" document template (`web/src/docs/templates.ts`) ignores `project.wbs`; subtasks not listed on the WBS tab; `projectStmt` drops a `wbs` sent on create; offline outline edits on two devices are last-write-wins; server does not check `wbs_id` belongs to the project's outline.
-- **Next:** phase "sprints", then documents (wiki + agenda), Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot); Aura kiosk card belongs to the Aura repo. Deploy state: all shipped, nothing pending.
+- **Done this session:** sprints (v2.9, not deployed). `projects.sprints` (sealed JSON, `shared/sprints.ts`), `tasks.sprint_id`, migration 0022, Sprints tab (`web/src/ui/Sprints.tsx`: plan, start, burndown, close, velocity, backlog), Sprint picker on the task sheet.
+- **Decisions:** effort counted in tasks, not points; one active sprint; close moves unfinished tasks to the next planned sprint or the backlog and stores `total`/`done` so velocity survives; sprint length capped at 366 days; moving a task to another project clears `sprint_id`.
+- **Ledger:** logic: TESTS ONLY (`scripts/sprints.test.ts`). Sprints tab, task picker, burndown look, 44pt targets: UNVERIFIED (no signed-in browser). Not deployed: migration 0022 must run (`/ship`).
+- **Known gaps:** server does not check `sprint_id` belongs to the project's sprints; close-time task moves are separate PATCHes (an interrupted close leaves tasks in the closed sprint, which then show in the backlog); `projectStmt` drops `sprints` on create; subtasks not listed; two-device edits last-write-wins.
+- **Next:** documents (wiki + agenda), then Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Earlier unverified items (WBS, custom fields, Siri, goals, timers) still open.
 
 ---
 
