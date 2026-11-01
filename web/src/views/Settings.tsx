@@ -86,6 +86,7 @@ export function SettingsView({ onSignedOut }: { onSignedOut: () => void }) {
       <Ai s={s} save={save} />
       <AthenaCard s={s} save={save} />
       {inWidgetShell() && <WidgetsCard s={s} save={save} />}
+      <KioskCard />
       <KellyCard />
       <TemplatesCard />
       <PdusCard />
@@ -218,6 +219,36 @@ function WidgetsCard({ s, save }: { s: Settings; save: Save }) {
             <button type="button" className="btn" disabled={busy} onClick={() => revoke(t)}>Revoke</button>
           </div>))}
       </div>}
+    </div>
+  );
+}
+
+/** Settings → Wall display (v2.14): the Aura tablet's read-only key. The token is shown once; the page never keeps it. */
+type KioskToken = { id: string; label: string; created_at: string; last_used_at: string | null };
+function KioskCard() {
+  const [tokens, setTokens] = useState<KioskToken[] | null>(null);
+  const [shown, setShown] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api<{ tokens: KioskToken[] }>('/kiosk/tokens').then((d) => setTokens(d.tokens)).catch(() => setTokens(null));
+  useEffect(() => { void load(); }, []);
+  const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) { toast((e as Error).message || 'Needs a connection'); } finally { setBusy(false); void load(); } };
+  const create = () => run(async () => { setShown((await api<{ token: string }>('/kiosk/token', { method: 'POST', json: { label: 'Wall tablet' } })).token); });
+  const copy = async () => { try { await navigator.clipboard.writeText(shown!); toast('Copied'); } catch { toast('Copy failed. Select the key and copy it.'); } };
+  return (
+    <div className="card">
+      <CardHead icon="today" title="Wall display" desc="A key for the Aura wall tablet's Today card. It can read one thing: today's personal tasks, and a count of work tasks." />
+      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-faint)' }}>Work task titles never leave Compass. Making a key asks for your passkey and shows it once.</p>
+      {shown && <div className="row" style={{ marginBottom: 8 }}>
+        <input className="field" readOnly aria-label="Wall display key" value={shown} style={{ flex: '1 1 220px', width: 'auto' }} onFocus={(e) => e.target.select()} />
+        <button type="button" className="btn" onClick={() => void copy()}>Copy</button>
+        <button type="button" className="btn" onClick={() => setShown(null)}>Done</button>
+      </div>}
+      <button type="button" className="btn" disabled={busy || tokens === null} onClick={() => void create()}>Make a key</button>
+      {tokens !== null && tokens.map((t) => (
+        <div key={t.id} className="row" style={{ justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid var(--border-soft)', fontSize: 14, marginTop: 8 }}>
+          <span>{t.label}<span style={{ display: 'block', fontSize: 12, color: 'var(--text-faint)' }}>{t.last_used_at ? `Last used ${new Date(t.last_used_at).toLocaleString()}` : 'Not used yet'}</span></span>
+          <button type="button" className="btn" disabled={busy} onClick={() => run(async () => { await api(`/kiosk/token/${t.id}`, { method: 'DELETE' }); toast('Key revoked'); })}>Revoke</button>
+        </div>))}
     </div>
   );
 }

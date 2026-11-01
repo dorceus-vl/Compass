@@ -26,7 +26,7 @@ export const scrub = (s: string) => s.replace(/\b\d{4}(?:[ -]\d{4}){3}\b/g, '[nu
 const list = (title: string, rows: string[]) => (rows.length ? `${title}\n${rows.map((r) => `- ${r}`).join('\n')}` : '');
 
 type Row = Record<string, string | number | null>;
-const LIVE_PERSONAL = `p.id IS NOT NULL AND p.deleted_at IS NULL AND p.kind = 'personal' AND p.enc_v = 0 AND p.data_boundary = 'cloud'`;
+export const LIVE_PERSONAL = `p.id IS NOT NULL AND p.deleted_at IS NULL AND p.kind = 'personal' AND p.enc_v = 0 AND p.data_boundary = 'cloud'`;
 
 /**
  * Compass's own part, personal items only, as Markdown: open personal tasks (overdue, due this week, the rest), live personal projects with a RAG

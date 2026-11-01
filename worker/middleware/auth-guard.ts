@@ -13,6 +13,8 @@ export async function authGuard(c: Context<{ Bindings: Env; Variables: Variables
   if (/^\/api\/agent(\/|$)/.test(new URL(c.req.url).pathname)) return next();
   // POST /api/widget/tasks/:id/done and /timer are sent by the widgets (no cookie, no Origin); the route checks the bearer token itself. Exactly these methods and paths.
   if (c.req.method === 'POST' && /^\/api\/widget\/tasks\/[^/]+\/(done|timer)$/.test(new URL(c.req.url).pathname)) return next();
+  // GET /api/kiosk/today is read by the Aura wall tablet (no cookie, no Origin); the route checks the bearer token itself. Exactly this method and path.
+  if (c.req.method === 'GET' && new URL(c.req.url).pathname === '/api/kiosk/today') return next();
   if (!sameOrigin(c.req.raw)) return c.json({ error: 'Forbidden' }, 403);
   if (PUBLIC.has(new URL(c.req.url).pathname)) return next();
   const session = await getSession(c);
