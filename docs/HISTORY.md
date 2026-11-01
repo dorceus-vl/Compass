@@ -5,12 +5,11 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** small pack v2.12 (deployed 2026-11-01: Version `13369de4-3036-474b-87ab-8bfff089c82c`, migration 0025 applied; rollback `5f63eeeb-d1d8-4eb0-b274-78e0358cd143`). Migration 0025 (`certs`, `pdus`, `documents.task_id`). Auto-escalate `worker/lib/escalate.ts` from the cron: overdue 3 days → priority 3 (once per due date, guard in `push_log`), 7 days → push type `escalate` (max 5 a tick, work tasks get generic text). PDU tracker `routes/pdus.ts` + `PdusCard.tsx` in Settings. Clip: manifest `share_target` → `POST /api/clip` creates a personal task (+ PNG/JPG stored as document linked by `task_id`, listed in TaskSheet, hidden from Documents lists).
-- **Ledger:** typecheck, `npm run check` (new `escalate.test.ts`, pure part only): TESTS ONLY. Everything else UNVERIFIED.
-- **Known gaps / risks:** share target may be refused by the auth guard (needs `Origin` on the POST, cookie is SameSite=Lax); verify on device, else route via the service worker. certs/pdus not in export or Trash screen. Clipped task not in the offline mirror until next sync. Escalation keys expire with push_log (30 days). No tests for pdus/clip routes.
-- **Deploy:** done. `/` 200, `/api/health` and `/api/pdus` 401 (auth; new code not exercised), manifest has share_target.
-- **Vlad's checklist:** Settings → PDUs: add cert, add/delete PDU; Notifications has "Overdue a week"; share a page + screenshot to Compass from phone; open the task, see the screenshot link.
-- **Next:** none queued; pick from `docs/compass-features.md`.
+- **Done this session:** small pack v2.12. `61ca63e` auto-escalate (overdue 3 days → priority 3, 7 days → `escalate` push), PDU tracker (migration 0025, `/api/pdus`, Settings card), clip share target (`/api/clip`, screenshot linked by `documents.task_id`); `0341f60`, `ea4f611` HISTORY. Deployed 2026-11-01: Version `13369de4-3036-474b-87ab-8bfff089c82c`, migration 0025 applied; rollback `5f63eeeb-d1d8-4eb0-b274-78e0358cd143`.
+- **Ledger:** typecheck, `npm run check` (`escalate.test.ts`, pure part only): TESTS ONLY. Deploy: `/` 200, manifest has share_target; `/api/health` and `/api/pdus` 401 (auth, new code not exercised). Cron escalation, PDU UI, clip share, 44pt targets: UNVERIFIED. No tests for `/api/pdus`, `/api/clip`.
+- **Known gaps:** share POST may be refused by auth guard (needs `Origin`; cookie SameSite=Lax); certs/pdus not in export or Trash screen; clipped task absent from offline mirror until next sync; escalation keys expire with push_log (30 days).
+- **Vlad's checklist (any device, signed in):** Settings → PDUs (add cert, add/delete PDU); Notifications shows "Overdue a week"; share a page + screenshot to Compass from phone, open task, see screenshot link; an overdue 3+ day task turns high priority. Earlier unverified: Athena prompt shelf, Pages tab, WBS, custom fields, sprints, Siri, goals, timers.
+- **Next:** none queued; pick from `docs/compass-features.md`. Deployed; nothing pending.
 
 ---
 
