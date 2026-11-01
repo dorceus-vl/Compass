@@ -15,20 +15,25 @@ struct TimerIntent: AppIntent {
     init(taskId: String, action: String) { self.taskId = taskId; self.action = action }
 
     func perform() async throws -> some IntentResult {
-        let id = taskId, act = action, now = Date(), at = Snapshot.iso(now)
-        guard act == "start" || act == "stop", let dir = WidgetStore.container() else { return .result() }
-        await withCheckedContinuation { done in WidgetStore.queue.async { WidgetStore.timer(id, action: act, at: now, in: dir); done.resume() } }
-        WidgetCenter.shared.reloadAllTimelines()
-        if let token = WidgetStore.readToken(), let url = WidgetServer.timerURL(id, server: WidgetServer.configured(), allowLocal: isDebug),
-           let body = WidgetServer.timerBody(act, at: at), await WidgetServer.post(url, token: token, body: body) {
-            await withCheckedContinuation { done in WidgetStore.queue.async { try? WidgetStore.removeTick(id, action: act, at: at, in: dir); done.resume() } }
-        }
+        _ = await Self.run(taskId, action)
         return .result()
     }
 
+    /// true once the server has it (200); false = queued for the app, or a bad action. Siri's "Start focus" says which.
+    static func run(_ id: String, _ act: String) async -> Bool {
+        let now = Date(), at = Snapshot.iso(now)
+        guard act == "start" || act == "stop", let dir = WidgetStore.container() else { return false }
+        await withCheckedContinuation { done in WidgetStore.queue.async { WidgetStore.timer(id, action: act, at: now, in: dir); done.resume() } }
+        WidgetCenter.shared.reloadAllTimelines()
+        guard let token = WidgetStore.readToken(), let url = WidgetServer.timerURL(id, server: WidgetServer.configured(), allowLocal: isDebug),
+              let body = WidgetServer.timerBody(act, at: at), await WidgetServer.post(url, token: token, body: body) else { return false }
+        await withCheckedContinuation { done in WidgetStore.queue.async { try? WidgetStore.removeTick(id, action: act, at: at, in: dir); done.resume() } }
+        return true
+    }
+
     #if DEBUG
-    private var isDebug: Bool { true }
+    private static var isDebug: Bool { true }
     #else
-    private var isDebug: Bool { false }
+    private static var isDebug: Bool { false }
     #endif
 }

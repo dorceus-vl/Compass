@@ -91,7 +91,7 @@ public class CompassNativePlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticati
     }
 
     /// Coming to the front: a share waiting in the app group goes to the page now, and is cleared as it goes (never delivered twice).
-    @objc private func becameActive() {
+    @objc func becameActive() {
         guard let text = SharedText.take() else { return }
         notifyListeners("sharedText", data: ["text": text], retainUntilConsumed: true)
     }
@@ -201,7 +201,8 @@ enum SharedText {
         guard let store = UserDefaults(suiteName: group), let text = store.string(forKey: key) else { return nil }
         store.removeObject(forKey: key)
         return text.isEmpty ? nil : text
-    }
+    }    /// Siri's "Add a task" leaves its words here too (one pending, like a share: a newer one replaces it).
+    static func put(_ text: String) { UserDefaults(suiteName: group)?.set(text, forKey: key) }
 }
 
 struct PushRefused: Error {}

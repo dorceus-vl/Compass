@@ -288,6 +288,12 @@ for bad in ["https://example.com", "http://compass.knocturnlabs.com", "https://c
 check(WidgetServer.timerBody("start", at: "x").flatMap { String(data: $0, encoding: .utf8) } == "{\"action\":\"start\",\"at\":\"x\"}" && WidgetServer.timerBody("done", at: "x") == nil, "timer body")
 let treq = WidgetServer.request(prod, token: "tok", body: WidgetServer.timerBody("stop", at: "x"))
 check(treq.httpBody != nil && treq.value(forHTTPHeaderField: "Content-Type") == "application/json" && !treq.httpShouldHandleCookies && treq.value(forHTTPHeaderField: "Authorization") == "Bearer tok", "timer request shape")
+// Siri's "what's due today": the snapshot's day only, Lock Screen titles, at most three named.
+let at = Snapshot.date(s.at)!
+check(s.spokenDueToday(now: at) == "3 due today, 1 late: Work task, Work task, Offline-only task.", "siri due today")
+check(s.spokenDueToday(now: at.addingTimeInterval(86_400)) == "Open Compass to update today's list.", "siri stale snapshot")
+var none = s; none.today.due = 0; none.today.late = 0
+check(none.spokenDueToday(now: at) == "Nothing left due today. 1 done.", "siri nothing due")
 print("Widget snapshot: all checks passed")
 SWIFT
 swiftc -o "$out/snap" ios/App/App/WidgetStore.swift ios/App/CompassWidgets/Snapshot.swift "$out/x/main.swift"

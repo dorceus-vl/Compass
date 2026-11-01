@@ -176,6 +176,19 @@ extension Snapshot.Project {
     var shownName: String { offline ? "Offline-only project" : (name ?? "Offline-only project") }
 }
 
+extension Snapshot {
+    /// What Siri answers to "what's due today" (Siri and Shortcuts). Siri can speak on a locked phone, so titles follow the Lock Screen rule.
+    /// A snapshot from another day is not read out: its counts are stale until the app writes a new one.
+    func spokenDueToday(now: Date = Date()) -> String {
+        guard atDay == Snapshot.ymd(now, tz: tz) else { return "Open Compass to update today's list." }
+        guard today.due > 0 else { return today.done > 0 ? "Nothing left due today. \(today.done) done." : "Nothing due today." }
+        let names = items.filter { $0.late || $0.dueLabel == "Today" }.prefix(3).map { $0.shown(lock: true, hideWork: lock.hideWork) }
+        let more = today.due - names.count, late = today.late > 0 ? ", \(today.late) late" : ""
+        let list = names.isEmpty ? "" : ": " + names.joined(separator: ", ") + (more > 0 ? ", and \(more) more" : "")
+        return "\(today.due) due today\(late)\(list)."
+    }
+}
+
 /// Where a widget tap goes (W4): universal links on the Compass host only, which the shell routes in-app through CompassLink.
 enum CompassURL {
     static let base = "https://compass.knocturnlabs.com"
