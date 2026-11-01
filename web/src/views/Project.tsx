@@ -31,10 +31,11 @@ import { usePrograms } from './Programs.tsx';
 import { OFFLINE_LINE } from '../programs.ts';
 import { LogTimeDialog } from '../ui/TimeSection.tsx';
 import { FieldsEditor } from '../ui/CustomFields.tsx';
+import { WbsEditor } from '../ui/Wbs.tsx';
 
-const TABS = ['overview', 'dashboard', 'raid', 'stakeholders', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
+const TABS = ['overview', 'dashboard', 'wbs', 'raid', 'stakeholders', 'changes', 'decisions', 'lessons', 'meetings', 'documents', 'report', 'copilot'] as const;
 const SWATCH_NAME = ['Sand', 'Teal', 'Violet', 'Blue', 'Amber', 'Green'];
-const TAB_LABEL: Record<string, string> = { overview: 'Overview', dashboard: 'Dashboard', raid: 'RAID', stakeholders: 'Stakeholders', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Athena' };
+const TAB_LABEL: Record<string, string> = { overview: 'Overview', dashboard: 'Dashboard', wbs: 'WBS', raid: 'RAID', stakeholders: 'Stakeholders', changes: 'Changes', decisions: 'Decisions', lessons: 'Lessons', meetings: 'Meetings', documents: 'Documents', report: 'Report', copilot: 'Athena' };
 
 export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string }) {
   const { projects, tasks, milestones, ready } = useStore();
@@ -133,6 +134,7 @@ export function ProjectPage({ id, tab = 'overview' }: { id: string; tab?: string
       </nav>
       <div className="pbody" style={{ ['--pc' as string]: color } as CSSProperties}>
       {current === 'dashboard' && <Dashboard key={p.id} project={p} />}
+      {current === 'wbs' && <WbsEditor key={p.id} project={p} tasks={mine.filter((t) => !t.parent_id)} onOpen={setOpen} />}
       {current === 'raid' && <Raid key={p.id} project={p} />}
       {current === 'stakeholders' && <Stakeholders key={p.id} project={p} />}
       {current === 'changes' && <Changes key={p.id} project={p} />}

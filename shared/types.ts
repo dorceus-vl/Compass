@@ -15,6 +15,8 @@ export interface Project {
   program_id: string | null; budget_forecast: number | null; currency: string;
   /** v2.7: JSON array of custom field definitions (shared/fields.ts); null when none. Optional: rows cached before 0020 lack it. */
   fields?: string | null;
+  /** v2.8: JSON array of work breakdown nodes (shared/wbs.ts); null when none. Optional: rows cached before 0021 lack it. */
+  wbs?: string | null;
   created_at: string; updated_at: string; deleted_at: string | null;
 }
 /** v2.4: a program groups projects of one kind. name, rag_reason and notes are sealed for work; kind is fixed after creation. */
@@ -70,6 +72,8 @@ export interface Task {
   blocked_by: string | null; checklist: string | null;
   /** v2.7: JSON object { field id: value } for the project's custom fields; null when none. */
   field_values?: string | null;
+  /** v2.8: id of the work breakdown node this task hangs off (the project's `wbs`); null when none. */
+  wbs_id?: string | null;
   sort_in_column: number; tags: string; enc_v: number; created_at: string; updated_at: string; deleted_at: string | null;
 }
 export interface TaskEvent { id: string; task_id: string; at: string; actor: 'you' | 'rule' | 'kelly' | 'meeting'; type: 'created' | 'moved' | 'edited' | 'comment' | 'nudged' | 'done'; data: string | null; enc_v: number }

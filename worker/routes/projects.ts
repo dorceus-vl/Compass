@@ -7,6 +7,7 @@ import { now, audit } from '../lib/db.ts';
 import { requireStepUp } from '../lib/step-up.ts';
 import { embedPending, unembedStale } from '../lib/vectors.ts';
 import { parseFieldDefs } from '../../shared/fields.ts';
+import { parseWbs, MAX_WBS_NODES } from '../../shared/wbs.ts';
 
 const projects = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -21,6 +22,8 @@ const PROJECT_CHECKS: Record<string, Check> = {
   program_id: (v, f) => v === null || v === '' ? { value: null } : typeof v === 'string' && v.length <= 64 ? { value: v } : { error: `${f} must be a program id or null` },
   // v2.7: custom field definitions (shared/fields.ts); empty is null.
   fields: (v, f) => { const d = parseFieldDefs(v); return d ? { value: d.length ? JSON.stringify(d) : null } : { error: `${f} must be a list of at most 20 fields, each with an id, a name of 1 to 60 characters, a type (number, text, choice, date, person) and, for a choice, 1 to 30 options` }; },
+  // v2.8: work breakdown outline (shared/wbs.ts); empty is null.
+  wbs: (v, f) => { const w = parseWbs(v); return w ? { value: w.length ? JSON.stringify(w) : null } : { error: `${f} must be an outline of at most ${MAX_WBS_NODES} nodes, each with an id, a title of 1 to 120 characters and a depth of 0 to 5, no node more than one level below the one before it` }; },
 };
 /** v2.4: a project joins only a live program of its own kind. null when fine, else the 400 answer's body. */
 async function sameKindProgram(env: Env, programId: unknown, kind: 'personal' | 'work'): Promise<{ error: string; message: string } | null> {

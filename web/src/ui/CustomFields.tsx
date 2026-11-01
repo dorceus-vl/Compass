@@ -9,7 +9,7 @@ const TYPE_LABEL: Record<FieldType, string> = { number: 'Number', text: 'Text', 
 const parseOptions = (s: string) => { const o = [...new Set(s.split(',').map((x) => x.trim()).filter(Boolean))]; return o.length > MAX_OPTIONS || o.some((x) => x.length > 60) ? null : o; };
 
 /** The last value this component queued, until the store catches up: two quick edits must build on each other, not on a stale prop. */
-function useLatest(prop: string | null | undefined) {
+export function useLatest(prop: string | null | undefined) {
   const sent = useRef<string | null | undefined>(undefined);
   useEffect(() => { if ((prop ?? null) === sent.current) sent.current = undefined; }, [prop]); // an older write landing must not drop a newer one
   return { get: () => sent.current !== undefined ? sent.current : prop ?? null, set: (v: string | null) => { sent.current = v; } };

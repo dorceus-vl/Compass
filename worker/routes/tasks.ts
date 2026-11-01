@@ -36,10 +36,10 @@ const CHECKS: Record<string, Check> = {
   title: text(300), notes: text(20000), project_id: text(40), parent_id: text(40), kind: oneOf('personal', 'work'),
   horizon: oneOf('short', 'medium', 'long'), status: oneOf('new', 'progress', 'hold', 'waiting', 'done'), priority: num(0, 3, { integer: true, nullable: false }),
   start_at: date(), due_at: date(), estimate_minutes: int(0, MAX_ESTIMATE_MINUTES), waiting_on: text(200), nudge_every_days: num(1, 365, { integer: true }),
-  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy, checklist, field_values: fieldValues,
+  recur: text(300), source_url: httpsUrl(2048), tags: text(1000), blocked_by: blockedBy, checklist, field_values: fieldValues, wbs_id: text(64),
 };
 const COLS = ['id','project_id','parent_id','title','notes','kind','horizon','status','priority','start_at','due_at','done_at','estimate_minutes','waiting_on','waiting_since',
-  'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','blocked_by','checklist','field_values','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
+  'nudge_every_days','recur','source_app','source_kind','source_ref','source_url','blocked_by','checklist','field_values','wbs_id','sort_in_column','tags','enc_v','created_at','updated_at','deleted_at'] as const;
 // Text columns that are ciphertext on a work row. Every update rewrites them, so a task that changes kind
 // (via its project) is never left half-encrypted.
 const TEXT_COLS = ['title', 'notes', 'waiting_on', 'checklist', 'field_values'];
@@ -262,6 +262,8 @@ tasks.patch('/:id', async (c) => {
     } else next.kind = task.kind;
   }
   fields.push('kind');
+  // v2.8: a work package belongs to one project's outline; a move to another project leaves it (unless the body names one).
+  if ('project_id' in r.values && next.project_id !== task.project_id && !('wbs_id' in r.values) && next.wbs_id) { next.wbs_id = null; fields.push('wbs_id'); }
   // V2: links are re-checked when they change, and a task may not change kind while it is linked to the other kind.
   if ('blocked_by' in r.values || next.kind !== task.kind) {
     // The links that will hold after this PATCH: the new list when the body carries one, else the stored one.

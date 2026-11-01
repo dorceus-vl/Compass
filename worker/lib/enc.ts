@@ -3,7 +3,7 @@ import { encryptString, decryptString } from './crypto-box.js';
 
 // Which text columns are ciphertext on a work row. AAD binds each value to its column (table.column).
 export const ENC_COLS = {
-  projects: ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria', 'fields'],
+  projects: ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria', 'fields', 'wbs'],
   milestones: ['name'],
   tasks: ['title', 'notes', 'waiting_on', 'checklist', 'field_values'],
   task_events: ['data'],

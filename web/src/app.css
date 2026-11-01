@@ -1259,3 +1259,11 @@ dialog.sr-dlg{max-width:640px;max-height:min(88vh,760px);overflow-y:auto}
 .gl-pick .btn{justify-content:flex-start;text-align:left}
 .gl-dlg textarea.field,.gl textarea.field{min-height:0}
 .gl .btn:focus-visible,.gl-title:focus-visible,.gl-hist summary:focus-visible,.gl-sup .btn:focus-visible,.gl-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.wbs-row{display:grid;gap:8px}
+.wbs-act{gap:6px}
+.wbs .btn,.wbs .field{min-height:44px}
+.wbs-act .btn{min-width:44px}
+.wbs-task{display:block;width:100%;min-height:44px;text-align:left;background:none;border:0;border-top:1px solid var(--field-border);padding:6px 4px;font:inherit;font-size:13px;color:var(--text);cursor:pointer;overflow-wrap:anywhere}
+.wbs-task:hover{color:var(--accent-bright)}
+.wbs .btn:focus-visible,.wbs-task:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
