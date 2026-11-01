@@ -219,3 +219,7 @@ Commit `2ce040f`. iOS only (Android has no Siri; App Actions not planned). No mi
 ## v2.11: Athena pack (2026-11-01)
 - Files: `worker/routes/prompts.ts`, `worker/migrations/0024_prompts.sql`, `web/src/views/PromptShelf.tsx`, `shared/presets.ts`, `shared/types.ts` (`PromptRow`), `worker/routes/trash.ts` (purge appended last so batch indexes hold).
 - Decisions: prompts are plain, never work content; Pick appends to the Ask box; unverified on device: shelf look, edit flow.
+
+## Deployed 2026-11-01: Athena pack v2.11
+- Version `5f63eeeb-d1d8-4eb0-b274-78e0358cd143`; rollback `76dae0a8-e0b1-439f-98a8-0757d0b11837` (`npx wrangler rollback 76dae0a8-e0b1-439f-98a8-0757d0b11837`). Migration 0024 applied.
+- Verified: `/` 200; `/api/prompts` and `/api/health` answer 401 (auth, new code not exercised). UNVERIFIED: shelf look, edit flow, presets (need passkey sign-in).
