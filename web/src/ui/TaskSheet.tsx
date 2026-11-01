@@ -11,6 +11,7 @@ import { BlockedChip } from './BlockedChip.tsx';
 import { Checklist } from './Checklist.tsx';
 import { TaskFields } from './CustomFields.tsx';
 import { TaskWbs } from './Wbs.tsx';
+import { TaskSprint } from './Sprints.tsx';
 import { SaveAsTemplate } from './Templates.tsx';
 import { TimerButton } from './TimerButton.tsx';
 import { TimeSection } from './TimeSection.tsx';
@@ -141,6 +142,7 @@ function TaskSheetFor({ taskId, onClose, onOpenTask }: { taskId: string; onClose
       </div>
       <TaskFields task={task} project={projects.find((p) => p.id === v.project_id)} />
       <TaskWbs task={task} project={projects.find((p) => p.id === v.project_id)} />
+      <TaskSprint task={task} project={projects.find((p) => p.id === v.project_id)} />
       <section className="deps" aria-label="Dependencies">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Blocked by</span>

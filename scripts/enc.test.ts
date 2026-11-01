@@ -20,7 +20,7 @@ assert.deepEqual(await open(env, 'tasks', { ...personal }), personal);
 const m = await seal(env, 'milestones', { id: 'm1', name: 'Go / no-go', enc_v: 0 }, 'work');
 assert.equal(m.enc_v, 2);
 assert.equal((await open(env, 'milestones', { ...m })).name, 'Go / no-go');
-assert.deepEqual(ENC_COLS.projects, ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria', 'fields', 'wbs']);
+assert.deepEqual(ENC_COLS.projects, ['name', 'rag_reason', 'sponsor', 'objectives', 'scope_in', 'scope_out', 'success_criteria', 'fields', 'wbs', 'sprints']);
 
 // Phase 3 tables: every listed column changes when sealed as work, round-trips, and stays put as personal.
 for (const [table, row] of [
