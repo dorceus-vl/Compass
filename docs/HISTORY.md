@@ -5,9 +5,9 @@ This is the full former CLAUDE.md: phase logs, decisions, deploy ids and lessons
 ---
 
 ## Next
-- **Done this session:** sprints (v2.9, not deployed). `projects.sprints` (sealed JSON, `shared/sprints.ts`), `tasks.sprint_id`, migration 0022, Sprints tab (`web/src/ui/Sprints.tsx`: plan, start, burndown, close, velocity, backlog), Sprint picker on the task sheet.
+- **Done this session:** sprints (v2.9, deployed 2026-11-01: Version `b49987f2-770d-4eae-b3a6-2344ad42b51f`, migration 0022 applied; rollback `e3fc64b6-c271-44bb-a9fc-a496155d6100`). `projects.sprints` (sealed JSON, `shared/sprints.ts`), `tasks.sprint_id`, migration 0022, Sprints tab (`web/src/ui/Sprints.tsx`: plan, start, burndown, close, velocity, backlog), Sprint picker on the task sheet.
 - **Decisions:** effort counted in tasks, not points; one active sprint; close moves unfinished tasks to the next planned sprint or the backlog and stores `total`/`done` so velocity survives; sprint length capped at 366 days; moving a task to another project clears `sprint_id`.
-- **Ledger:** logic: TESTS ONLY (`scripts/sprints.test.ts`). Sprints tab, task picker, burndown look, 44pt targets: UNVERIFIED (no signed-in browser). Not deployed: migration 0022 must run (`/ship`).
+- **Ledger:** logic: TESTS ONLY (`scripts/sprints.test.ts`). Sprints tab, task picker, burndown look, 44pt targets: UNVERIFIED (no signed-in browser).
 - **Known gaps:** server does not check `sprint_id` belongs to the project's sprints; close-time task moves are separate PATCHes (an interrupted close leaves tasks in the closed sprint, which then show in the backlog); `projectStmt` drops `sprints` on create; subtasks not listed; two-device edits last-write-wins.
 - **Next:** documents (wiki + agenda), then Athena pack (prompt library, retrospectives, estimation), small pack (auto-snooze/escalate, PDU tracker, clip screenshot). Earlier unverified items (WBS, custom fields, Siri, goals, timers) still open.
 
